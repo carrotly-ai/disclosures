@@ -1,0 +1,55 @@
+{
+  "name": "disclosures",
+  "version": "0.1.0",
+  "description": "Corporate-disclosure research via SEC EDGAR and GLEIF, as a TypeScript library and MCP server.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "author": "Carrotly AI",
+  "homepage": "https://github.com/carrotly-ai/disclosures#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/carrotly-ai/disclosures.git"
+  },
+  "bugs": {
+    "url": "https://github.com/carrotly-ai/disclosures/issues"
+  },
+  "keywords": [
+    "mcp",
+    "sec",
+    "edgar",
+    "gleif",
+    "lei",
+    "corporate-disclosures",
+    "filings"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "disclosures": "dist/server.mjs"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.mjs"
+    }
+  },
+  "types": "dist/server.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test",
+    "build": "rm -rf dist && bun build src/server.ts --target=node --outfile=dist/server.mjs && chmod +x dist/server.mjs && bunx tsc --emitDeclarationOnly",
+    "test:stdio": "bun test tests/stdio.test.ts",
+    "smoke:live": "bun scripts/live-smoke.ts",
+    "pack:dry": "npm pack --dry-run --json"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "^3.25.76"
+  }
+}

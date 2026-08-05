@@ -1,0 +1,47 @@
+import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { TOOL_NAMES } from "../src/tools/index.js";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const serverPath = join(repoRoot, "dist", "server.mjs");
+
+function ensureBuild(): void {
+  if (existsSync(serverPath)) return;
+  const build = Bun.spawnSync(["bun", "run", "build"], { cwd: repoRoot });
+  if (build.exitCode !== 0) {
+    throw new Error(`bun run build failed:\n${build.stderr.toString()}`);
+  }
+  if (!existsSync(serverPath)) {
+    throw new Error(`Build completed but ${serverPath} is still missing.`);
+  }
+}
+
+describe("stdio MCP server", () => {
+  test("lists exactly the seven tools over a real stdio transport", async () => {
+    ensureBuild();
+    const client = new Client({ name: "disclosures-test-client", version: "0.0.0" });
+    const transport = new StdioClientTransport({
+      command: "node",
+      args: [serverPath],
+      cwd: repoRoot,
+      env: { ...process.env, DISCLOSURES_USER_AGENT: "Test test@example.com" } as Record<string, string>,
+    });
+    try {
+      await client.connect(transport);
+      const { tools } = await client.listTools();
+      expect(tools.map((tool) => tool.name).sort()).toEqual([...TOOL_NAMES].sort());
+      expect(tools).toHaveLength(7);
+      for (const tool of tools) {
+        expect(tool.inputSchema.type).toBe("object");
+        expect(tool.description?.length ?? 0).toBeGreaterThan(0);
+        expect(tool.inputSchema.properties).toHaveProperty("company");
+      }
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
+});
