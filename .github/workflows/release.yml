@@ -17,9 +17,11 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+      # Node 22 + current npm: OIDC trusted publishing requires npm >= 11.5,
+      # which needs Node 20+. Node 18 compatibility is proven by the CI matrix.
       - uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 22
           registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile
       - run: bunx tsc --noEmit
@@ -31,6 +33,10 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           test "${GITHUB_REF_NAME}" = "v${VERSION}"
       - run: npm pack --dry-run
+      - name: Upgrade npm for OIDC trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
       - name: Publish to npm with provenance
         run: |
           VERSION=$(node -p "require('./package.json').version")
