@@ -1,3 +1,17 @@
+export interface RateLimitWindow {
+  readonly limit: number;
+  readonly windowMs: number;
+}
+
+function validateWindow(window: RateLimitWindow): void {
+  if (!Number.isInteger(window.limit) || window.limit <= 0) {
+    throw new RangeError("Rate-limit window limit must be a positive integer");
+  }
+  if (!Number.isFinite(window.windowMs) || window.windowMs <= 0) {
+    throw new RangeError("Rate-limit window duration must be positive");
+  }
+}
+
 export class SlidingWindowRateLimiter {
   private timestamps: number[] = [];
 
@@ -5,13 +19,24 @@ export class SlidingWindowRateLimiter {
     readonly limit: number,
     readonly windowMs: number,
     private readonly now: () => number = Date.now,
-  ) {}
+  ) {
+    validateWindow({ limit, windowMs });
+  }
 
-  tryAcquire(): boolean {
-    const current = this.now();
+  private prune(current: number): void {
     this.timestamps = this.timestamps.filter(
       (timestamp) => current - timestamp < this.windowMs,
     );
+  }
+
+  canAcquire(): boolean {
+    this.prune(this.now());
+    return this.timestamps.length < this.limit;
+  }
+
+  tryAcquire(): boolean {
+    const current = this.now();
+    this.prune(current);
     if (this.timestamps.length >= this.limit) return false;
     this.timestamps.push(current);
     return true;
@@ -22,18 +47,86 @@ export class SlidingWindowRateLimiter {
   }
 
   get size(): number {
-    const current = this.now();
-    this.timestamps = this.timestamps.filter(
-      (timestamp) => current - timestamp < this.windowMs,
-    );
+    this.prune(this.now());
     return this.timestamps.length;
+  }
+}
+
+export class MultiWindowRateLimiter {
+  readonly windows: readonly RateLimitWindow[];
+  private readonly timestamps: number[][];
+
+  constructor(
+    windows: readonly RateLimitWindow[],
+    private readonly now: () => number = Date.now,
+  ) {
+    if (windows.length === 0) {
+      throw new RangeError("At least one rate-limit window is required");
+    }
+    for (const window of windows) validateWindow(window);
+    this.windows = windows.map(({ limit, windowMs }) => ({ limit, windowMs }));
+    this.timestamps = this.windows.map(() => []);
+  }
+
+  private prune(current: number): void {
+    for (let index = 0; index < this.windows.length; index += 1) {
+      const window = this.windows[index];
+      const timestamps = this.timestamps[index];
+      if (!window || !timestamps) continue;
+      this.timestamps[index] = timestamps.filter(
+        (timestamp) => current - timestamp < window.windowMs,
+      );
+    }
+  }
+
+  canAcquire(): boolean {
+    const current = this.now();
+    this.prune(current);
+    return this.windows.every((window, index) =>
+      (this.timestamps[index]?.length ?? 0) < window.limit
+    );
+  }
+
+  tryAcquire(): boolean {
+    const current = this.now();
+    this.prune(current);
+    if (
+      this.windows.some((window, index) =>
+        (this.timestamps[index]?.length ?? 0) >= window.limit
+      )
+    ) {
+      return false;
+    }
+    for (const timestamps of this.timestamps) timestamps.push(current);
+    return true;
+  }
+
+  reset(): void {
+    for (const timestamps of this.timestamps) timestamps.length = 0;
+  }
+
+  get sizes(): readonly number[] {
+    this.prune(this.now());
+    return this.timestamps.map((timestamps) => timestamps.length);
   }
 }
 
 export const secRateLimiter = new SlidingWindowRateLimiter(30, 60_000);
 export const gleifRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+export const companiesHouseRateLimiter = new SlidingWindowRateLimiter(600, 5 * 60_000);
+export const openDartRateLimiter = new MultiWindowRateLimiter([
+  { limit: 1_000, windowMs: 60_000 },
+  { limit: 20_000, windowMs: 24 * 60 * 60_000 },
+]);
+
+// Conservative EDINET pacing: avoid bursts while allowing bounded
+// date-indexed requests.
+export const edinetRateLimiter = new SlidingWindowRateLimiter(1, 1_000);
 
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
+  companiesHouseRateLimiter.reset();
+  openDartRateLimiter.reset();
+  edinetRateLimiter.reset();
 }

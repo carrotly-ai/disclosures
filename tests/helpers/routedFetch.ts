@@ -27,16 +27,19 @@ export function routedFetch(routes: Route[]): FetchFn & {
     }
     const status = route.status ?? 200;
     const headers = new Headers(route.headers);
-    const body =
-      typeof route.body === "string"
+    const body = route.body instanceof Uint8Array
+      ? route.body
+      : typeof route.body === "string"
         ? route.body
         : JSON.stringify(route.body);
     if (!headers.has("Content-Type")) {
       headers.set(
         "Content-Type",
-        typeof route.body === "string"
-          ? "text/plain"
-          : "application/json",
+        route.body instanceof Uint8Array
+          ? "application/octet-stream"
+          : typeof route.body === "string"
+            ? "text/plain"
+            : "application/json",
       );
     }
     return new Response(body, { status, headers });

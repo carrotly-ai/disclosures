@@ -1,11 +1,10 @@
 import { z } from "zod";
+import {
+  AdapterConfigurationError,
+  AdapterRateLimitError,
+} from "../core/errors.js";
 import type { AdapterOptions, ToolResult } from "../core/types.js";
 import { errorResult, textResult } from "../core/toolDefs.js";
-import {
-  SecConfigurationError,
-  SecRateLimitError,
-} from "../adapters/secEdgar.js";
-import { GleifRateLimitError } from "../adapters/gleif.js";
 
 export const companyInput = {
   company: z
@@ -33,8 +32,10 @@ export function notFoundResult(company: string, detail?: string): ToolResult {
  * configuration and rate-limit failures keep isError so callers can react.
  */
 export function failureResult(company: string, error: unknown): ToolResult {
-  if (error instanceof SecConfigurationError) return errorResult(error.message);
-  if (error instanceof SecRateLimitError || error instanceof GleifRateLimitError) {
+  if (
+    error instanceof AdapterConfigurationError ||
+    error instanceof AdapterRateLimitError
+  ) {
     return errorResult(error.message);
   }
   const message = error instanceof Error ? error.message : String(error);
