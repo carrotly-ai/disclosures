@@ -20,6 +20,14 @@ import {
   resolveGleifEntity,
   searchGleifEntities,
 } from "../adapters/gleif.js";
+import {
+  COMPANIES_HOUSE_PSC_THRESHOLD_REGIME,
+  getCompaniesHouseOfficers,
+  getCompaniesHouseOwners,
+  getLatestCompaniesHouseReport,
+  searchCompaniesHouseCompanies,
+  searchCompaniesHouseFilings,
+} from "../adapters/companiesHouse.js";
 import { companyInput, failureResult, notFoundResult } from "./shared.js";
 
 const CONSOLIDATION_CAVEAT =
@@ -28,18 +36,55 @@ const CONSOLIDATION_CAVEAT =
   "stakes, and they are not ultimate-beneficial-owner (UBO) tracing through " +
   "private holding chains.";
 
+const COMPANIES_HOUSE_PSC_CAVEAT =
+  "The Companies House PSC register is a statutory control register under the " +
+  `${COMPANIES_HOUSE_PSC_THRESHOLD_REGIME}. It is not guaranteed-complete ` +
+  "UBO/KYC evidence, may include corporate entities and legal persons rather " +
+  "than natural persons, and the ECCTA identity-verification transition can " +
+  "affect which verification fields are available.";
+
+function readableCode(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const text = value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  return text ? text[0]?.toUpperCase() + text.slice(1) : undefined;
+}
+
+function identifierText(entity: Entity): string {
+  return [
+    entity.cik ? `CIK ${entity.cik}` : undefined,
+    entity.ticker ? `ticker ${entity.ticker}` : undefined,
+    entity.lei ? `LEI ${entity.lei}` : undefined,
+    entity.companyNumber ? `CH ${entity.companyNumber}` : undefined,
+    entity.corpCode ? `DART ${entity.corpCode}` : undefined,
+    entity.stockCode ? `stock ${entity.stockCode}` : undefined,
+    entity.edinetCode ? `EDINET ${entity.edinetCode}` : undefined,
+    entity.secCode ? `security ${entity.secCode}` : undefined,
+    entity.jcn ? `JCN ${entity.jcn}` : undefined,
+  ].filter((value): value is string => Boolean(value)).join("; ") || "—";
+}
+
 function entityRows(entities: Entity[]): string {
   return markdownTable(
-    ["Legal name", "CIK", "Ticker", "LEI", "Jurisdiction", "Source", "Match"],
+    ["Legal name", "Identifiers", "Jurisdiction", "Status", "Source", "Match"],
     entities.map((entity) => [
       entity.sourceUrl ? link(entity.legalName, entity.sourceUrl) : entity.legalName,
-      entity.cik,
-      entity.ticker,
-      entity.lei,
+      identifierText(entity),
       entity.jurisdiction,
+      entity.status,
       entity.source,
       entity.matchReason,
     ]),
+  );
+}
+
+function plannedJurisdiction(
+  jurisdiction: "KR" | "JP",
+  toolName: string,
+): ReturnType<typeof textResult> {
+  const adapter = jurisdiction === "KR" ? "OpenDART" : "EDINET";
+  return textResult(
+    `${toolName} does not yet support jurisdiction \"${jurisdiction}\". ` +
+      `The ${adapter} adapter is planned for a later release.`,
   );
 }
 
@@ -60,13 +105,29 @@ function describeParent(parent: OwnershipParent | undefined): string {
 export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
   const companyResolve = defineTool(
     "CompanyResolve",
-    "Resolve a company name, ticker, SEC CIK, or LEI to a canonical entity " +
-      "with all known identifiers (CIK, LEI, jurisdiction). Combines the SEC " +
-      "ticker/title map with GLEIF legal-name search. Returns a table of " +
-      "candidate entities with match reasons; ambiguous matches are listed " +
-      "rather than silently merged.",
+    "Resolve a company name or identifier to canonical candidates. US/default " +
+      "combines SEC ticker/CIK/title resolution with GLEIF legal-name search; " +
+      "explicit GB uses Companies House company numbers and legal-name search. " +
+      "Returns compact identifier sets and match reasons without silently " +
+      "merging ambiguous entities. KR/OpenDART and JP/EDINET are planned.",
     companyInput,
-    async ({ company }) => {
+    async ({ company, jurisdiction }) => {
+      if (jurisdiction === "KR" || jurisdiction === "JP") {
+        return plannedJurisdiction(jurisdiction, "CompanyResolve");
+      }
+      if (jurisdiction === "GB") {
+        try {
+          const results = await searchCompaniesHouseCompanies(company, options);
+          if (!results.length) return notFoundResult(company, "Try an exact Companies House company number or legal name.");
+          return textResult(joinSections(
+            `# Company resolution (Companies House): ${company}`,
+            entityRows(results.slice(0, 10)),
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+
       const results: Entity[] = [];
       const warnings: string[] = [];
 
@@ -108,13 +169,13 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyFilings = defineTool(
     "CompanyFilings",
-    "Search a company's regulatory filings (US SEC EDGAR in v1) with an " +
-      "optional form-type filter and date window, returning filing date, " +
-      "form type, description, and direct links to the filed documents. " +
-      "Use mode \"latest_annual\" or \"latest_quarterly\" for the most " +
-      "recent annual/quarterly report's metadata (filing date, accession " +
-      "number, links to the primary document and filing index). Returns " +
-      "links to filings, not the filing text itself.",
+    "Search regulatory filings from US SEC EDGAR (default/US) or UK Companies " +
+      "House (explicit GB). Filters match SEC form types or Companies House " +
+      "filing type/category/description. Latest annual mode returns the latest " +
+      "SEC annual report or UK accounts filing; latest quarterly is unsupported " +
+      "for GB because Companies House has no equivalent normalized quarterly " +
+      "report mode. Returns public filing/document links, never document text. " +
+      "KR/OpenDART and JP/EDINET are planned.",
     {
       ...companyInput,
       forms: z
@@ -138,8 +199,72 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .optional()
         .describe("\"search\" (default) or latest annual/quarterly report metadata"),
     },
-    async ({ company, forms, start_date, end_date, limit, mode }) => {
+    async ({ company, jurisdiction, forms, start_date, end_date, limit, mode }) => {
+      if (jurisdiction === "KR" || jurisdiction === "JP") {
+        return plannedJurisdiction(jurisdiction, "CompanyFilings");
+      }
       try {
+        if (jurisdiction === "GB") {
+          if (mode === "latest_quarterly") {
+            return textResult(
+              `Latest quarterly mode is unsupported for GB. Companies House exposes ` +
+                `filing history and accounts documents, but not a normalized quarterly-report equivalent.`,
+            );
+          }
+          if (mode === "latest_annual") {
+            const report = await getLatestCompaniesHouseReport(company, "annual", options);
+            if (!report) {
+              return textResult(`No Companies House accounts filing found for "${company}".`);
+            }
+            return textResult(joinSections(
+              `# Latest accounts filing (Companies House): ${company}`,
+              markdownTable(
+                ["Type", "Category", "Filed", "Transaction", "Description"],
+                [[
+                  report.form,
+                  report.category,
+                  report.filedDate,
+                  report.accession,
+                  report.description,
+                ]],
+              ),
+              markdownTable(
+                ["Section", "Description", "Link"],
+                report.sectionLinks.map((section) => [
+                  section.section,
+                  section.description,
+                  link("open", section.url),
+                ]),
+              ),
+              "_Links open the public Companies House filing or document. This tool does not return document text._",
+            ));
+          }
+          const filings = await searchCompaniesHouseFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(`No Companies House filings found for "${company}" with the given filters.`);
+          }
+          return textResult(joinSections(
+            `# Companies House filings: ${company}`,
+            markdownTable(
+              ["Filed", "Type", "Category", "Description", "Link"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description,
+                link("view", filing.sourceUrl),
+              ]),
+            ),
+            "_Links open the public Companies House filing or document. This tool does not return document text._",
+          ));
+        }
+
         if (mode === "latest_annual" || mode === "latest_quarterly") {
           const report = await getLatestSecReport(
             company,
@@ -200,13 +325,41 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyInsiders = defineTool(
     "CompanyInsiders",
-    "Named directors and officers (with titles) and 10% owners parsed from " +
-      "a company's recent US SEC Section 16 insider filings (Forms 3/4/5). " +
-      "Reflects only insiders who filed recently — it is not a complete " +
-      "officer/director roster.",
+    "Return recent US SEC Section 16 filing insiders (default/US) or the UK " +
+      "Companies House officer register (explicit GB). GB output includes role, " +
+      "occupation, appointment/resignation dates, and active/former status, but " +
+      "does not surface correspondence addresses, nationality, or partial birth " +
+      "dates. KR/OpenDART and JP/EDINET are planned.",
     companyInput,
-    async ({ company }) => {
+    async ({ company, jurisdiction }) => {
+      if (jurisdiction === "KR" || jurisdiction === "JP") {
+        return plannedJurisdiction(jurisdiction, "CompanyInsiders");
+      }
       try {
+        if (jurisdiction === "GB") {
+          const officers = await getCompaniesHouseOfficers(company, options);
+          if (!officers.length) {
+            return textResult(`No Companies House officers found for "${company}".`);
+          }
+          return textResult(joinSections(
+            `# Officers (Companies House): ${company}`,
+            markdownTable(
+              ["Name", "Role", "Occupation", "Appointed", "Resigned", "Status", "Link"],
+              officers.map((officer) => [
+                officer.name,
+                readableCode(officer.officerRole),
+                officer.occupation,
+                officer.appointedDate,
+                officer.ceasedDate,
+                officer.status,
+                link("view", officer.sourceUrl),
+              ]),
+            ),
+            "_Public officer-register fields only. Correspondence addresses, nationality, " +
+              "and partial dates of birth are intentionally omitted from this output._",
+          ));
+        }
+
         const insiders = await getSecInsiders(company, options);
         if (!insiders.length) {
           return textResult(
@@ -236,16 +389,57 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyOwners = defineTool(
     "CompanyOwners",
-    "Investors that filed major-shareholding / beneficial-ownership reports " +
-      "naming the company as subject (US Schedules 13D/13G, 5% threshold, in " +
-      "v1), with form, filing date, and links. Each row states its source " +
-      "threshold regime. This is filing-based disclosure — not a share " +
-      "register and not ultimate-beneficial-owner (UBO) tracing.",
+    "Return US Schedule 13D/13G beneficial-ownership filers (default/US) or " +
+      "UK Companies House persons with significant control (explicit GB). GB " +
+      "rows include individual/corporate/legal/super-secure kinds, statutory " +
+      "natures of control, percentage bands where derivable, ceased entries, " +
+      "and PSC statements when no ordinary PSC record exists. Each row states " +
+      "its threshold/control regime. Neither source is guaranteed-complete UBO/KYC evidence. " +
+      "KR/OpenDART and JP/EDINET are planned.",
     {
       ...companyInput,
     },
-    async ({ company }) => {
+    async ({ company, jurisdiction }) => {
+      if (jurisdiction === "KR" || jurisdiction === "JP") {
+        return plannedJurisdiction(jurisdiction, "CompanyOwners");
+      }
       try {
+        if (jurisdiction === "GB") {
+          const owners = await getCompaniesHouseOwners(company, options);
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No Companies House PSC records or PSC statements found for "${company}".`,
+              `_${COMPANIES_HOUSE_PSC_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Persons with significant control (Companies House): ${company}`,
+            markdownTable(
+              [
+                "PSC / statement",
+                "Kind",
+                "Control / statement",
+                "Percentage band",
+                "Notified",
+                "Ceased",
+                "Threshold regime",
+                "Link",
+              ],
+              owners.map((owner) => [
+                owner.holderName,
+                owner.holderType,
+                owner.naturesOfControl?.map(readableCode).join(", ") || readableCode(owner.form),
+                owner.percentageBand,
+                owner.notifiedDate,
+                owner.ceasedDate,
+                owner.thresholdRegime,
+                link("view", owner.sourceUrl),
+              ]),
+            ),
+            `_${COMPANIES_HOUSE_PSC_CAVEAT}_`,
+          ));
+        }
+
         const owners = await getSecOwners(company, options);
         if (!owners.length) {
           return textResult(
@@ -278,8 +472,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "CompanyFinancials",
     "Annual as-filed financial figures from XBRL-tagged US SEC annual " +
       `reports (10-K/20-F/40-F): ${SEC_FINANCIAL_CONCEPT_NAMES.join(", ")}. ` +
-      "Values are labeled by fiscal period end date; restated values " +
-      "supersede originals.",
+      "Explicit GB returns an explanation directing callers to Companies House " +
+      "accounts filings because this release does not parse normalized UK " +
+      "financial facts. KR/OpenDART and JP/EDINET are planned.",
     {
       ...companyInput,
       concepts: z
@@ -289,7 +484,18 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       periods: z.number().int().min(1).max(10).optional()
         .describe("Fiscal years per concept (default 5)"),
     },
-    async ({ company, concepts, periods }) => {
+    async ({ company, jurisdiction, concepts, periods }) => {
+      if (jurisdiction === "KR" || jurisdiction === "JP") {
+        return plannedJurisdiction(jurisdiction, "CompanyFinancials");
+      }
+      if (jurisdiction === "GB") {
+        return textResult(
+          "Companies House exposes UK accounts filings and linked documents, but this " +
+            "release does not parse them into normalized financial facts. Use " +
+            'CompanyFilings with jurisdiction "GB" and an accounts filter to retrieve ' +
+            "the latest accounts metadata and public document links.",
+        );
+      }
       try {
         const facts = await getSecFinancials(company, concepts ?? SEC_FINANCIAL_CONCEPT_NAMES, options);
         if (!facts.length) {
@@ -383,12 +589,23 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
   const privateRaises = defineTool(
     "PrivateRaises",
     "US Form D (Regulation D) exempt-offering filings for a company: " +
-      "amounts offered and sold (which may be \"Indefinite\"), investor " +
-      "counts, industry, date of first sale, and named executive officers, " +
-      "directors, and promoters. US-only in v1. Absence of a Form D does " +
-      "not mean a company never raised capital privately.",
+      "amounts offered and sold, investor counts, industry, date of first sale, " +
+      "and named related persons. This capability is US-only; explicit GB " +
+      "returns an unsupported-jurisdiction explanation because Companies House " +
+      "does not provide an equivalent private-raise filing dataset. KR/OpenDART " +
+      "and JP/EDINET are planned.",
     companyInput,
-    async ({ company }) => {
+    async ({ company, jurisdiction }) => {
+      if (jurisdiction === "KR" || jurisdiction === "JP") {
+        return plannedJurisdiction(jurisdiction, "PrivateRaises");
+      }
+      if (jurisdiction === "GB") {
+        return textResult(
+          "PrivateRaises is unsupported for jurisdiction \"GB\". Companies House " +
+            "does not expose a Form D-equivalent public dataset for normalized " +
+            "private offering amounts and investor counts in this release.",
+        );
+      }
       try {
         const raises = await getSecPrivateRaises(company, options);
         if (!raises.length) {

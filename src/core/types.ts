@@ -57,6 +57,7 @@ export interface Entity extends IdentifierSet, SourceScopedRecord {
 export interface Filing extends SourceScopedRecord {
   filedDate: string;
   form: string;
+  category?: string;
   description: string;
   accession?: string;
   sourceUrl: string;
@@ -71,6 +72,9 @@ export interface Insider extends SourceScopedRecord {
   name: string;
   ownerCik?: string;
   roles: string[];
+  officerRole?: string;
+  occupation?: string;
+  status?: string;
   form: string;
   filedDate: string;
   appointedDate?: string;

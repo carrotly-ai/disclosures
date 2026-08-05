@@ -42,6 +42,7 @@ export * from "./core/rateLimiter.js";
 export * from "./core/zip.js";
 export * as secEdgar from "./adapters/secEdgar.js";
 export * as gleif from "./adapters/gleif.js";
+export * as companiesHouse from "./adapters/companiesHouse.js";
 
 function isMainModule(): boolean {
   const entry = process.argv[1];

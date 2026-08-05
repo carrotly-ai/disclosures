@@ -7,6 +7,10 @@ import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 
 const ENV: Env = { DISCLOSURES_USER_AGENT: "Test test@example.com" };
+const GB_ENV: Env = {
+  ...ENV,
+  COMPANIES_HOUSE_API_KEY: "test-companies-house-key",
+};
 
 const APPLE_LEI = "HWUPKR0MPOU8FGXBT394";
 
@@ -79,6 +83,19 @@ describe("createTools", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: ENV });
     expect(tools.map((tool) => tool.name)).toEqual([...TOOL_NAMES]);
     expect(TOOL_NAMES).toHaveLength(7);
+  });
+
+  test("company jurisdiction accepts US/GB/KR/JP while descriptions mark KR/JP planned", () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
+    for (const tool of tools.filter((candidate) => candidate.name !== "OwnershipChain")) {
+      const jurisdiction = tool.inputSchema.jurisdiction;
+      expect(jurisdiction?.safeParse("US").success).toBe(true);
+      expect(jurisdiction?.safeParse("GB").success).toBe(true);
+      expect(jurisdiction?.safeParse("KR").success).toBe(true);
+      expect(jurisdiction?.safeParse("JP").success).toBe(true);
+      expect(tool.description).toMatch(/KR|OpenDART/);
+      expect(tool.description).toMatch(/JP|EDINET/);
+    }
   });
 });
 
@@ -171,6 +188,9 @@ describe("CompanyResolve", () => {
     expect(text).toContain("Exact ticker");
     expect(text).toContain(APPLE_LEI);
     expect(text).toContain("GLEIF");
+    expect(fetchFn.requests.every(({ url }) =>
+      !url.includes("company-information.service.gov.uk")
+    )).toBe(true);
   });
 
   test("LEI input goes GLEIF-only", async () => {
@@ -201,6 +221,215 @@ describe("CompanyResolve", () => {
     } as never);
     expect(result.isError).toBeUndefined();
     expect(resultText(result)).toContain('Could not find a company matching "Zzyzx Widgets"');
+  });
+});
+
+describe("explicit GB routing", () => {
+  test("CompanyResolve uses Companies House only and shows the foreign identifier compactly", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/search/companies",
+        body: {
+          items: [
+            {
+              title: "EXAMPLE LIMITED",
+              company_number: "01234567",
+              company_status: "active",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "Example Limited",
+      jurisdiction: "GB",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Companies House");
+    expect(text).toContain("CH 01234567");
+    expect(text).toContain("Exact normalized legal-name match");
+    expect(fetchFn.requests).toHaveLength(1);
+    expect(fetchFn.requests[0]?.url).toContain("api.company-information.service.gov.uk");
+  });
+
+  test("an explicit GB number is never sent to SEC", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/company/01234567",
+        body: {
+          company_number: "01234567",
+          company_name: "EXAMPLE LIMITED",
+          company_status: "active",
+          jurisdiction: "england-wales",
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(fetchFn.requests).toHaveLength(1);
+    expect(fetchFn.requests[0]?.url).not.toContain("sec.gov");
+  });
+
+  test("CompanyFilings renders type/category/description and states it returns links, not text", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/filing-history",
+        body: {
+          items_per_page: 100,
+          start_index: 0,
+          total_count: 1,
+          items: [
+            {
+              category: "accounts",
+              type: "AA",
+              description: "accounts-with-accounts-type-small",
+              date: "2024-09-30",
+              transaction_id: "accounts-tx",
+              links: { document_metadata: "/document/accounts" },
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+      forms: ["accounts"],
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("| Filed | Type | Category | Description | Link |");
+    expect(text).toContain("Accounts with accounts type small");
+    expect(text).toContain("does not return document text");
+    expect(text).toContain("find-and-update.company-information.service.gov.uk");
+  });
+
+  test("latest quarterly is a successful plain unsupported explanation", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+      mode: "latest_quarterly",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("unsupported for GB");
+    expect(resultText(result)).toContain("not a normalized quarterly-report equivalent");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyInsiders omits address, nationality, and partial birth date", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/officers",
+        body: {
+          items_per_page: 100,
+          start_index: 0,
+          total_results: 1,
+          items: [
+            {
+              name: "DOE, Jane",
+              officer_role: "director",
+              occupation: "Engineer",
+              appointed_on: "2020-01-01",
+              address: { address_line_1: "Private output" },
+              nationality: "British",
+              date_of_birth: { month: 1, year: 1980 },
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("| Name | Role | Occupation | Appointed | Resigned | Status | Link |");
+    expect(text).toContain("DOE, Jane");
+    expect(text).toContain("Active");
+    expect(text).not.toContain("Private output");
+    expect(text).not.toContain("British");
+    expect(text).not.toContain("1980");
+  });
+
+  test("CompanyOwners renders PSC percentage bands, regime, and all required caveats", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "persons-with-significant-control?",
+        body: {
+          items_per_page: 100,
+          start_index: 0,
+          total_results: 1,
+          items: [
+            {
+              kind: "corporate-entity-person-with-significant-control",
+              name: "EXAMPLE PARENT LIMITED",
+              notified_on: "2020-01-01",
+              natures_of_control: ["ownership-of-shares-75-to-100-percent"],
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain(">75% up to 100%");
+    expect(text).toContain("UK PSC register (>25% shares/voting rights or other statutory control tests)");
+    expect(text).toContain("statutory control register");
+    expect(text).toContain("not guaranteed-complete");
+    expect(text).toContain("corporate entities and legal persons");
+    expect(text).toContain("ECCTA identity-verification transition");
+  });
+
+  test("GB financials and private raises return successful capability explanations", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const financials = await toolByName(tools, "CompanyFinancials").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    expect(financials.isError).toBeUndefined();
+    expect(resultText(financials)).toContain("does not parse them into normalized financial facts");
+    expect(resultText(financials)).toContain("CompanyFilings");
+    expect(resultText(financials)).toContain("accounts filter");
+
+    const raises = await toolByName(tools, "PrivateRaises").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    expect(raises.isError).toBeUndefined();
+    expect(resultText(raises)).toContain('unsupported for jurisdiction "GB"');
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("KR and JP return planned-adapter messages without network requests", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    for (const jurisdiction of ["KR", "JP"] as const) {
+      for (const name of TOOL_NAMES.filter((toolName) => toolName !== "OwnershipChain")) {
+        const result = await toolByName(tools, name).handler({
+          company: "Example",
+          jurisdiction,
+        } as never);
+        expect(result.isError).toBeUndefined();
+        expect(resultText(result)).toContain("planned for a later release");
+      }
+    }
+    expect(fetchFn.requests).toHaveLength(0);
   });
 });
 
@@ -375,6 +604,19 @@ describe("handler robustness", () => {
     const tools = createTools({ fetchFn: throwing, env: ENV });
     for (const tool of tools) {
       const result = await tool.handler({ company: "AAPL" } as never);
+      expect(Array.isArray(result.content)).toBe(true);
+      expect(typeof resultText(result)).toBe("string");
+    }
+  });
+
+  test("explicit GB handlers never reject when the network stub throws", async () => {
+    const throwing = routedFetch([]);
+    const tools = createTools({ fetchFn: throwing, env: GB_ENV });
+    for (const tool of tools.filter((candidate) => candidate.name !== "OwnershipChain")) {
+      const result = await tool.handler({
+        company: "Example Limited",
+        jurisdiction: "GB",
+      } as never);
       expect(Array.isArray(result.content)).toBe(true);
       expect(typeof resultText(result)).toBe("string");
     }
