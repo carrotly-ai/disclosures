@@ -44,6 +44,16 @@ import {
   searchEdinetCompanies,
   searchEdinetFilings,
 } from "../adapters/edinet.js";
+import {
+  getLatestCninfoReport,
+  searchCninfoCompanies,
+  searchCninfoFilings,
+} from "../adapters/cninfo.js";
+import {
+  BSE_ANTIBOT_NOTE,
+  searchBseCompanies,
+  searchBseFilings,
+} from "../adapters/bseIndia.js";
 import { companyInput, failureResult, notFoundResult } from "./shared.js";
 
 const CONSOLIDATION_CAVEAT =
@@ -76,6 +86,9 @@ function identifierText(entity: Entity): string {
     entity.edinetCode ? `EDINET ${entity.edinetCode}` : undefined,
     entity.secCode ? `security ${entity.secCode}` : undefined,
     entity.jcn ? `JCN ${entity.jcn}` : undefined,
+    entity.orgId ? `cninfo ${entity.orgId}` : undefined,
+    entity.scripCode ? `BSE ${entity.scripCode}` : undefined,
+    entity.isin ? `ISIN ${entity.isin}` : undefined,
   ].filter((value): value is string => Boolean(value)).join("; ") || "—";
 }
 
@@ -112,6 +125,27 @@ const EDINET_NO_DEEP_LINK_CAVEAT =
   "EDINET provides no stable public per-document link; open the docID shown " +
   "above in the EDINET viewer, or fetch it via the authenticated API v2 " +
   "documents endpoint. This tool never returns document text.";
+
+const CNINFO_FILINGS_CAVEAT =
+  "cninfo announcements are Chinese-language PDFs on SSE/SZSE (and mirrored " +
+  "HKEX filings). Links open the official full-text PDF; this tool never " +
+  "returns document text. Absence here is not proof a filing does not exist.";
+
+const CNINFO_OWNERSHIP_UNSUPPORTED =
+  "Chinese shareholding data (5%+ holders, controlling shareholders, " +
+  "executives) is disclosed inside periodic-report and interim-announcement " +
+  "PDFs on cninfo, not as a structured feed, so this release does not surface " +
+  "it as normalized records. Use CompanyFilings with jurisdiction \"CN\" to " +
+  "locate the relevant annual report (年度报告) or equity-change announcement " +
+  "(权益变动) PDF.";
+
+const BSE_SHAREHOLDING_UNSUPPORTED =
+  "BSE shareholding-pattern data (promoters and 1%+ public shareholders) is " +
+  "served from anti-bot-gated endpoints that redirect plain requests to a WAF " +
+  "error page. This zero-dependency release does not bundle a browser, so it " +
+  "does not return that data by default. Supply a browser-backed fetchFn via " +
+  "AdapterOptions to enable it, or read the quarterly shareholding pattern on " +
+  "bseindia.com.";
 
 function describeParent(parent: OwnershipParent | undefined): string {
   if (!parent) return "No parent information reported";
@@ -174,6 +208,35 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return textResult(joinSections(
             `# Company resolution (OpenDART): ${company}`,
             entityRows(results.slice(0, 10)),
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "CN") {
+        try {
+          const results = await searchCninfoCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, "Try a 6-digit A-share code, a 5-digit HK code, or a Chinese company name.");
+          }
+          return textResult(joinSections(
+            `# Company resolution (cninfo): ${company}`,
+            entityRows(results.slice(0, 10)),
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "IN") {
+        try {
+          const results = await searchBseCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, `Try a 6-digit BSE scrip code or a company name. ${BSE_ANTIBOT_NOTE}`);
+          }
+          return textResult(joinSections(
+            `# Company resolution (BSE India): ${company}`,
+            entityRows(results.slice(0, 10)),
+            `_${BSE_ANTIBOT_NOTE}_`,
           ));
         } catch (error) {
           return failureResult(company, error);
@@ -314,6 +377,95 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             `_${EDINET_DATE_INDEX_CAVEAT}_`,
             `_${EDINET_NO_DEEP_LINK_CAVEAT}_`,
+          ));
+        }
+        if (jurisdiction === "CN") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            const report = await getLatestCninfoReport(
+              company,
+              mode === "latest_annual" ? "annual" : "quarterly",
+              options,
+            );
+            if (!report) {
+              return textResult(joinSections(
+                `No ${mode === "latest_annual" ? "annual (年度报告)" : "interim (半年度/季度报告)"} ` +
+                  `report found on cninfo for "${company}".`,
+                `_${CNINFO_FILINGS_CAVEAT}_`,
+              ));
+            }
+            return textResult(joinSections(
+              `# Latest ${report.reportKind} report (cninfo): ${company}`,
+              markdownTable(
+                ["Report", "Filed", "Announcement", "Company", "PDF"],
+                [[report.form, report.filedDate, report.description, report.category, link("open", report.sourceUrl)]],
+              ),
+              `_${CNINFO_FILINGS_CAVEAT}_`,
+            ));
+          }
+          const filings = await searchCninfoFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No cninfo announcements found for "${company}" in the scanned window.`,
+              `_${CNINFO_FILINGS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# cninfo announcements: ${company}`,
+            markdownTable(
+              ["Filed", "Type", "Company", "Title", "PDF"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            `_${CNINFO_FILINGS_CAVEAT}_`,
+          ));
+        }
+        if (jurisdiction === "IN") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            return textResult(
+              `Latest ${mode === "latest_annual" ? "annual" : "quarterly"} mode is unsupported for IN. ` +
+                "BSE exposes a corporate-announcements feed, but not a normalized annual/quarterly " +
+                'report-metadata equivalent. Use mode "search" (optionally with a forms filter like ' +
+                '["Result"] or ["Annual Report"]) instead.',
+            );
+          }
+          const filings = await searchBseFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No BSE announcements found for "${company}" in the scanned window.`,
+              `_${BSE_ANTIBOT_NOTE}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# BSE announcements: ${company}`,
+            markdownTable(
+              ["Filed", "Category", "Sub-category", "Headline", "Attachment"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            "_Attachment links open the public BSE corporate-filing PDF; this tool never returns document text._",
+            `_${BSE_ANTIBOT_NOTE}_`,
           ));
         }
         if (jurisdiction === "KR") {
@@ -511,6 +663,18 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             'with jurisdiction "JP" and mode "latest_annual" to locate that report.',
         );
       }
+      if (jurisdiction === "CN") {
+        return textResult(
+          "CompanyInsiders is unsupported for jurisdiction \"CN\". " +
+            CNINFO_OWNERSHIP_UNSUPPORTED,
+        );
+      }
+      if (jurisdiction === "IN") {
+        return textResult(
+          "CompanyInsiders is unsupported for jurisdiction \"IN\". " +
+            BSE_SHAREHOLDING_UNSUPPORTED,
+        );
+      }
       try {
         if (jurisdiction === "KR") {
           const insiders = await getOpenDartInsiders(company, options);
@@ -608,6 +772,20 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             "identifies the filer (the large holder), not the subject company, so a " +
             "reliable \"who owns >5% of company X\" query would require document-level " +
             "parsing this release does not perform.",
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "CN") {
+        return textResult(joinSections(
+          "CompanyOwners is unsupported for jurisdiction \"CN\". " +
+            CNINFO_OWNERSHIP_UNSUPPORTED,
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "IN") {
+        return textResult(joinSections(
+          "CompanyOwners is unsupported for jurisdiction \"IN\". " +
+            BSE_SHAREHOLDING_UNSUPPORTED,
           "_Absence of a result here is not evidence that no large holder exists._",
         ));
       }
@@ -729,6 +907,24 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             "financial data, but this release does not parse them into normalized " +
             'financial facts. Use CompanyFilings with jurisdiction "JP" and mode ' +
             '"latest_annual" to locate the report and its docID.',
+        );
+      }
+      if (jurisdiction === "CN") {
+        return textResult(
+          "CompanyFinancials is unsupported for jurisdiction \"CN\". cninfo publishes " +
+            "annual and interim reports (年度报告/季度报告) with XBRL data, but this " +
+            "release does not parse them into normalized financial facts. Use " +
+            'CompanyFilings with jurisdiction "CN" and mode "latest_annual" to locate ' +
+            "the report PDF.",
+        );
+      }
+      if (jurisdiction === "IN") {
+        return textResult(
+          "CompanyFinancials is unsupported for jurisdiction \"IN\". BSE financial " +
+            "results are disclosed inside corporate-announcement PDFs and behind " +
+            "anti-bot-gated endpoints; this release does not parse them into " +
+            'normalized financial facts. Use CompanyFilings with jurisdiction "IN" ' +
+            'and a forms filter like ["Result"] to locate the results announcement.',
         );
       }
       if (jurisdiction === "KR") {
@@ -881,17 +1077,24 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "US Form D (Regulation D) exempt-offering filings for a company: " +
       "amounts offered and sold, investor counts, industry, date of first sale, " +
       "and named related persons. This capability is US-only; explicit GB, KR, " +
-      "and JP return an unsupported-jurisdiction explanation because none of " +
-      "Companies House, DART, or EDINET provides an equivalent private-raise " +
-      "filing dataset.",
+      "JP, CN, and IN return an unsupported-jurisdiction explanation because " +
+      "none of Companies House, DART, EDINET, cninfo, or BSE provides an " +
+      "equivalent private-raise filing dataset.",
     companyInput,
     async ({ company, jurisdiction }) => {
-      if (jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP") {
+      if (
+        jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
+        jurisdiction === "CN" || jurisdiction === "IN"
+      ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
           : jurisdiction === "KR"
             ? "OpenDART/DART"
-            : "EDINET";
+            : jurisdiction === "JP"
+              ? "EDINET"
+              : jurisdiction === "CN"
+                ? "cninfo (SSE/SZSE)"
+                : "BSE India";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +
