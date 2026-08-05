@@ -20,9 +20,22 @@ export function link(label: string, url: string): string {
   return `[${label.replaceAll("]", "\\]")}](${url})`;
 }
 
+const CURRENCY_FORMATS: Record<
+  string,
+  { symbol: string; maximumFractionDigits: number }
+> = {
+  USD: { symbol: "$", maximumFractionDigits: 2 },
+  GBP: { symbol: "£", maximumFractionDigits: 2 },
+  KRW: { symbol: "₩", maximumFractionDigits: 0 },
+  JPY: { symbol: "¥", maximumFractionDigits: 0 },
+};
+
 export function formatNumber(value: number, unit: string): string {
-  if (unit === "USD") {
-    return `$${value.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+  const currency = CURRENCY_FORMATS[unit];
+  if (currency) {
+    return `${currency.symbol}${value.toLocaleString("en-US", {
+      maximumFractionDigits: currency.maximumFractionDigits,
+    })}`;
   }
   return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
 }

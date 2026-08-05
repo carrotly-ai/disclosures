@@ -33,8 +33,18 @@ export { createTools, TOOL_NAMES } from "./tools/index.js";
 export { defineTool, textResult, errorResult } from "./core/toolDefs.js";
 export type { ToolDefinition } from "./core/toolDefs.js";
 export * from "./core/types.js";
+export * from "./core/entityMatching.js";
+export * from "./core/errors.js";
+export * from "./core/http.js";
+export * from "./core/markdown.js";
+export * from "./core/parsing.js";
+export * from "./core/rateLimiter.js";
+export * from "./core/zip.js";
 export * as secEdgar from "./adapters/secEdgar.js";
 export * as gleif from "./adapters/gleif.js";
+export * as companiesHouse from "./adapters/companiesHouse.js";
+export * as openDart from "./adapters/openDart.js";
+export * as edinet from "./adapters/edinet.js";
 
 function isMainModule(): boolean {
   const entry = process.argv[1];

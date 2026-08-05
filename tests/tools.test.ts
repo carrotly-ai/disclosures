@@ -2,11 +2,19 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { TOOL_NAMES, createTools } from "../src/tools/index.js";
 import type { ToolDefinition } from "../src/core/toolDefs.js";
 import { resetSecTickerCache } from "../src/adapters/secEdgar.js";
+import { resetOpenDartCorpCodeCache } from "../src/adapters/openDart.js";
 import { resetRateLimiters, secRateLimiter } from "../src/core/rateLimiter.js";
 import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
+import { makeStoredZip } from "./helpers/zipFixture.js";
+import { edinetCodeListRoute, edinetDay } from "./helpers/edinetFixture.js";
+import { resetEdinetCodeCache } from "../src/adapters/edinet.js";
 
 const ENV: Env = { DISCLOSURES_USER_AGENT: "Test test@example.com" };
+const GB_ENV: Env = {
+  ...ENV,
+  COMPANIES_HOUSE_API_KEY: "test-companies-house-key",
+};
 
 const APPLE_LEI = "HWUPKR0MPOU8FGXBT394";
 
@@ -69,9 +77,54 @@ function submissionsFixture(
   };
 }
 
+const KR_ENV: Env = { ...ENV, OPENDART_API_KEY: "test-opendart-key" };
+
+const KR_CORP_CODE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<result>
+  <list>
+    <corp_code>00126380</corp_code>
+    <corp_name>삼성전자</corp_name>
+    <corp_eng_name>SAMSUNG ELECTRONICS CO,.LTD</corp_eng_name>
+    <stock_code>005930</stock_code>
+    <modify_date>20230101</modify_date>
+  </list>
+</result>`;
+
+const krCorpCodeRoute: Route = {
+  pattern: "corpCode.xml",
+  body: makeStoredZip("CORPCODE.xml", KR_CORP_CODE_XML),
+};
+
+const JP_ENV: Env = { ...ENV, EDINET_API_KEY: "test-edinet-key" };
+
+const JP_DAY = [
+  {
+    docID: "S100ANNUAL",
+    edinetCode: "E02144",
+    secCode: "72030",
+    filerName: "トヨタ自動車株式会社",
+    docTypeCode: "120",
+    docDescription: "有価証券報告書－第120期",
+    submitDateTime: "2026-06-25 09:00",
+  },
+  {
+    docID: "S100QTR",
+    edinetCode: "E02144",
+    secCode: "72030",
+    filerName: "トヨタ自動車株式会社",
+    docTypeCode: "140",
+    docDescription: "四半期報告書",
+    submitDateTime: "2026-08-05 10:00",
+  },
+];
+
+const jpDocumentsRoute: Route = { pattern: "documents.json", body: edinetDay(JP_DAY) };
+
 beforeEach(() => {
   resetRateLimiters();
   resetSecTickerCache();
+  resetOpenDartCorpCodeCache();
+  resetEdinetCodeCache();
 });
 
 describe("createTools", () => {
@@ -79,6 +132,19 @@ describe("createTools", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: ENV });
     expect(tools.map((tool) => tool.name)).toEqual([...TOOL_NAMES]);
     expect(TOOL_NAMES).toHaveLength(7);
+  });
+
+  test("company jurisdiction accepts US/GB/KR/JP and descriptions cover KR and JP", () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
+    for (const tool of tools.filter((candidate) => candidate.name !== "OwnershipChain")) {
+      const jurisdiction = tool.inputSchema.jurisdiction;
+      expect(jurisdiction?.safeParse("US").success).toBe(true);
+      expect(jurisdiction?.safeParse("GB").success).toBe(true);
+      expect(jurisdiction?.safeParse("KR").success).toBe(true);
+      expect(jurisdiction?.safeParse("JP").success).toBe(true);
+      expect(tool.description).toMatch(/KR|OpenDART/);
+      expect(tool.description).toMatch(/JP|EDINET/);
+    }
   });
 });
 
@@ -171,6 +237,9 @@ describe("CompanyResolve", () => {
     expect(text).toContain("Exact ticker");
     expect(text).toContain(APPLE_LEI);
     expect(text).toContain("GLEIF");
+    expect(fetchFn.requests.every(({ url }) =>
+      !url.includes("company-information.service.gov.uk")
+    )).toBe(true);
   });
 
   test("LEI input goes GLEIF-only", async () => {
@@ -201,6 +270,460 @@ describe("CompanyResolve", () => {
     } as never);
     expect(result.isError).toBeUndefined();
     expect(resultText(result)).toContain('Could not find a company matching "Zzyzx Widgets"');
+  });
+});
+
+describe("explicit GB routing", () => {
+  test("CompanyResolve uses Companies House only and shows the foreign identifier compactly", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/search/companies",
+        body: {
+          items: [
+            {
+              title: "EXAMPLE LIMITED",
+              company_number: "01234567",
+              company_status: "active",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "Example Limited",
+      jurisdiction: "GB",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Companies House");
+    expect(text).toContain("CH 01234567");
+    expect(text).toContain("Exact normalized legal-name match");
+    expect(fetchFn.requests).toHaveLength(1);
+    expect(fetchFn.requests[0]?.url).toContain("api.company-information.service.gov.uk");
+  });
+
+  test("an explicit GB number is never sent to SEC", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/company/01234567",
+        body: {
+          company_number: "01234567",
+          company_name: "EXAMPLE LIMITED",
+          company_status: "active",
+          jurisdiction: "england-wales",
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(fetchFn.requests).toHaveLength(1);
+    expect(fetchFn.requests[0]?.url).not.toContain("sec.gov");
+  });
+
+  test("CompanyFilings renders type/category/description and states it returns links, not text", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/filing-history",
+        body: {
+          items_per_page: 100,
+          start_index: 0,
+          total_count: 1,
+          items: [
+            {
+              category: "accounts",
+              type: "AA",
+              description: "accounts-with-accounts-type-small",
+              date: "2024-09-30",
+              transaction_id: "accounts-tx",
+              links: { document_metadata: "/document/accounts" },
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+      forms: ["accounts"],
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("| Filed | Type | Category | Description | Link |");
+    expect(text).toContain("Accounts with accounts type small");
+    expect(text).toContain("does not return document text");
+    expect(text).toContain("find-and-update.company-information.service.gov.uk");
+  });
+
+  test("latest quarterly is a successful plain unsupported explanation", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+      mode: "latest_quarterly",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("unsupported for GB");
+    expect(resultText(result)).toContain("not a normalized quarterly-report equivalent");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyInsiders omits address, nationality, and partial birth date", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/officers",
+        body: {
+          items_per_page: 100,
+          start_index: 0,
+          total_results: 1,
+          items: [
+            {
+              name: "DOE, Jane",
+              officer_role: "director",
+              occupation: "Engineer",
+              appointed_on: "2020-01-01",
+              address: { address_line_1: "Private output" },
+              nationality: "British",
+              date_of_birth: { month: 1, year: 1980 },
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("| Name | Role | Occupation | Appointed | Resigned | Status | Link |");
+    expect(text).toContain("DOE, Jane");
+    expect(text).toContain("Active");
+    expect(text).not.toContain("Private output");
+    expect(text).not.toContain("British");
+    expect(text).not.toContain("1980");
+  });
+
+  test("CompanyOwners renders PSC percentage bands, regime, and all required caveats", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "persons-with-significant-control?",
+        body: {
+          items_per_page: 100,
+          start_index: 0,
+          total_results: 1,
+          items: [
+            {
+              kind: "corporate-entity-person-with-significant-control",
+              name: "EXAMPLE PARENT LIMITED",
+              notified_on: "2020-01-01",
+              natures_of_control: ["ownership-of-shares-75-to-100-percent"],
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain(">75% up to 100%");
+    expect(text).toContain("UK PSC register (>25% shares/voting rights or other statutory control tests)");
+    expect(text).toContain("statutory control register");
+    expect(text).toContain("not guaranteed-complete");
+    expect(text).toContain("corporate entities and legal persons");
+    expect(text).toContain("ECCTA identity-verification transition");
+  });
+
+  test("GB financials and private raises return successful capability explanations", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const financials = await toolByName(tools, "CompanyFinancials").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    expect(financials.isError).toBeUndefined();
+    expect(resultText(financials)).toContain("does not parse them into normalized financial facts");
+    expect(resultText(financials)).toContain("CompanyFilings");
+    expect(resultText(financials)).toContain("accounts filter");
+
+    const raises = await toolByName(tools, "PrivateRaises").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    expect(raises.isError).toBeUndefined();
+    expect(resultText(raises)).toContain('unsupported for jurisdiction "GB"');
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit KR routing", () => {
+  test("CompanyResolve uses OpenDART only and shows the DART/stock identifiers", async () => {
+    const fetchFn = routedFetch([krCorpCodeRoute]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("OpenDART");
+    expect(text).toContain("DART 00126380");
+    expect(text).toContain("stock 005930");
+    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+  });
+
+  test("CompanyFilings renders DART reports and states it returns links, not text", async () => {
+    const fetchFn = routedFetch([
+      krCorpCodeRoute,
+      {
+        pattern: "list.json",
+        body: {
+          status: "000",
+          total_page: 1,
+          list: [
+            {
+              corp_code: "00126380",
+              report_nm: "사업보고서 (2022.12)",
+              rcept_no: "20230307000542",
+              flr_nm: "삼성전자",
+              rcept_dt: "20230307",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("| Filed | Report | Filer | Link |");
+    expect(text).toContain("사업보고서");
+    expect(text).toContain("does not return document text");
+    expect(text).toContain("dart.fss.or.kr");
+  });
+
+  test("CompanyInsiders parses executive ownership reports", async () => {
+    const fetchFn = routedFetch([
+      krCorpCodeRoute,
+      {
+        pattern: "elestock.json",
+        body: {
+          status: "000",
+          list: [
+            {
+              rcept_no: "20230512000777",
+              rcept_dt: "2023-05-12",
+              corp_code: "00126380",
+              repror: "홍길동",
+              isu_exctv_rgist_at: "등기임원",
+              isu_exctv_ofcps: "대표이사",
+              sp_stock_lmp_rate: "0.02",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("홍길동");
+    expect(text).toContain("대표이사");
+    expect(text).toContain("특정증권등 소유상황보고");
+  });
+
+  test("CompanyOwners renders 5% reports and the Korea threshold regime", async () => {
+    const fetchFn = routedFetch([
+      krCorpCodeRoute,
+      {
+        pattern: "majorstock.json",
+        body: {
+          status: "000",
+          list: [
+            {
+              rcept_no: "20230101000111",
+              rcept_dt: "20230101",
+              corp_code: "00126380",
+              repror: "국민연금공단",
+              report_tp: "변동",
+              stkrt: "8.51",
+              stkrt_irds: "1.02",
+              report_resn: "장내매수",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("국민연금공단");
+    expect(text).toContain("8.51%");
+    expect(text).toContain("Korea 5% rule");
+    expect(text).toContain("not UBO tracing");
+  });
+
+  test("CompanyFinancials shows CFS/OFS basis for Korean major accounts", async () => {
+    const fetchFn = routedFetch([
+      krCorpCodeRoute,
+      {
+        pattern: "fnlttSinglAcnt.json",
+        body: {
+          status: "000",
+          list: [
+            {
+              rcept_no: "20230307000542",
+              corp_code: "00126380",
+              fs_div: "CFS",
+              account_nm: "매출액",
+              thstrm_dt: "2022.01.01 ~ 2022.12.31",
+              thstrm_amount: "302,231,360",
+              currency: "KRW",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+      periods: 1,
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Revenue");
+    expect(text).toContain("consolidated");
+    expect(text).toContain("2022-12-31");
+  });
+
+  test("PrivateRaises returns a successful unsupported explanation for KR", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "PrivateRaises").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "KR"');
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit JP routing", () => {
+  test("CompanyResolve uses EDINET only and shows the EDINET/security identifiers", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "7203",
+      jurisdiction: "JP",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("EDINET");
+    expect(text).toContain("EDINET E02144");
+    expect(text).toContain("security 72030");
+    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+  });
+
+  test("CompanyFilings scans EDINET, shows docIDs, and warns about the date index", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute, jpDocumentsRoute]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+      start_date: "2026-08-05",
+      end_date: "2026-08-05",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("| Filed | Type | docID | Filer | Description |");
+    expect(text).toContain("S100ANNUAL");
+    expect(text).toContain("date-indexed");
+    expect(text).toContain("never returns document text");
+  });
+
+  test("CompanyFilings latest_annual returns the annual securities report docID", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute, jpDocumentsRoute]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+      mode: "latest_annual",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Latest annual report (EDINET)");
+    expect(text).toContain("S100ANNUAL");
+    expect(text).toContain("有価証券報告書");
+  });
+
+  test("CompanyInsiders returns an honest unsupported explanation for JP", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "JP"');
+    expect(resultText(result)).toContain("有価証券報告書");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyOwners explains the filer-indexed large-holding limitation for JP", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain('unsupported for jurisdiction "JP"');
+    expect(text).toContain("大量保有報告書");
+    expect(text).toContain("not evidence");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyFinancials directs JP callers to the EDINET annual report", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("有価証券報告書");
+    expect(resultText(result)).toContain("latest_annual");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("PrivateRaises returns a successful unsupported explanation for JP", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "PrivateRaises").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "JP"');
+    expect(fetchFn.requests).toHaveLength(0);
   });
 });
 
@@ -375,6 +898,19 @@ describe("handler robustness", () => {
     const tools = createTools({ fetchFn: throwing, env: ENV });
     for (const tool of tools) {
       const result = await tool.handler({ company: "AAPL" } as never);
+      expect(Array.isArray(result.content)).toBe(true);
+      expect(typeof resultText(result)).toBe("string");
+    }
+  });
+
+  test("explicit GB handlers never reject when the network stub throws", async () => {
+    const throwing = routedFetch([]);
+    const tools = createTools({ fetchFn: throwing, env: GB_ENV });
+    for (const tool of tools.filter((candidate) => candidate.name !== "OwnershipChain")) {
+      const result = await tool.handler({
+        company: "Example Limited",
+        jurisdiction: "GB",
+      } as never);
       expect(Array.isArray(result.content)).toBe(true);
       expect(typeof resultText(result)).toBe("string");
     }

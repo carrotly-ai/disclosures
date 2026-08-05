@@ -56,6 +56,17 @@ export async function getText(
   );
 }
 
+export async function getBinary(
+  url: string,
+  headers: Record<string, string> = {},
+  timeoutMs = 15_000,
+  fetchFn: FetchFn = fetch,
+): Promise<Uint8Array> {
+  return request(url, { method: "GET", headers }, timeoutMs, fetchFn).then(
+    async (response) => new Uint8Array(await response.arrayBuffer()),
+  );
+}
+
 export async function getOptionalJson(
   url: string,
   headers: Record<string, string> = {},

@@ -1,4 +1,19 @@
+import {
+  AdapterConfigurationError,
+  AdapterRateLimitError,
+} from "../core/errors.js";
 import { getJson, getText, HttpError } from "../core/http.js";
+import {
+  asIndexedStringArray,
+  asString,
+  asStringArray,
+  isRecord,
+  plainXmlText,
+  xmlBlocks,
+  xmlBoolean,
+  xmlValue,
+  xmlValues,
+} from "../core/parsing.js";
 import { secRateLimiter } from "../core/rateLimiter.js";
 import type {
   AdapterOptions,
@@ -27,19 +42,16 @@ export const NO_SEC_CONFIG_MESSAGE = SEC_NO_CONFIG_MESSAGE;
 export const SEC_RATE_LIMIT_MESSAGE =
   "SEC EDGAR rate limit reached (30 requests per minute). Please retry shortly.";
 
-export class SecConfigurationError extends Error {
+export class SecConfigurationError extends AdapterConfigurationError {
   constructor(message = SEC_NO_CONFIG_MESSAGE) {
-    super(message);
+    super(message, "SEC");
     this.name = "SecConfigurationError";
   }
 }
 
-export class SecRateLimitError extends Error {
-  readonly limit = 30;
-  readonly windowMs = 60_000;
-
+export class SecRateLimitError extends AdapterRateLimitError {
   constructor(message = SEC_RATE_LIMIT_MESSAGE) {
-    super(message);
+    super(message, 30, 60_000, "SEC");
     this.name = "SecRateLimitError";
   }
 }
@@ -130,81 +142,6 @@ export const SEC_FINANCIAL_CONCEPT_TAGS = Object.values(SEC_FINANCIAL_CONCEPTS)
   .flatMap((concept) => concept.tags);
 
 let tickerMapPromise: Promise<TickerCompany[]> | undefined;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function asStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    const text = asString(item);
-    return text ? [text] : [];
-  });
-}
-
-function asIndexedStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => typeof item === "string" ? item.trim() : "");
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function decodeXml(value: string): string {
-  const named: Record<string, string> = {
-    amp: "&",
-    apos: "'",
-    gt: ">",
-    lt: "<",
-    nbsp: " ",
-    quot: '"',
-  };
-  return value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
-    .replace(/&#x([0-9a-f]+);/gi, (_match, hex: string) =>
-      String.fromCodePoint(Number.parseInt(hex, 16)),
-    )
-    .replace(/&#(\d+);/g, (_match, decimal: string) =>
-      String.fromCodePoint(Number.parseInt(decimal, 10)),
-    )
-    .replace(/&([a-z]+);/gi, (match, name: string) => named[name.toLowerCase()] ?? match);
-}
-
-function plainText(value: string): string {
-  return decodeXml(value.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
-}
-
-function xmlBlocks(xml: string, tag: string): string[] {
-  const escaped = escapeRegExp(tag);
-  const pattern = new RegExp(
-    `<(?:[\\w.-]+:)?${escaped}\\b[^>]*>([\\s\\S]*?)<\\/(?:[\\w.-]+:)?${escaped}\\s*>`,
-    "gi",
-  );
-  return Array.from(xml.matchAll(pattern), (match) => match[1] ?? "");
-}
-
-function xmlValues(xml: string, tag: string): string[] {
-  return xmlBlocks(xml, tag).map(plainText).filter(Boolean);
-}
-
-function xmlValue(xml: string, ...tags: string[]): string | undefined {
-  for (const tag of tags) {
-    const value = xmlValues(xml, tag)[0];
-    if (value) return value;
-  }
-  return undefined;
-}
-
-function xmlBoolean(xml: string, ...tags: string[]): boolean {
-  const value = xmlValue(xml, ...tags)?.toLowerCase();
-  return value === "1" || value === "true" || value === "yes" || value === "y";
-}
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values.filter(Boolean))];
@@ -950,11 +887,11 @@ export const getFinancials = getSecFinancials;
 function formDValue(xml: string, tag: string): string | undefined {
   const block = xmlBlocks(xml, tag)[0];
   if (block === undefined) return undefined;
-  if (/\bIndefinite\b/i.test(plainText(block)) || xmlBoolean(block, "isIndefinite", "indefinite")) {
+  if (/\bIndefinite\b/i.test(plainXmlText(block)) || xmlBoolean(block, "isIndefinite", "indefinite")) {
     return "Indefinite";
   }
   if (xmlBoolean(block, "yetToOccur", "notApplicable", "isNotApplicable")) return "N/A";
-  return xmlValue(block, "value") ?? (plainText(block) || undefined);
+  return xmlValue(block, "value") ?? (plainXmlText(block) || undefined);
 }
 
 function relatedPersonNamePart(nameBlock: string, tag: string): string | undefined {
@@ -989,7 +926,7 @@ function parsePrivateRaiseDocument(
   const dateOfFirstSale = dateBlock
     ? xmlBoolean(dateBlock, "yetToOccur", "notApplicable")
       ? "N/A"
-      : xmlValue(dateBlock, "value") ?? (plainText(dateBlock) || undefined)
+      : xmlValue(dateBlock, "value") ?? (plainXmlText(dateBlock) || undefined)
     : undefined;
   const issuerName = xmlValue(xml, "entityName");
   const entityType = xmlValue(xml, "entityType");

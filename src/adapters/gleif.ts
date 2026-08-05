@@ -1,4 +1,16 @@
+import {
+  normalizeEntityName as normalizeSharedEntityName,
+  rankEntities as rankSharedEntities,
+} from "../core/entityMatching.js";
+import { AdapterRateLimitError } from "../core/errors.js";
 import { getJson, getOptionalJson } from "../core/http.js";
+import {
+  asArray,
+  asRecord,
+  asString,
+  nestedRecord,
+  type JsonRecord,
+} from "../core/parsing.js";
 import { gleifRateLimiter } from "../core/rateLimiter.js";
 import type {
   AdapterOptions,
@@ -13,12 +25,9 @@ export const GLEIF_BASE_URL = "https://api.gleif.org/api/v1";
 export const GLEIF_RATE_LIMIT_MESSAGE =
   "GLEIF rate limit exceeded (60 requests per minute). Please wait before retrying.";
 
-export class GleifRateLimitError extends Error {
-  readonly limit = 60;
-  readonly windowMs = 60_000;
-
+export class GleifRateLimitError extends AdapterRateLimitError {
   constructor(message = GLEIF_RATE_LIMIT_MESSAGE) {
-    super(message);
+    super(message, 60, 60_000, "GLEIF");
     this.name = "GleifRateLimitError";
   }
 }
@@ -26,7 +35,7 @@ export class GleifRateLimitError extends Error {
 const LEI_PATTERN = /^[A-Z0-9]{18}[0-9]{2}$/;
 const REQUEST_HEADERS = { Accept: "application/vnd.api+json" };
 
-type JsonObject = Record<string, unknown>;
+type JsonObject = JsonRecord;
 type RelationshipMap = Record<string, Record<string, string>>;
 
 export interface ParsedLeiRecord {
@@ -53,31 +62,12 @@ interface ResolvedRecord {
   goldenCopyPublishedAt?: string;
 }
 
-function asObject(value: unknown): JsonObject | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return undefined;
-  }
-  return value as JsonObject;
-}
-
-function asArray(value: unknown): unknown[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
-}
-
-function nestedObject(value: unknown, key: string): JsonObject | undefined {
-  return asObject(asObject(value)?.[key]);
-}
-
 function unwrapSingleResource(value: unknown): JsonObject {
-  const object = asObject(value);
+  const object = asRecord(value);
   if (!object) throw new Error("Invalid GLEIF response: expected an object");
   const data = object.data;
   if (data !== undefined) {
-    const resource = asObject(data);
+    const resource = asRecord(data);
     if (!resource) {
       throw new Error("Invalid GLEIF response: expected a single resource");
     }
@@ -87,17 +77,17 @@ function unwrapSingleResource(value: unknown): JsonObject {
 }
 
 function parseRelationships(value: unknown): RelationshipMap {
-  const relationships = asObject(value);
+  const relationships = asRecord(value);
   const result: RelationshipMap = {};
   if (!relationships) return result;
 
   for (const [name, relationshipValue] of Object.entries(relationships)) {
-    const links = asObject(asObject(relationshipValue)?.links);
+    const links = asRecord(asRecord(relationshipValue)?.links);
     if (!links) continue;
 
     const parsedLinks: Record<string, string> = {};
     for (const [linkName, linkValue] of Object.entries(links)) {
-      const link = stringValue(linkValue);
+      const link = asString(linkValue);
       if (link) parsedLinks[linkName] = link;
     }
     if (Object.keys(parsedLinks).length > 0) result[name] = parsedLinks;
@@ -109,7 +99,7 @@ function parseRelationships(value: unknown): RelationshipMap {
 function parseNames(value: unknown): string[] {
   const names: string[] = [];
   for (const item of asArray(value)) {
-    const name = stringValue(asObject(item)?.name);
+    const name = asString(asRecord(item)?.name);
     if (name) names.push(name);
   }
   return names;
@@ -130,16 +120,16 @@ function uniqueAliases(legalName: string, aliases: string[]): string[] {
 }
 
 function parseGoldenCopyPublishedAt(value: unknown): string | undefined {
-  return stringValue(nestedObject(nestedObject(value, "meta"), "goldenCopy")?.publishDate);
+  return asString(nestedRecord(nestedRecord(value, "meta"), "goldenCopy")?.publishDate);
 }
 
 function documentNextUrl(value: unknown): string | undefined {
-  return stringValue(nestedObject(value, "links")?.next);
+  return asString(nestedRecord(value, "links")?.next);
 }
 
 function sourceUrlForResource(resource: JsonObject, lei: string): string {
   return (
-    stringValue(asObject(resource.links)?.self) ??
+    asString(asRecord(resource.links)?.self) ??
     `${GLEIF_BASE_URL}/lei-records/${encodeURIComponent(lei)}`
   );
 }
@@ -150,25 +140,16 @@ export function isLei(value: string): boolean {
 
 export const isLikelyLei = isLei;
 
-export function normalizeEntityName(value: string): string {
-  return value
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/&/g, " and ")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim()
-    .replace(/\s+/g, " ");
-}
+export const normalizeEntityName = normalizeSharedEntityName;
 
 export function parseLeiRecordResource(value: unknown): ParsedLeiRecord {
   const resource = unwrapSingleResource(value);
-  const attributes = asObject(resource.attributes);
-  const entityAttributes = asObject(attributes?.entity);
+  const attributes = asRecord(resource.attributes);
+  const entityAttributes = asRecord(attributes?.entity);
   const lei =
-    stringValue(attributes?.lei) ??
-    stringValue(resource.id);
-  const legalName = stringValue(asObject(entityAttributes?.legalName)?.name);
+    asString(attributes?.lei) ??
+    asString(resource.id);
+  const legalName = asString(asRecord(entityAttributes?.legalName)?.name);
 
   if (!lei || !legalName) {
     throw new Error("Invalid GLEIF LEI record: missing LEI or legal name");
@@ -179,9 +160,9 @@ export function parseLeiRecordResource(value: unknown): ParsedLeiRecord {
     ...parseNames(entityAttributes?.transliteratedOtherNames),
   ]);
   const status =
-    stringValue(entityAttributes?.status) ??
-    stringValue(asObject(attributes?.registration)?.status);
-  const jurisdiction = stringValue(entityAttributes?.jurisdiction);
+    asString(entityAttributes?.status) ??
+    asString(asRecord(attributes?.registration)?.status);
+  const jurisdiction = asString(entityAttributes?.jurisdiction);
 
   const entity: Entity = {
     legalName,
@@ -193,7 +174,7 @@ export function parseLeiRecordResource(value: unknown): ParsedLeiRecord {
     ...(jurisdiction ? { jurisdiction } : {}),
   };
 
-  const type = stringValue(resource.type);
+  const type = asString(resource.type);
   return {
     entity,
     relationships: parseRelationships(resource.relationships),
@@ -206,7 +187,7 @@ export function parseLeiRecord(value: unknown): Entity {
 }
 
 export function parseLeiCollection(value: unknown): ParsedLeiCollection {
-  const document = asObject(value);
+  const document = asRecord(value);
   if (!document || !Array.isArray(document.data)) {
     throw new Error("Invalid GLEIF response: expected a collection");
   }
@@ -225,14 +206,14 @@ export function parseLeiCollection(value: unknown): ParsedLeiCollection {
 
 export function parseReportingException(value: unknown): ParsedReportingException {
   const resource = unwrapSingleResource(value);
-  const attributes = asObject(resource.attributes);
+  const attributes = asRecord(resource.attributes);
   if (!attributes) {
     throw new Error("Invalid GLEIF reporting exception: missing attributes");
   }
 
-  const category = stringValue(attributes.category);
-  const reason = stringValue(attributes.reason);
-  const reference = stringValue(attributes.reference);
+  const category = asString(attributes.category);
+  const reason = asString(attributes.reason);
+  const reference = asString(attributes.reference);
   return {
     ...(category ? { category } : {}),
     ...(reason ? { reason } : {}),
@@ -240,66 +221,10 @@ export function parseReportingException(value: unknown): ParsedReportingExceptio
   };
 }
 
-function matchScore(query: string, entity: Entity): { score: number; reason: string } {
-  const normalizedQuery = normalizeEntityName(query);
-  const legalName = normalizeEntityName(entity.legalName);
-  const aliases = (entity.aliases ?? []).map(normalizeEntityName);
-
-  if (legalName === normalizedQuery) {
-    return { score: 10_000, reason: "Exact normalized legal-name match" };
-  }
-  if (aliases.includes(normalizedQuery)) {
-    return { score: 9_500, reason: "Exact normalized alias match" };
-  }
-  if (legalName.startsWith(normalizedQuery)) {
-    return { score: 8_000, reason: "Legal name starts with query" };
-  }
-  if (aliases.some((alias) => alias.startsWith(normalizedQuery))) {
-    return { score: 7_500, reason: "Alias starts with query" };
-  }
-  if (legalName.includes(normalizedQuery)) {
-    return { score: 7_000, reason: "Legal name contains query" };
-  }
-  if (aliases.some((alias) => alias.includes(normalizedQuery))) {
-    return { score: 6_500, reason: "Alias contains query" };
-  }
-
-  const queryTokens = new Set(normalizedQuery.split(" ").filter(Boolean));
-  const candidateTokens = new Set(
-    [legalName, ...aliases].flatMap((name) => name.split(" ").filter(Boolean)),
-  );
-  let overlap = 0;
-  for (const token of queryTokens) {
-    if (candidateTokens.has(token)) overlap += 1;
-  }
-  const denominator = Math.max(queryTokens.size, candidateTokens.size, 1);
-  return {
-    score: Math.round((overlap / denominator) * 1_000),
-    reason: overlap > 0 ? "Best normalized token match" : "GLEIF legal-name search result",
-  };
-}
-
 export function rankEntities(query: string, entities: Entity[]): Entity[] {
-  return entities
-    .map((entity, index) => {
-      const match = matchScore(query, entity);
-      const lengthDistance = Math.abs(
-        normalizeEntityName(entity.legalName).length - normalizeEntityName(query).length,
-      );
-      return {
-        entity: { ...entity, matchReason: match.reason },
-        index,
-        score: match.score,
-        lengthDistance,
-      };
-    })
-    .sort(
-      (left, right) =>
-        right.score - left.score ||
-        left.lengthDistance - right.lengthDistance ||
-        left.index - right.index,
-    )
-    .map(({ entity }) => entity);
+  return rankSharedEntities(query, entities, {
+    fallbackReason: "GLEIF legal-name search result",
+  });
 }
 
 export function rankLeiRecords(query: string, records: ParsedLeiRecord[]): ParsedLeiRecord[] {
@@ -485,7 +410,7 @@ async function loadParent(
     const payload = await requestOptionalJson(url, options);
     if (payload === null) continue;
 
-    const type = stringValue(unwrapSingleResource(payload).type);
+    const type = asString(unwrapSingleResource(payload).type);
     if (type === "reporting-exceptions") {
       return ownershipParent(kind, url, undefined, parseReportingException(payload));
     }

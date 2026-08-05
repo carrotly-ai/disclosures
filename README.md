@@ -2,12 +2,15 @@
 
 Free, open-source corporate-disclosure research through official sources. `disclosures` is both a TypeScript library and a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server.
 
-Version 0.1 ships two adapters behind jurisdiction-agnostic tools:
+Version 0.1 ships five data sources behind seven jurisdiction-agnostic tools:
 
-- **US SEC EDGAR** — filings, annual/quarterly report metadata, Section 16 insiders, Schedule 13D/13G filers, annual XBRL financials, and Form D private raises.
-- **GLEIF LEI** — entity resolution and reported direct/ultimate accounting-consolidation relationships.
+- **US SEC EDGAR** (default) — filings, annual/quarterly report metadata, Section 16 insiders, Schedule 13D/13G filers, annual XBRL financials, and Form D private raises.
+- **GLEIF LEI** (global) — entity resolution and reported direct/ultimate accounting-consolidation relationships.
+- **UK Companies House** (`jurisdiction: "GB"`) — company resolution, filing history, the officer register, and persons-with-significant-control records.
+- **South Korea DART / OpenDART** (`jurisdiction: "KR"`) — company resolution, periodic reports, executive/major-shareholder ownership, 5% mass-holding reports, and annual major-account financials.
+- **Japan EDINET** (`jurisdiction: "JP"`) — company resolution and date-indexed disclosure documents (annual securities reports, quarterly/semi-annual reports, and more).
 
-The tool names and schemas are designed to stay stable as more jurisdiction adapters are added.
+The seven tool names and schemas stay stable as jurisdictions are added; each new source dispatches behind the same intents rather than adding jurisdiction-specific tool names. Every tool states its data source, its coverage limits, and that absence of a filing is not proof an event never happened.
 
 ## Tools
 
@@ -21,7 +24,9 @@ The tool names and schemas are designed to stay stable as more jurisdiction adap
 | `OwnershipChain` | GLEIF direct and ultimate accounting-consolidating parents, reporting exceptions, and known direct children. |
 | `PrivateRaises` | US Form D exempt offerings, amounts, investor counts, and named executives/directors/promoters. US-only in v1. |
 
-All `company` inputs accept a name, ticker, CIK, or LEI. SEC-backed calls optionally accept `jurisdiction: "US"`; `OwnershipChain` is global.
+All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK or LEI (US), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), or an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP). Tools accept `jurisdiction: "US" | "GB" | "KR" | "JP"` (default `US`); `OwnershipChain` is global via GLEIF.
+
+Where a jurisdiction lacks a normalized equivalent to a US intent — for example EDINET has no Section 16-style insider feed, and neither Companies House nor DART nor EDINET exposes a Form D-equivalent private-raise dataset — the tool returns an explicit unsupported-jurisdiction explanation rather than an empty or fabricated result.
 
 ## SEC User-Agent configuration
 
@@ -31,7 +36,19 @@ SEC EDGAR requires a descriptive User-Agent containing contact information. Set:
 export DISCLOSURES_USER_AGENT="Your Organization your-email@example.com"
 ```
 
-`SEC_EDGAR_USER_AGENT` is also accepted for compatibility. `DISCLOSURES_USER_AGENT` takes precedence. No API key is required.
+`SEC_EDGAR_USER_AGENT` is also accepted for compatibility. `DISCLOSURES_USER_AGENT` takes precedence. No API key is required for SEC EDGAR or GLEIF.
+
+## Non-US jurisdiction credentials
+
+Each non-US source uses its own free API key. Provide only the keys for the jurisdictions you query; US/GLEIF calls keep working without them.
+
+| Jurisdiction | Environment variable | Where to get it | Notes |
+|---|---|---|---|
+| GB — Companies House | `COMPANIES_HOUSE_API_KEY` | [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/) | Required for all GB operations. |
+| KR — OpenDART | `OPENDART_API_KEY` | [opendart.fss.or.kr](https://opendart.fss.or.kr/) | Required for all KR operations. |
+| JP — EDINET | `EDINET_API_KEY` | [EDINET API (v2) registration](https://api.edinet-fsa.go.jp/) | Required only for document search; JP `CompanyResolve` works without it because the EDINET code list is public. |
+
+Missing credentials produce a readable, flagged error naming the variable to set — never a silent empty result.
 
 ## Quickstart
 
@@ -134,13 +151,15 @@ The server reserves stdout for newline-delimited JSON-RPC. Contributor diagnosti
 
 ## Roadmap
 
-| Jurisdiction | Planned adapter |
-|---|---|
-| United Kingdom | Companies House |
-| South Korea | OpenDART |
-| Japan | EDINET |
+The first three non-US jurisdictions now ship behind the existing tools:
 
-New adapters will dispatch behind the existing intent tools rather than adding jurisdiction-specific tool names.
+| Jurisdiction | Adapter | Status |
+|---|---|---|
+| United Kingdom | Companies House | Shipped |
+| South Korea | DART / OpenDART | Shipped |
+| Japan | EDINET | Shipped |
+
+Further jurisdictions and normalized financials/insider parsing for GB/JP will dispatch behind the same seven intent tools rather than adding jurisdiction-specific tool names.
 
 ## License
 
