@@ -25,19 +25,23 @@ const TICKERS = {
 const tickersRoute: Route = { pattern: "company_tickers.json", body: TICKERS };
 
 /**
- * True when a request URL targets an SEC host. Parses the host rather than
- * substring-matching the whole URL, so a query string containing "sec.gov"
- * can never masquerade as an SEC call (and CodeQL is satisfied it is a real
- * host check).
+ * True when a request URL's host is, or is a subdomain of, `suffix`. Parses
+ * the host rather than substring-matching the whole URL, so a query string
+ * containing the domain can never masquerade as a call to it (and CodeQL is
+ * satisfied it is a real host check).
  */
-function hitsSec(url: string): boolean {
+function hitsHost(url: string, suffix: string): boolean {
   let host: string;
   try {
     host = new URL(url).hostname;
   } catch {
     return false;
   }
-  return host === "sec.gov" || host.endsWith(".sec.gov");
+  return host === suffix || host.endsWith(`.${suffix}`);
+}
+
+function hitsSec(url: string): boolean {
+  return hitsHost(url, "sec.gov");
 }
 
 function toolByName(tools: ToolDefinition[], name: string): ToolDefinition {
@@ -312,9 +316,9 @@ describe("CompanyResolve", () => {
     expect(text).toContain("Exact ticker");
     expect(text).toContain(APPLE_LEI);
     expect(text).toContain("GLEIF");
-    expect(fetchFn.requests.every(({ url }) =>
-      !url.includes("company-information.service.gov.uk")
-    )).toBe(true);
+    expect(fetchFn.requests.some(({ url }) =>
+      hitsHost(url, "company-information.service.gov.uk")
+    )).toBe(false);
   });
 
   test("LEI input goes GLEIF-only", async () => {
