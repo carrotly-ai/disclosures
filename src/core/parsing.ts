@@ -63,7 +63,9 @@ function codePoint(value: string, radix: number): string | undefined {
 
 export function decodeXmlEntities(value: string): string {
   return value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+    // Unrolled CDATA body (any non-`]`, or a `]` not starting the `]]>` close)
+    // so it stays linear on untrusted input rather than backtracking a lazy `*?`.
+    .replace(/<!\[CDATA\[((?:[^\]]|\](?!\]>))*)\]\]>/g, "$1")
     .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) =>
       codePoint(hex, 16) ?? match
     )
@@ -76,7 +78,9 @@ export function decodeXmlEntities(value: string): string {
 }
 
 export function plainXmlText(value: string): string {
-  return decodeXmlEntities(value.replace(/<[^>]*>/g, " "))
+  // `[^<>]` (not just `[^>]`) keeps tag-stripping linear: a stray `<` cannot
+  // make the class re-scan the remainder from every prior `<`.
+  return decodeXmlEntities(value.replace(/<[^<>]*>/g, " "))
     .replace(/\s+/g, " ")
     .trim();
 }
