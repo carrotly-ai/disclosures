@@ -2,13 +2,15 @@
 
 Free, open-source corporate-disclosure research through official sources. `disclosures` is both a TypeScript library and a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server.
 
-Version 0.1 ships five data sources behind seven jurisdiction-agnostic tools:
+Version 0.1 ships seven data sources behind seven jurisdiction-agnostic tools:
 
 - **US SEC EDGAR** (default) — filings, annual/quarterly report metadata, Section 16 insiders, Schedule 13D/13G filers, annual XBRL financials, and Form D private raises.
 - **GLEIF LEI** (global) — entity resolution and reported direct/ultimate accounting-consolidation relationships.
 - **UK Companies House** (`jurisdiction: "GB"`) — company resolution, filing history, the officer register, and persons-with-significant-control records.
 - **South Korea DART / OpenDART** (`jurisdiction: "KR"`) — company resolution, periodic reports, executive/major-shareholder ownership, 5% mass-holding reports, and annual major-account financials.
 - **Japan EDINET** (`jurisdiction: "JP"`) — company resolution and date-indexed disclosure documents (annual securities reports, quarterly/semi-annual reports, and more).
+- **China cninfo** (`jurisdiction: "CN"`) — keyless company resolution across the Shanghai and Shenzhen exchanges (and HKEX mirror) plus a date-filterable announcement feed with direct PDF links and latest annual/quarterly periodic-report lookup.
+- **India BSE** (`jurisdiction: "IN"`) — keyless company resolution and a corporate-announcement feed with attachment PDF links ("BSE-lite"; shareholding data is not surfaced).
 
 The seven tool names and schemas stay stable as jurisdictions are added; each new source dispatches behind the same intents rather than adding jurisdiction-specific tool names. Every tool states its data source, its coverage limits, and that absence of a filing is not proof an event never happened.
 
@@ -24,9 +26,9 @@ The seven tool names and schemas stay stable as jurisdictions are added; each ne
 | `OwnershipChain` | GLEIF direct and ultimate accounting-consolidating parents, reporting exceptions, and known direct children. |
 | `PrivateRaises` | US Form D exempt offerings, amounts, investor counts, and named executives/directors/promoters. US-only in v1. |
 
-All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK or LEI (US), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), or an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP). Tools accept `jurisdiction: "US" | "GB" | "KR" | "JP"` (default `US`); `OwnershipChain` is global via GLEIF.
+All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK or LEI (US), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP), a 6-digit A-share or 5-digit HK stock code (CN), or a 6-digit BSE scrip code (IN). Tools accept `jurisdiction: "US" | "GB" | "KR" | "JP" | "CN" | "IN"` (default `US`); `OwnershipChain` is global via GLEIF.
 
-Where a jurisdiction lacks a normalized equivalent to a US intent — for example EDINET has no Section 16-style insider feed, and neither Companies House nor DART nor EDINET exposes a Form D-equivalent private-raise dataset — the tool returns an explicit unsupported-jurisdiction explanation rather than an empty or fabricated result.
+Where a jurisdiction lacks a normalized equivalent to a US intent — for example EDINET has no Section 16-style insider feed, neither Companies House nor DART nor EDINET exposes a Form D-equivalent private-raise dataset, and Chinese/Indian ownership and financial detail lives inside report PDFs this release does not parse — the tool returns an explicit unsupported-jurisdiction explanation rather than an empty or fabricated result. For CN and IN, `CompanyFilings` returns real announcement PDF links; the deeper insider/owner/financial intents are the ones that degrade honestly.
 
 ## SEC User-Agent configuration
 
@@ -47,6 +49,8 @@ Each non-US source uses its own free API key. Provide only the keys for the juri
 | GB — Companies House | `COMPANIES_HOUSE_API_KEY` | [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/) | Required for all GB operations. |
 | KR — OpenDART | `OPENDART_API_KEY` | [opendart.fss.or.kr](https://opendart.fss.or.kr/) | Required for all KR operations. |
 | JP — EDINET | `EDINET_API_KEY` | [EDINET API (v2) registration](https://api.edinet-fsa.go.jp/) | Required only for document search; JP `CompanyResolve` works without it because the EDINET code list is public. |
+| CN — cninfo | _(none)_ | — | Keyless. Resolution and the announcement feed use public POST endpoints. |
+| IN — BSE | _(none)_ | — | Keyless. BSE's `api.bseindia.com` host is anti-bot protected; if the default fetch is throttled, inject a browser-backed `fetchFn` via `AdapterOptions`. |
 
 Missing credentials produce a readable, flagged error naming the variable to set — never a silent empty result.
 
@@ -151,15 +155,17 @@ The server reserves stdout for newline-delimited JSON-RPC. Contributor diagnosti
 
 ## Roadmap
 
-The first three non-US jurisdictions now ship behind the existing tools:
+Five non-US jurisdictions now ship behind the existing tools:
 
 | Jurisdiction | Adapter | Status |
 |---|---|---|
 | United Kingdom | Companies House | Shipped |
 | South Korea | DART / OpenDART | Shipped |
 | Japan | EDINET | Shipped |
+| China | cninfo (SSE/SZSE) | Shipped — resolution + filings |
+| India | BSE (BSE-lite) | Shipped — resolution + filings |
 
-Further jurisdictions and normalized financials/insider parsing for GB/JP will dispatch behind the same seven intent tools rather than adding jurisdiction-specific tool names.
+Deeper normalized data for the newer sources (GB/JP insider and financial parsing, and CN/IN ownership and financials that currently live inside report PDFs) will dispatch behind the same seven intent tools rather than adding jurisdiction-specific tool names.
 
 ## License
 
