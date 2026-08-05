@@ -61,11 +61,39 @@ function codePoint(value: string, radix: number): string | undefined {
   return String.fromCodePoint(parsed);
 }
 
+/**
+ * Unwrap `<![CDATA[ ... ]]>` sections by manual index scan rather than a `/g`
+ * regex. A regex with the `<![CDATA[` prefix and a required `]]>` tail is
+ * super-linear on untrusted input (each prefix occurrence re-scans the tail
+ * when the close is absent); `indexOf` walking is provably O(n). An
+ * unterminated section is left verbatim, matching the old lazy-regex behaviour.
+ */
+function unwrapCdata(value: string): string {
+  const OPEN = "<![CDATA[";
+  const CLOSE = "]]>";
+  if (!value.includes(OPEN)) return value;
+  let result = "";
+  let cursor = 0;
+  for (;;) {
+    const open = value.indexOf(OPEN, cursor);
+    if (open === -1) {
+      result += value.slice(cursor);
+      return result;
+    }
+    result += value.slice(cursor, open);
+    const contentStart = open + OPEN.length;
+    const close = value.indexOf(CLOSE, contentStart);
+    if (close === -1) {
+      result += value.slice(open);
+      return result;
+    }
+    result += value.slice(contentStart, close);
+    cursor = close + CLOSE.length;
+  }
+}
+
 export function decodeXmlEntities(value: string): string {
-  return value
-    // Unrolled CDATA body (any non-`]`, or a `]` not starting the `]]>` close)
-    // so it stays linear on untrusted input rather than backtracking a lazy `*?`.
-    .replace(/<!\[CDATA\[((?:[^\]]|\](?!\]>))*)\]\]>/g, "$1")
+  return unwrapCdata(value)
     .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) =>
       codePoint(hex, 16) ?? match
     )
