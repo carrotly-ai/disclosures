@@ -1,6 +1,6 @@
 {
   "name": "disclosures",
-  "version": "0.1.0",
+  "version": "0.1.0-rc.2",
   "description": "Corporate-disclosure research via SEC EDGAR and GLEIF, as a TypeScript library and MCP server.",
   "type": "module",
   "license": "Apache-2.0",
