@@ -125,10 +125,21 @@ export const openDartRateLimiter = new MultiWindowRateLimiter([
 // cross-call abuse still trips it.
 export const edinetRateLimiter = new SlidingWindowRateLimiter(600, 60_000);
 
+// cninfo (SSE/SZSE) has no published limit. A single filings query may page
+// through several announcement requests, so keep the window generous enough
+// that one bounded scan never self-trips while cross-call abuse still does.
+export const cninfoRateLimiter = new SlidingWindowRateLimiter(300, 60_000);
+
+// BSE India's api host is aggressively anti-bot; keep our own budget modest so
+// we never contribute to the throttling that plain-fetch callers already hit.
+export const bseRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
   companiesHouseRateLimiter.reset();
   openDartRateLimiter.reset();
   edinetRateLimiter.reset();
+  cninfoRateLimiter.reset();
+  bseRateLimiter.reset();
 }

@@ -24,6 +24,22 @@ const TICKERS = {
 
 const tickersRoute: Route = { pattern: "company_tickers.json", body: TICKERS };
 
+/**
+ * True when a request URL targets an SEC host. Parses the host rather than
+ * substring-matching the whole URL, so a query string containing "sec.gov"
+ * can never masquerade as an SEC call (and CodeQL is satisfied it is a real
+ * host check).
+ */
+function hitsSec(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return host === "sec.gov" || host.endsWith(".sec.gov");
+}
+
 function toolByName(tools: ToolDefinition[], name: string): ToolDefinition {
   const tool = tools.find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`Missing tool: ${name}`);
@@ -120,6 +136,62 @@ const JP_DAY = [
 
 const jpDocumentsRoute: Route = { pattern: "documents.json", body: edinetDay(JP_DAY) };
 
+// CN (cninfo) fixtures: keyless topSearch array + one announcement page.
+const cnSearchRoute: Route = {
+  pattern: "topSearch/query",
+  body: [
+    {
+      code: "600519",
+      zwjc: "贵州茅台",
+      pinyin: "GZMT",
+      category: "A股",
+      orgId: "gssh0600519",
+      delisted: false,
+    },
+  ],
+};
+const cnAnnouncementRoute: Route = {
+  pattern: "hisAnnouncement/query",
+  body: {
+    totalAnnouncement: 1,
+    announcements: [
+      {
+        secCode: "600519",
+        secName: "贵州茅台",
+        orgId: "gssh0600519",
+        announcementId: "1220000001",
+        announcementTitle: "2025年年度报告",
+        announcementTime: 1_744_000_000_000,
+        adjunctUrl: "finalpage/2026-04-17/1220000001.PDF",
+        announcementTypeName: "年度报告",
+      },
+    ],
+  },
+};
+
+// IN (BSE) fixtures: PeerSmartSearch HTML + one AnnGetData row.
+const inSearchRoute: Route = {
+  pattern: "PeerSmartSearch",
+  body:
+    `<li onclick="liclick('500325','Reliance Industries Ltd')">` +
+    `Reliance Industries Ltd <span>INE002A01018</span></li>`,
+};
+const inAnnouncementRoute: Route = {
+  pattern: "AnnGetData",
+  body: {
+    Table: [
+      {
+        NEWSID: "abc123",
+        SCRIP_CD: "500325",
+        HEADLINE: "Board Meeting Outcome",
+        CATEGORYNAME: "Result",
+        NEWS_DT: "2026-04-21T18:30:00",
+        ATTACHMENTNAME: "abc123.pdf",
+      },
+    ],
+  },
+};
+
 beforeEach(() => {
   resetRateLimiters();
   resetSecTickerCache();
@@ -134,7 +206,7 @@ describe("createTools", () => {
     expect(TOOL_NAMES).toHaveLength(7);
   });
 
-  test("company jurisdiction accepts US/GB/KR/JP and descriptions cover KR and JP", () => {
+  test("company jurisdiction accepts US/GB/KR/JP/CN/IN and descriptions cover KR and JP", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     for (const tool of tools.filter((candidate) => candidate.name !== "OwnershipChain")) {
       const jurisdiction = tool.inputSchema.jurisdiction;
@@ -142,6 +214,9 @@ describe("createTools", () => {
       expect(jurisdiction?.safeParse("GB").success).toBe(true);
       expect(jurisdiction?.safeParse("KR").success).toBe(true);
       expect(jurisdiction?.safeParse("JP").success).toBe(true);
+      expect(jurisdiction?.safeParse("CN").success).toBe(true);
+      expect(jurisdiction?.safeParse("IN").success).toBe(true);
+      expect(jurisdiction?.safeParse("ZZ").success).toBe(false);
       expect(tool.description).toMatch(/KR|OpenDART/);
       expect(tool.description).toMatch(/JP|EDINET/);
     }
@@ -479,7 +554,7 @@ describe("explicit KR routing", () => {
     expect(text).toContain("OpenDART");
     expect(text).toContain("DART 00126380");
     expect(text).toContain("stock 005930");
-    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
   });
 
   test("CompanyFilings renders DART reports and states it returns links, not text", async () => {
@@ -640,7 +715,7 @@ describe("explicit JP routing", () => {
     expect(text).toContain("EDINET");
     expect(text).toContain("EDINET E02144");
     expect(text).toContain("security 72030");
-    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
   });
 
   test("CompanyFilings scans EDINET, shows docIDs, and warns about the date index", async () => {
@@ -723,6 +798,125 @@ describe("explicit JP routing", () => {
     } as never);
     expect(result.isError).toBeUndefined();
     expect(resultText(result)).toContain('unsupported for jurisdiction "JP"');
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit CN routing", () => {
+  test("CompanyResolve uses cninfo only and shows the cninfo/stock identifiers", async () => {
+    const fetchFn = routedFetch([cnSearchRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("cninfo");
+    expect(text).toContain("cninfo gssh0600519");
+    expect(text).toContain("贵州茅台");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyFilings search renders cninfo PDF links with the honesty caveat", async () => {
+    const fetchFn = routedFetch([cnSearchRoute, cnAnnouncementRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("cninfo announcements");
+    expect(text).toContain("2025年年度报告");
+    expect(text).toContain("static.cninfo.com.cn/finalpage/2026-04-17/1220000001.PDF");
+    expect(text).toContain("never returns document text");
+  });
+
+  test("CompanyFilings latest_annual returns the cninfo annual report metadata", async () => {
+    const fetchFn = routedFetch([cnSearchRoute, cnAnnouncementRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "600519",
+      jurisdiction: "CN",
+      mode: "latest_annual",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Latest annual report (cninfo)");
+    expect(text).toContain("1220000001");
+  });
+
+  test("CompanyInsiders, CompanyOwners, CompanyFinancials, and PrivateRaises explain CN limits", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    for (const name of ["CompanyInsiders", "CompanyOwners", "CompanyFinancials", "PrivateRaises"]) {
+      const result = await toolByName(tools, name).handler({
+        company: "600519",
+        jurisdiction: "CN",
+      } as never);
+      expect(result.isError).toBeUndefined();
+      expect(resultText(result)).toContain('unsupported for jurisdiction "CN"');
+    }
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit IN routing", () => {
+  test("CompanyResolve uses BSE only, shows the scrip/ISIN, and names the anti-bot caveat", async () => {
+    const fetchFn = routedFetch([inSearchRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "500325",
+      jurisdiction: "IN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("BSE India");
+    expect(text).toContain("BSE 500325");
+    expect(text).toContain("ISIN INE002A01018");
+    expect(text).toContain("anti-bot");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyFilings search renders BSE attachment links with the anti-bot caveat", async () => {
+    const fetchFn = routedFetch([inSearchRoute, inAnnouncementRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "500325",
+      jurisdiction: "IN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("BSE announcements");
+    expect(text).toContain("Board Meeting Outcome");
+    expect(text).toContain("AttachLive/abc123.pdf");
+    expect(text).toContain("anti-bot");
+  });
+
+  test("CompanyFilings latest_annual is unsupported and points to search mode", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "500325",
+      jurisdiction: "IN",
+      mode: "latest_annual",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("unsupported for IN");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyInsiders, CompanyOwners, CompanyFinancials, and PrivateRaises explain IN limits", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    for (const name of ["CompanyInsiders", "CompanyOwners", "CompanyFinancials", "PrivateRaises"]) {
+      const result = await toolByName(tools, name).handler({
+        company: "500325",
+        jurisdiction: "IN",
+      } as never);
+      expect(result.isError).toBeUndefined();
+      expect(resultText(result)).toContain('unsupported for jurisdiction "IN"');
+    }
     expect(fetchFn.requests).toHaveLength(0);
   });
 });

@@ -67,6 +67,37 @@ export async function getBinary(
   );
 }
 
+/**
+ * POST a form-url-encoded body and parse the JSON response. Some Asian
+ * disclosure portals (e.g. cninfo) only expose POST form endpoints, so this
+ * mirrors the GET helpers with the same timeout/error contract.
+ */
+export async function postForm(
+  url: string,
+  form: Record<string, string | number | undefined>,
+  headers: Record<string, string> = {},
+  timeoutMs = 15_000,
+  fetchFn: FetchFn = fetch,
+): Promise<unknown> {
+  const body = new URLSearchParams();
+  for (const [key, value] of Object.entries(form)) {
+    if (value !== undefined && value !== "") body.set(key, String(value));
+  }
+  return request(
+    url,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+        ...headers,
+      },
+      body: body.toString(),
+    },
+    timeoutMs,
+    fetchFn,
+  ).then((response) => response.json());
+}
+
 export async function getOptionalJson(
   url: string,
   headers: Record<string, string> = {},

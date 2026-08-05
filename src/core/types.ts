@@ -8,6 +8,8 @@ export const JURISDICTIONS = {
   GB: "GB",
   KR: "KR",
   JP: "JP",
+  CN: "CN",
+  IN: "IN",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -19,6 +21,8 @@ export const DATA_SOURCES = {
   COMPANIES_HOUSE: "Companies House",
   OPEN_DART: "OpenDART",
   EDINET: "EDINET",
+  CNINFO: "cninfo",
+  BSE: "BSE India",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -38,6 +42,12 @@ export interface IdentifierSet {
   edinetCode?: string;
   secCode?: string;
   jcn?: string;
+  /** cninfo organisation id, e.g. gssh0600519 (SSE) / gssz0000001 (SZSE). */
+  orgId?: string;
+  /** BSE (India) numeric scrip code, e.g. 500325. */
+  scripCode?: string;
+  /** ISIN, e.g. INE002A01018 (used by the India/BSE adapter). */
+  isin?: string;
   jurisdiction?: string;
 }
 

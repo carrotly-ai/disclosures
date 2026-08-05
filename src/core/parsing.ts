@@ -61,9 +61,39 @@ function codePoint(value: string, radix: number): string | undefined {
   return String.fromCodePoint(parsed);
 }
 
+/**
+ * Unwrap `<![CDATA[ ... ]]>` sections by manual index scan rather than a `/g`
+ * regex. A regex with the `<![CDATA[` prefix and a required `]]>` tail is
+ * super-linear on untrusted input (each prefix occurrence re-scans the tail
+ * when the close is absent); `indexOf` walking is provably O(n). An
+ * unterminated section is left verbatim, matching the old lazy-regex behaviour.
+ */
+function unwrapCdata(value: string): string {
+  const OPEN = "<![CDATA[";
+  const CLOSE = "]]>";
+  if (!value.includes(OPEN)) return value;
+  let result = "";
+  let cursor = 0;
+  for (;;) {
+    const open = value.indexOf(OPEN, cursor);
+    if (open === -1) {
+      result += value.slice(cursor);
+      return result;
+    }
+    result += value.slice(cursor, open);
+    const contentStart = open + OPEN.length;
+    const close = value.indexOf(CLOSE, contentStart);
+    if (close === -1) {
+      result += value.slice(open);
+      return result;
+    }
+    result += value.slice(contentStart, close);
+    cursor = close + CLOSE.length;
+  }
+}
+
 export function decodeXmlEntities(value: string): string {
-  return value
-    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1")
+  return unwrapCdata(value)
     .replace(/&#x([0-9a-f]+);/gi, (match, hex: string) =>
       codePoint(hex, 16) ?? match
     )
@@ -76,7 +106,9 @@ export function decodeXmlEntities(value: string): string {
 }
 
 export function plainXmlText(value: string): string {
-  return decodeXmlEntities(value.replace(/<[^>]*>/g, " "))
+  // `[^<>]` (not just `[^>]`) keeps tag-stripping linear: a stray `<` cannot
+  // make the class re-scan the remainder from every prior `<`.
+  return decodeXmlEntities(value.replace(/<[^<>]*>/g, " "))
     .replace(/\s+/g, " ")
     .trim();
 }

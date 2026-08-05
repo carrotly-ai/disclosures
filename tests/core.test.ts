@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { HttpError, getJson, getOptionalJson, getText } from "../src/core/http.js";
 import { markdownTable } from "../src/core/markdown.js";
 import { SlidingWindowRateLimiter } from "../src/core/rateLimiter.js";
+import { decodeXmlEntities, plainXmlText } from "../src/core/parsing.js";
 import { defineTool } from "../src/core/toolDefs.js";
 import { z } from "zod";
 import { routedFetch } from "./helpers/routedFetch.js";
@@ -35,6 +36,29 @@ describe("SlidingWindowRateLimiter", () => {
     expect(limiter.tryAcquire()).toBe(false);
     now = 1000;
     expect(limiter.tryAcquire()).toBe(true);
+  });
+});
+
+describe("XML parsing", () => {
+  test("decodes CDATA, numeric, and named entities in valid markup", () => {
+    expect(decodeXmlEntities("<![CDATA[Tom & Jerry]]>")).toBe("Tom & Jerry");
+    expect(decodeXmlEntities("A &amp; B &#38; C &#x26; D")).toBe("A & B & C & D");
+    expect(decodeXmlEntities("&lt;tag&gt; &quot;q&quot; &apos;a&apos;")).toBe(
+      "<tag> \"q\" 'a'",
+    );
+  });
+
+  test("strips tags and collapses whitespace", () => {
+    expect(plainXmlText("<b>Hello</b>\n  <i>world</i>")).toBe("Hello world");
+  });
+
+  test("stays linear on pathological CDATA and stray-`<` input", () => {
+    // Prefixes that would trigger O(n^2) backtracking with a lazy `[\s\S]*?`
+    // CDATA body or a `[^>]*` tag class. The linear regexes must finish fast.
+    const start = performance.now();
+    decodeXmlEntities("<![CDATA[" + "a".repeat(200_000));
+    plainXmlText("<".repeat(200_000));
+    expect(performance.now() - start).toBeLessThan(1000);
   });
 });
 

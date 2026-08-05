@@ -20,6 +20,8 @@ import { getBinary } from "../src/core/http.js";
 import { formatNumber } from "../src/core/markdown.js";
 import {
   MultiWindowRateLimiter,
+  bseRateLimiter,
+  cninfoRateLimiter,
   companiesHouseRateLimiter,
   edinetRateLimiter,
   openDartRateLimiter,
@@ -135,7 +137,7 @@ beforeEach(() => {
 
 describe("jurisdiction-neutral foundations", () => {
   test("exports the planned jurisdictions and data sources", () => {
-    expect(Object.values(JURISDICTIONS)).toEqual(["US", "GB", "KR", "JP"]);
+    expect(Object.values(JURISDICTIONS)).toEqual(["US", "GB", "KR", "JP", "CN", "IN"]);
     expect(Object.values(DATA_SOURCES)).toEqual([
       "SEC",
       "GLEIF",
@@ -143,6 +145,8 @@ describe("jurisdiction-neutral foundations", () => {
       "Companies House",
       "OpenDART",
       "EDINET",
+      "cninfo",
+      "BSE India",
     ]);
   });
 
@@ -187,7 +191,7 @@ describe("shared adapter errors", () => {
 });
 
 describe("multi-jurisdiction rate limiters", () => {
-  test("defines CH, OpenDART, and EDINET limits", () => {
+  test("defines CH, OpenDART, EDINET, cninfo, and BSE limits", () => {
     expect([companiesHouseRateLimiter.limit, companiesHouseRateLimiter.windowMs]).toEqual([
       600,
       300_000,
@@ -199,6 +203,8 @@ describe("multi-jurisdiction rate limiters", () => {
     // EDINET's window must exceed EDINET_MAX_SCAN_DAYS (365) so a single
     // date-indexed scan never self-trips; cross-call abuse still trips it.
     expect([edinetRateLimiter.limit, edinetRateLimiter.windowMs]).toEqual([600, 60_000]);
+    expect([cninfoRateLimiter.limit, cninfoRateLimiter.windowMs]).toEqual([300, 60_000]);
+    expect([bseRateLimiter.limit, bseRateLimiter.windowMs]).toEqual([120, 60_000]);
   });
 
   test("multi-window acquisition is atomic and reset clears every window", () => {
@@ -224,10 +230,14 @@ describe("multi-jurisdiction rate limiters", () => {
     expect(companiesHouseRateLimiter.tryAcquire()).toBe(true);
     expect(openDartRateLimiter.tryAcquire()).toBe(true);
     expect(edinetRateLimiter.tryAcquire()).toBe(true);
+    expect(cninfoRateLimiter.tryAcquire()).toBe(true);
+    expect(bseRateLimiter.tryAcquire()).toBe(true);
     resetRateLimiters();
     expect(companiesHouseRateLimiter.size).toBe(0);
     expect(openDartRateLimiter.sizes).toEqual([0, 0]);
     expect(edinetRateLimiter.size).toBe(0);
+    expect(cninfoRateLimiter.size).toBe(0);
+    expect(bseRateLimiter.size).toBe(0);
   });
 });
 
