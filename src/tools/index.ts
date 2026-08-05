@@ -38,6 +38,12 @@ import {
   searchOpenDartCompanies,
   searchOpenDartFilings,
 } from "../adapters/openDart.js";
+import {
+  EDINET_5_PERCENT_THRESHOLD_REGIME,
+  getLatestEdinetReport,
+  searchEdinetCompanies,
+  searchEdinetFilings,
+} from "../adapters/edinet.js";
 import { companyInput, failureResult, notFoundResult } from "./shared.js";
 
 const CONSOLIDATION_CAVEAT =
@@ -96,15 +102,16 @@ const OPEN_DART_OWNER_CAVEAT =
   "Korean 5% mass-holding reports (대량보유상황보고) filed via DART. " +
   "Filing-based disclosure only — not a share register, and not UBO tracing.";
 
-function plannedJurisdiction(
-  jurisdiction: "JP",
-  toolName: string,
-): ReturnType<typeof textResult> {
-  return textResult(
-    `${toolName} does not yet support jurisdiction \"${jurisdiction}\". ` +
-      `The EDINET adapter is planned for a later release.`,
-  );
-}
+const EDINET_DATE_INDEX_CAVEAT =
+  "EDINET's API is date-indexed (one calendar day per request) with no " +
+  "server-side company filter, so this scans a bounded recent window " +
+  "(default ~90 days, capped at ~1 year). Narrow with start_date/end_date, " +
+  "and note a filing older than the window will not appear.";
+
+const EDINET_NO_DEEP_LINK_CAVEAT =
+  "EDINET provides no stable public per-document link; open the docID shown " +
+  "above in the EDINET viewer, or fetch it via the authenticated API v2 " +
+  "documents endpoint. This tool never returns document text.";
 
 function describeParent(parent: OwnershipParent | undefined): string {
   if (!parent) return "No parent information reported";
@@ -128,11 +135,23 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "explicit GB uses Companies House company numbers and legal-name search. " +
       "Returns compact identifier sets and match reasons without silently " +
       "merging ambiguous entities. Explicit KR uses OpenDART corp/stock codes " +
-      "and legal-name search. JP/EDINET is planned.",
+      "and legal-name search; explicit JP uses the EDINET code list (EDINET " +
+      "code, securities code, 法人番号, and legal name).",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "JP") {
-        return plannedJurisdiction(jurisdiction, "CompanyResolve");
+        try {
+          const results = await searchEdinetCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, "Try an EDINET code (E + 5 digits), a 4/5-digit securities code, a 13-digit corporate number, or legal name.");
+          }
+          return textResult(joinSections(
+            `# Company resolution (EDINET): ${company}`,
+            entityRows(results.slice(0, 10)),
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "GB") {
         try {
@@ -209,7 +228,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "accounts filing, or DART 사업보고서; latest quarterly returns the latest " +
       "SEC 10-Q or DART 분기·반기보고서, and is unsupported for GB because " +
       "Companies House has no equivalent normalized quarterly report mode. " +
-      "Returns public filing/document links, never document text. JP/EDINET is planned.",
+      "Explicit JP scans EDINET's date-indexed document index (docTypeCode " +
+      "120=annual, 140/160=quarterly/semi-annual). Returns public filing/" +
+      "document links, never document text.",
     {
       ...companyInput,
       forms: z
@@ -234,10 +255,67 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .describe("\"search\" (default) or latest annual/quarterly report metadata"),
     },
     async ({ company, jurisdiction, forms, start_date, end_date, limit, mode }) => {
-      if (jurisdiction === "JP") {
-        return plannedJurisdiction(jurisdiction, "CompanyFilings");
-      }
       try {
+        if (jurisdiction === "JP") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            const report = await getLatestEdinetReport(
+              company,
+              mode === "latest_annual" ? "annual" : "quarterly",
+              options,
+            );
+            if (!report) {
+              return textResult(joinSections(
+                `No ${mode === "latest_annual" ? "annual (有価証券報告書)" : "quarterly/semi-annual (四半期・半期報告書)"} ` +
+                  `report found on EDINET for "${company}" within the scan window.`,
+                `_${EDINET_DATE_INDEX_CAVEAT}_`,
+              ));
+            }
+            return textResult(joinSections(
+              `# Latest ${report.reportKind} report (EDINET): ${company}`,
+              markdownTable(
+                ["Report", "Filed", "docID", "Filer", "Description"],
+                [[report.form, report.filedDate, report.accession, report.category, report.description]],
+              ),
+              markdownTable(
+                ["Section", "Description", "Link"],
+                report.sectionLinks.map((section) => [
+                  section.section,
+                  section.description,
+                  link("open", section.url),
+                ]),
+              ),
+              `_${EDINET_NO_DEEP_LINK_CAVEAT}_`,
+            ));
+          }
+          const filings = await searchEdinetFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No EDINET filings found for "${company}" in the scanned window.`,
+              `_${EDINET_DATE_INDEX_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# EDINET filings: ${company}`,
+            markdownTable(
+              ["Filed", "Type", "docID", "Filer", "Description"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.accession,
+                filing.category,
+                filing.description,
+              ]),
+            ),
+            `_${EDINET_DATE_INDEX_CAVEAT}_`,
+            `_${EDINET_NO_DEEP_LINK_CAVEAT}_`,
+          ));
+        }
         if (jurisdiction === "KR") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
             const report = await getLatestOpenDartReport(
@@ -419,11 +497,19 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "major-shareholder ownership reports from DART (explicit KR). GB output " +
       "includes role, occupation, appointment/resignation dates, and active/" +
       "former status, but does not surface correspondence addresses, " +
-      "nationality, or partial birth dates. JP/EDINET is planned.",
+      "nationality, or partial birth dates. Explicit JP is unsupported: EDINET " +
+      "has no Section 16-style insider-dealing feed; officer data lives inside " +
+      "the annual securities report (有価証券報告書).",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "JP") {
-        return plannedJurisdiction(jurisdiction, "CompanyInsiders");
+        return textResult(
+          "CompanyInsiders is unsupported for jurisdiction \"JP\". EDINET does not " +
+            "expose a Section 16-equivalent per-insider dealing dataset; director and " +
+            "officer details are disclosed inside the annual securities report " +
+            "(有価証券報告書), which this release does not parse. Use CompanyFilings " +
+            'with jurisdiction "JP" and mode "latest_annual" to locate that report.',
+        );
       }
       try {
         if (jurisdiction === "KR") {
@@ -508,13 +594,22 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "control, percentage bands where derivable, ceased entries, and PSC " +
       "statements when no ordinary PSC record exists. Each row states its " +
       "threshold/control regime. No source is guaranteed-complete UBO/KYC " +
-      "evidence. JP/EDINET is planned.",
+      "evidence. Explicit JP is unsupported: EDINET large-holding reports are " +
+      "indexed by the filer (the holder), not the subject issuer.",
     {
       ...companyInput,
     },
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "JP") {
-        return plannedJurisdiction(jurisdiction, "CompanyOwners");
+        return textResult(joinSections(
+          "CompanyOwners is unsupported for jurisdiction \"JP\". Japan's large-holding " +
+            "reports (大量保有報告書) are filed under the " +
+            `${EDINET_5_PERCENT_THRESHOLD_REGIME}, but EDINET's date-indexed metadata ` +
+            "identifies the filer (the large holder), not the subject company, so a " +
+            "reliable \"who owns >5% of company X\" query would require document-level " +
+            "parsing this release does not perform.",
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
       }
       try {
         if (jurisdiction === "KR") {
@@ -616,7 +711,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "consolidated and separate bases where both are filed. Explicit GB " +
       "returns an explanation directing callers to Companies House accounts " +
       "filings because this release does not parse normalized UK financial " +
-      "facts. JP/EDINET is planned.",
+      "facts. Explicit JP likewise directs callers to the EDINET annual " +
+      "securities report because this release does not parse its XBRL.",
     {
       ...companyInput,
       concepts: z
@@ -628,7 +724,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     },
     async ({ company, jurisdiction, concepts, periods }) => {
       if (jurisdiction === "JP") {
-        return plannedJurisdiction(jurisdiction, "CompanyFinancials");
+        return textResult(
+          "EDINET publishes annual securities reports (有価証券報告書) with XBRL " +
+            "financial data, but this release does not parse them into normalized " +
+            'financial facts. Use CompanyFilings with jurisdiction "JP" and mode ' +
+            '"latest_annual" to locate the report and its docID.',
+        );
       }
       if (jurisdiction === "KR") {
         try {
@@ -779,17 +880,18 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "PrivateRaises",
     "US Form D (Regulation D) exempt-offering filings for a company: " +
       "amounts offered and sold, investor counts, industry, date of first sale, " +
-      "and named related persons. This capability is US-only; explicit GB and " +
-      "KR return an unsupported-jurisdiction explanation because neither " +
-      "Companies House nor DART provides an equivalent private-raise filing " +
-      "dataset. JP/EDINET is planned.",
+      "and named related persons. This capability is US-only; explicit GB, KR, " +
+      "and JP return an unsupported-jurisdiction explanation because none of " +
+      "Companies House, DART, or EDINET provides an equivalent private-raise " +
+      "filing dataset.",
     companyInput,
     async ({ company, jurisdiction }) => {
-      if (jurisdiction === "JP") {
-        return plannedJurisdiction(jurisdiction, "PrivateRaises");
-      }
-      if (jurisdiction === "GB" || jurisdiction === "KR") {
-        const registry = jurisdiction === "GB" ? "Companies House" : "OpenDART/DART";
+      if (jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP") {
+        const registry = jurisdiction === "GB"
+          ? "Companies House"
+          : jurisdiction === "KR"
+            ? "OpenDART/DART"
+            : "EDINET";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +

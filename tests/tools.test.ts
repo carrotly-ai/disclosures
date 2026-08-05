@@ -7,6 +7,8 @@ import { resetRateLimiters, secRateLimiter } from "../src/core/rateLimiter.js";
 import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { makeStoredZip } from "./helpers/zipFixture.js";
+import { edinetCodeListRoute, edinetDay } from "./helpers/edinetFixture.js";
+import { resetEdinetCodeCache } from "../src/adapters/edinet.js";
 
 const ENV: Env = { DISCLOSURES_USER_AGENT: "Test test@example.com" };
 const GB_ENV: Env = {
@@ -93,10 +95,36 @@ const krCorpCodeRoute: Route = {
   body: makeStoredZip("CORPCODE.xml", KR_CORP_CODE_XML),
 };
 
+const JP_ENV: Env = { ...ENV, EDINET_API_KEY: "test-edinet-key" };
+
+const JP_DAY = [
+  {
+    docID: "S100ANNUAL",
+    edinetCode: "E02144",
+    secCode: "72030",
+    filerName: "トヨタ自動車株式会社",
+    docTypeCode: "120",
+    docDescription: "有価証券報告書－第120期",
+    submitDateTime: "2026-06-25 09:00",
+  },
+  {
+    docID: "S100QTR",
+    edinetCode: "E02144",
+    secCode: "72030",
+    filerName: "トヨタ自動車株式会社",
+    docTypeCode: "140",
+    docDescription: "四半期報告書",
+    submitDateTime: "2026-08-05 10:00",
+  },
+];
+
+const jpDocumentsRoute: Route = { pattern: "documents.json", body: edinetDay(JP_DAY) };
+
 beforeEach(() => {
   resetRateLimiters();
   resetSecTickerCache();
   resetOpenDartCorpCodeCache();
+  resetEdinetCodeCache();
 });
 
 describe("createTools", () => {
@@ -436,20 +464,6 @@ describe("explicit GB routing", () => {
     expect(resultText(raises)).toContain('unsupported for jurisdiction "GB"');
     expect(fetchFn.requests).toHaveLength(0);
   });
-
-  test("JP returns planned-adapter messages without network requests", async () => {
-    const fetchFn = routedFetch([]);
-    const tools = createTools({ fetchFn, env: GB_ENV });
-    for (const name of TOOL_NAMES.filter((toolName) => toolName !== "OwnershipChain")) {
-      const result = await toolByName(tools, name).handler({
-        company: "Example",
-        jurisdiction: "JP",
-      } as never);
-      expect(result.isError).toBeUndefined();
-      expect(resultText(result)).toContain("planned for a later release");
-    }
-    expect(fetchFn.requests).toHaveLength(0);
-  });
 });
 
 describe("explicit KR routing", () => {
@@ -609,6 +623,106 @@ describe("explicit KR routing", () => {
     } as never);
     expect(result.isError).toBeUndefined();
     expect(resultText(result)).toContain('unsupported for jurisdiction "KR"');
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit JP routing", () => {
+  test("CompanyResolve uses EDINET only and shows the EDINET/security identifiers", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "7203",
+      jurisdiction: "JP",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("EDINET");
+    expect(text).toContain("EDINET E02144");
+    expect(text).toContain("security 72030");
+    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+  });
+
+  test("CompanyFilings scans EDINET, shows docIDs, and warns about the date index", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute, jpDocumentsRoute]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+      start_date: "2026-08-05",
+      end_date: "2026-08-05",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("| Filed | Type | docID | Filer | Description |");
+    expect(text).toContain("S100ANNUAL");
+    expect(text).toContain("date-indexed");
+    expect(text).toContain("never returns document text");
+  });
+
+  test("CompanyFilings latest_annual returns the annual securities report docID", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute, jpDocumentsRoute]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+      mode: "latest_annual",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Latest annual report (EDINET)");
+    expect(text).toContain("S100ANNUAL");
+    expect(text).toContain("有価証券報告書");
+  });
+
+  test("CompanyInsiders returns an honest unsupported explanation for JP", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "JP"');
+    expect(resultText(result)).toContain("有価証券報告書");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyOwners explains the filer-indexed large-holding limitation for JP", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain('unsupported for jurisdiction "JP"');
+    expect(text).toContain("大量保有報告書");
+    expect(text).toContain("not evidence");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyFinancials directs JP callers to the EDINET annual report", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("有価証券報告書");
+    expect(resultText(result)).toContain("latest_annual");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("PrivateRaises returns a successful unsupported explanation for JP", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "PrivateRaises").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "JP"');
     expect(fetchFn.requests).toHaveLength(0);
   });
 });

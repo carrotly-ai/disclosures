@@ -44,6 +44,7 @@ export * as secEdgar from "./adapters/secEdgar.js";
 export * as gleif from "./adapters/gleif.js";
 export * as companiesHouse from "./adapters/companiesHouse.js";
 export * as openDart from "./adapters/openDart.js";
+export * as edinet from "./adapters/edinet.js";
 
 function isMainModule(): boolean {
   const entry = process.argv[1];

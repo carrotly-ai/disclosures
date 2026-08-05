@@ -187,7 +187,7 @@ describe("shared adapter errors", () => {
 });
 
 describe("multi-jurisdiction rate limiters", () => {
-  test("defines CH, OpenDART, and conservative EDINET limits", () => {
+  test("defines CH, OpenDART, and EDINET limits", () => {
     expect([companiesHouseRateLimiter.limit, companiesHouseRateLimiter.windowMs]).toEqual([
       600,
       300_000,
@@ -196,7 +196,9 @@ describe("multi-jurisdiction rate limiters", () => {
       { limit: 1_000, windowMs: 60_000 },
       { limit: 20_000, windowMs: 86_400_000 },
     ]);
-    expect([edinetRateLimiter.limit, edinetRateLimiter.windowMs]).toEqual([1, 1_000]);
+    // EDINET's window must exceed EDINET_MAX_SCAN_DAYS (365) so a single
+    // date-indexed scan never self-trips; cross-call abuse still trips it.
+    expect([edinetRateLimiter.limit, edinetRateLimiter.windowMs]).toEqual([600, 60_000]);
   });
 
   test("multi-window acquisition is atomic and reset clears every window", () => {

@@ -5,9 +5,13 @@ import { crc32 } from "../../src/core/zip.js";
  * reader in src/core/zip.ts accepts it. Used to fake the OpenDART corpCode.xml
  * ZIP-of-XML download in offline tests.
  */
-export function makeStoredZip(name: string, content: string): Uint8Array {
+export function makeStoredZip(
+  name: string,
+  content: string | Uint8Array,
+): Uint8Array {
   const nameBytes = new TextEncoder().encode(name);
-  const data = new TextEncoder().encode(content);
+  const data =
+    typeof content === "string" ? new TextEncoder().encode(content) : content;
   const crc = crc32(data);
   const central = 46 + nameBytes.length;
   const total = 30 + nameBytes.length + data.length + central + 22;

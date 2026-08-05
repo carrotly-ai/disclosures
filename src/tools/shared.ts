@@ -13,14 +13,15 @@ export const companyInput = {
     .describe(
       "Company name or jurisdiction-specific identifier: ticker/CIK (US), " +
         "Companies House company number (GB), OpenDART 8-digit corp code or " +
-        "6-digit stock code (KR), or 20-character LEI",
+        "6-digit stock code (KR), EDINET code (E + 5 digits), 4/5-digit " +
+        "securities code, or 13-digit corporate number (JP), or 20-character LEI",
     ),
   jurisdiction: z
     .enum(["US", "GB", "KR", "JP"])
     .optional()
     .describe(
-      "Jurisdiction to search: US (SEC EDGAR), GB (Companies House), or " +
-        "KR (OpenDART/DART). JP (EDINET) is planned. Omit for the existing US default.",
+      "Jurisdiction to search: US (SEC EDGAR), GB (Companies House), " +
+        "KR (OpenDART/DART), or JP (EDINET). Omit for the existing US default.",
     ),
 };
 
@@ -47,7 +48,7 @@ export function failureResult(company: string, error: unknown): ToolResult {
   }
   const message = error instanceof Error ? error.message : String(error);
   if (
-    /not found|no sec company found|no gleif entity|no companies house company found|no opendart company found/i
+    /not found|no sec company found|no gleif entity|no companies house company found|no opendart company found|no edinet company found/i
       .test(message)
   ) {
     return notFoundResult(company);

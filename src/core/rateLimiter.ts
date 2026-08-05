@@ -119,9 +119,11 @@ export const openDartRateLimiter = new MultiWindowRateLimiter([
   { limit: 20_000, windowMs: 24 * 60 * 60_000 },
 ]);
 
-// Conservative EDINET pacing: avoid bursts while allowing bounded
-// date-indexed requests.
-export const edinetRateLimiter = new SlidingWindowRateLimiter(1, 1_000);
+// EDINET's documents.json is date-indexed (one calendar day per request), so a
+// single filings scan legitimately issues up to a year of day requests. The
+// window must exceed EDINET_MAX_SCAN_DAYS so one bounded scan never self-trips;
+// cross-call abuse still trips it.
+export const edinetRateLimiter = new SlidingWindowRateLimiter(600, 60_000);
 
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
