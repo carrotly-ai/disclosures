@@ -24,6 +24,22 @@ const TICKERS = {
 
 const tickersRoute: Route = { pattern: "company_tickers.json", body: TICKERS };
 
+/**
+ * True when a request URL targets an SEC host. Parses the host rather than
+ * substring-matching the whole URL, so a query string containing "sec.gov"
+ * can never masquerade as an SEC call (and CodeQL is satisfied it is a real
+ * host check).
+ */
+function hitsSec(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return host === "sec.gov" || host.endsWith(".sec.gov");
+}
+
 function toolByName(tools: ToolDefinition[], name: string): ToolDefinition {
   const tool = tools.find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`Missing tool: ${name}`);
@@ -538,7 +554,7 @@ describe("explicit KR routing", () => {
     expect(text).toContain("OpenDART");
     expect(text).toContain("DART 00126380");
     expect(text).toContain("stock 005930");
-    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
   });
 
   test("CompanyFilings renders DART reports and states it returns links, not text", async () => {
@@ -699,7 +715,7 @@ describe("explicit JP routing", () => {
     expect(text).toContain("EDINET");
     expect(text).toContain("EDINET E02144");
     expect(text).toContain("security 72030");
-    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
   });
 
   test("CompanyFilings scans EDINET, shows docIDs, and warns about the date index", async () => {
@@ -799,7 +815,7 @@ describe("explicit CN routing", () => {
     expect(text).toContain("cninfo");
     expect(text).toContain("cninfo gssh0600519");
     expect(text).toContain("贵州茅台");
-    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
   });
 
   test("CompanyFilings search renders cninfo PDF links with the honesty caveat", async () => {
@@ -859,7 +875,7 @@ describe("explicit IN routing", () => {
     expect(text).toContain("BSE 500325");
     expect(text).toContain("ISIN INE002A01018");
     expect(text).toContain("anti-bot");
-    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
   });
 
   test("CompanyFilings search renders BSE attachment links with the anti-bot caveat", async () => {
