@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { TOOL_NAMES, createTools } from "../src/tools/index.js";
 import type { ToolDefinition } from "../src/core/toolDefs.js";
 import { resetSecTickerCache } from "../src/adapters/secEdgar.js";
+import { resetOpenDartCorpCodeCache } from "../src/adapters/openDart.js";
 import { resetRateLimiters, secRateLimiter } from "../src/core/rateLimiter.js";
 import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
+import { makeStoredZip } from "./helpers/zipFixture.js";
 
 const ENV: Env = { DISCLOSURES_USER_AGENT: "Test test@example.com" };
 const GB_ENV: Env = {
@@ -73,9 +75,28 @@ function submissionsFixture(
   };
 }
 
+const KR_ENV: Env = { ...ENV, OPENDART_API_KEY: "test-opendart-key" };
+
+const KR_CORP_CODE_XML = `<?xml version="1.0" encoding="UTF-8"?>
+<result>
+  <list>
+    <corp_code>00126380</corp_code>
+    <corp_name>삼성전자</corp_name>
+    <corp_eng_name>SAMSUNG ELECTRONICS CO,.LTD</corp_eng_name>
+    <stock_code>005930</stock_code>
+    <modify_date>20230101</modify_date>
+  </list>
+</result>`;
+
+const krCorpCodeRoute: Route = {
+  pattern: "corpCode.xml",
+  body: makeStoredZip("CORPCODE.xml", KR_CORP_CODE_XML),
+};
+
 beforeEach(() => {
   resetRateLimiters();
   resetSecTickerCache();
+  resetOpenDartCorpCodeCache();
 });
 
 describe("createTools", () => {
@@ -85,7 +106,7 @@ describe("createTools", () => {
     expect(TOOL_NAMES).toHaveLength(7);
   });
 
-  test("company jurisdiction accepts US/GB/KR/JP while descriptions mark KR/JP planned", () => {
+  test("company jurisdiction accepts US/GB/KR/JP and descriptions cover KR and JP", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     for (const tool of tools.filter((candidate) => candidate.name !== "OwnershipChain")) {
       const jurisdiction = tool.inputSchema.jurisdiction;
@@ -416,19 +437,178 @@ describe("explicit GB routing", () => {
     expect(fetchFn.requests).toHaveLength(0);
   });
 
-  test("KR and JP return planned-adapter messages without network requests", async () => {
+  test("JP returns planned-adapter messages without network requests", async () => {
     const fetchFn = routedFetch([]);
     const tools = createTools({ fetchFn, env: GB_ENV });
-    for (const jurisdiction of ["KR", "JP"] as const) {
-      for (const name of TOOL_NAMES.filter((toolName) => toolName !== "OwnershipChain")) {
-        const result = await toolByName(tools, name).handler({
-          company: "Example",
-          jurisdiction,
-        } as never);
-        expect(result.isError).toBeUndefined();
-        expect(resultText(result)).toContain("planned for a later release");
-      }
+    for (const name of TOOL_NAMES.filter((toolName) => toolName !== "OwnershipChain")) {
+      const result = await toolByName(tools, name).handler({
+        company: "Example",
+        jurisdiction: "JP",
+      } as never);
+      expect(result.isError).toBeUndefined();
+      expect(resultText(result)).toContain("planned for a later release");
     }
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit KR routing", () => {
+  test("CompanyResolve uses OpenDART only and shows the DART/stock identifiers", async () => {
+    const fetchFn = routedFetch([krCorpCodeRoute]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("OpenDART");
+    expect(text).toContain("DART 00126380");
+    expect(text).toContain("stock 005930");
+    expect(fetchFn.requests.every(({ url }) => !url.includes("sec.gov"))).toBe(true);
+  });
+
+  test("CompanyFilings renders DART reports and states it returns links, not text", async () => {
+    const fetchFn = routedFetch([
+      krCorpCodeRoute,
+      {
+        pattern: "list.json",
+        body: {
+          status: "000",
+          total_page: 1,
+          list: [
+            {
+              corp_code: "00126380",
+              report_nm: "사업보고서 (2022.12)",
+              rcept_no: "20230307000542",
+              flr_nm: "삼성전자",
+              rcept_dt: "20230307",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("| Filed | Report | Filer | Link |");
+    expect(text).toContain("사업보고서");
+    expect(text).toContain("does not return document text");
+    expect(text).toContain("dart.fss.or.kr");
+  });
+
+  test("CompanyInsiders parses executive ownership reports", async () => {
+    const fetchFn = routedFetch([
+      krCorpCodeRoute,
+      {
+        pattern: "elestock.json",
+        body: {
+          status: "000",
+          list: [
+            {
+              rcept_no: "20230512000777",
+              rcept_dt: "2023-05-12",
+              corp_code: "00126380",
+              repror: "홍길동",
+              isu_exctv_rgist_at: "등기임원",
+              isu_exctv_ofcps: "대표이사",
+              sp_stock_lmp_rate: "0.02",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("홍길동");
+    expect(text).toContain("대표이사");
+    expect(text).toContain("특정증권등 소유상황보고");
+  });
+
+  test("CompanyOwners renders 5% reports and the Korea threshold regime", async () => {
+    const fetchFn = routedFetch([
+      krCorpCodeRoute,
+      {
+        pattern: "majorstock.json",
+        body: {
+          status: "000",
+          list: [
+            {
+              rcept_no: "20230101000111",
+              rcept_dt: "20230101",
+              corp_code: "00126380",
+              repror: "국민연금공단",
+              report_tp: "변동",
+              stkrt: "8.51",
+              stkrt_irds: "1.02",
+              report_resn: "장내매수",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("국민연금공단");
+    expect(text).toContain("8.51%");
+    expect(text).toContain("Korea 5% rule");
+    expect(text).toContain("not UBO tracing");
+  });
+
+  test("CompanyFinancials shows CFS/OFS basis for Korean major accounts", async () => {
+    const fetchFn = routedFetch([
+      krCorpCodeRoute,
+      {
+        pattern: "fnlttSinglAcnt.json",
+        body: {
+          status: "000",
+          list: [
+            {
+              rcept_no: "20230307000542",
+              corp_code: "00126380",
+              fs_div: "CFS",
+              account_nm: "매출액",
+              thstrm_dt: "2022.01.01 ~ 2022.12.31",
+              thstrm_amount: "302,231,360",
+              currency: "KRW",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+      periods: 1,
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Revenue");
+    expect(text).toContain("consolidated");
+    expect(text).toContain("2022-12-31");
+  });
+
+  test("PrivateRaises returns a successful unsupported explanation for KR", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "PrivateRaises").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "KR"');
     expect(fetchFn.requests).toHaveLength(0);
   });
 });

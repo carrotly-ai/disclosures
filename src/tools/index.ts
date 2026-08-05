@@ -28,6 +28,16 @@ import {
   searchCompaniesHouseCompanies,
   searchCompaniesHouseFilings,
 } from "../adapters/companiesHouse.js";
+import {
+  getLatestOpenDartReport,
+  getOpenDartFinancials,
+  getOpenDartInsiders,
+  getOpenDartOwners,
+  OPEN_DART_5_PERCENT_THRESHOLD_REGIME,
+  OPEN_DART_ACCOUNT_CONCEPTS,
+  searchOpenDartCompanies,
+  searchOpenDartFilings,
+} from "../adapters/openDart.js";
 import { companyInput, failureResult, notFoundResult } from "./shared.js";
 
 const CONSOLIDATION_CAVEAT =
@@ -77,14 +87,22 @@ function entityRows(entities: Entity[]): string {
   );
 }
 
+const OPEN_DART_INSIDER_CAVEAT =
+  "Parsed from Korean executive/major-shareholder ownership reports " +
+  "(특정증권등 소유상황보고). Reflects the most recent reports filed via DART; " +
+  "individuals who have not filed recently will not appear.";
+
+const OPEN_DART_OWNER_CAVEAT =
+  "Korean 5% mass-holding reports (대량보유상황보고) filed via DART. " +
+  "Filing-based disclosure only — not a share register, and not UBO tracing.";
+
 function plannedJurisdiction(
-  jurisdiction: "KR" | "JP",
+  jurisdiction: "JP",
   toolName: string,
 ): ReturnType<typeof textResult> {
-  const adapter = jurisdiction === "KR" ? "OpenDART" : "EDINET";
   return textResult(
     `${toolName} does not yet support jurisdiction \"${jurisdiction}\". ` +
-      `The ${adapter} adapter is planned for a later release.`,
+      `The EDINET adapter is planned for a later release.`,
   );
 }
 
@@ -109,10 +127,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "combines SEC ticker/CIK/title resolution with GLEIF legal-name search; " +
       "explicit GB uses Companies House company numbers and legal-name search. " +
       "Returns compact identifier sets and match reasons without silently " +
-      "merging ambiguous entities. KR/OpenDART and JP/EDINET are planned.",
+      "merging ambiguous entities. Explicit KR uses OpenDART corp/stock codes " +
+      "and legal-name search. JP/EDINET is planned.",
     companyInput,
     async ({ company, jurisdiction }) => {
-      if (jurisdiction === "KR" || jurisdiction === "JP") {
+      if (jurisdiction === "JP") {
         return plannedJurisdiction(jurisdiction, "CompanyResolve");
       }
       if (jurisdiction === "GB") {
@@ -121,6 +140,20 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           if (!results.length) return notFoundResult(company, "Try an exact Companies House company number or legal name.");
           return textResult(joinSections(
             `# Company resolution (Companies House): ${company}`,
+            entityRows(results.slice(0, 10)),
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "KR") {
+        try {
+          const results = await searchOpenDartCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, "Try an OpenDART 8-digit corp code, 6-digit stock code, or legal name.");
+          }
+          return textResult(joinSections(
+            `# Company resolution (OpenDART): ${company}`,
             entityRows(results.slice(0, 10)),
           ));
         } catch (error) {
@@ -169,13 +202,14 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyFilings = defineTool(
     "CompanyFilings",
-    "Search regulatory filings from US SEC EDGAR (default/US) or UK Companies " +
-      "House (explicit GB). Filters match SEC form types or Companies House " +
-      "filing type/category/description. Latest annual mode returns the latest " +
-      "SEC annual report or UK accounts filing; latest quarterly is unsupported " +
-      "for GB because Companies House has no equivalent normalized quarterly " +
-      "report mode. Returns public filing/document links, never document text. " +
-      "KR/OpenDART and JP/EDINET are planned.",
+    "Search regulatory filings from US SEC EDGAR (default/US), UK Companies " +
+      "House (explicit GB), or Korean DART (explicit KR). Filters match SEC form " +
+      "types, Companies House filing type/category/description, or DART report " +
+      "names. Latest annual mode returns the latest SEC annual report, UK " +
+      "accounts filing, or DART 사업보고서; latest quarterly returns the latest " +
+      "SEC 10-Q or DART 분기·반기보고서, and is unsupported for GB because " +
+      "Companies House has no equivalent normalized quarterly report mode. " +
+      "Returns public filing/document links, never document text. JP/EDINET is planned.",
     {
       ...companyInput,
       forms: z
@@ -200,10 +234,65 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .describe("\"search\" (default) or latest annual/quarterly report metadata"),
     },
     async ({ company, jurisdiction, forms, start_date, end_date, limit, mode }) => {
-      if (jurisdiction === "KR" || jurisdiction === "JP") {
+      if (jurisdiction === "JP") {
         return plannedJurisdiction(jurisdiction, "CompanyFilings");
       }
       try {
+        if (jurisdiction === "KR") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            const report = await getLatestOpenDartReport(
+              company,
+              mode === "latest_annual" ? "annual" : "quarterly",
+              options,
+            );
+            if (!report) {
+              return textResult(
+                `No ${mode === "latest_annual" ? "annual (사업보고서)" : "quarterly/half (분기·반기보고서)"} ` +
+                  `periodic report found on DART for "${company}".`,
+              );
+            }
+            return textResult(joinSections(
+              `# Latest ${report.reportKind} report (OpenDART): ${company}`,
+              markdownTable(
+                ["Report", "Filed", "Receipt no.", "Description"],
+                [[report.form, report.filedDate, report.accession, report.description]],
+              ),
+              markdownTable(
+                ["Section", "Description", "Link"],
+                report.sectionLinks.map((section) => [
+                  section.section,
+                  section.description,
+                  link("open", section.url),
+                ]),
+              ),
+              "_Links open the DART disclosure viewer. This tool does not return document text._",
+            ));
+          }
+          const filings = await searchOpenDartFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(`No DART filings found for "${company}" with the given filters.`);
+          }
+          return textResult(joinSections(
+            `# DART filings (OpenDART): ${company}`,
+            markdownTable(
+              ["Filed", "Report", "Filer", "Link"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                link("view", filing.sourceUrl),
+              ]),
+            ),
+            "_Links open the DART disclosure viewer. This tool does not return document text._",
+          ));
+        }
+
         if (jurisdiction === "GB") {
           if (mode === "latest_quarterly") {
             return textResult(
@@ -325,17 +414,40 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyInsiders = defineTool(
     "CompanyInsiders",
-    "Return recent US SEC Section 16 filing insiders (default/US) or the UK " +
-      "Companies House officer register (explicit GB). GB output includes role, " +
-      "occupation, appointment/resignation dates, and active/former status, but " +
-      "does not surface correspondence addresses, nationality, or partial birth " +
-      "dates. KR/OpenDART and JP/EDINET are planned.",
+    "Return recent US SEC Section 16 filing insiders (default/US), the UK " +
+      "Companies House officer register (explicit GB), or Korean executive/" +
+      "major-shareholder ownership reports from DART (explicit KR). GB output " +
+      "includes role, occupation, appointment/resignation dates, and active/" +
+      "former status, but does not surface correspondence addresses, " +
+      "nationality, or partial birth dates. JP/EDINET is planned.",
     companyInput,
     async ({ company, jurisdiction }) => {
-      if (jurisdiction === "KR" || jurisdiction === "JP") {
+      if (jurisdiction === "JP") {
         return plannedJurisdiction(jurisdiction, "CompanyInsiders");
       }
       try {
+        if (jurisdiction === "KR") {
+          const insiders = await getOpenDartInsiders(company, options);
+          if (!insiders.length) {
+            return textResult(
+              `No Korean executive/major-shareholder ownership reports found on DART for "${company}".`,
+            );
+          }
+          return textResult(joinSections(
+            `# Insiders (OpenDART): ${company}`,
+            markdownTable(
+              ["Name", "Role(s)", "Registered", "Filed", "Link"],
+              insiders.map((insider) => [
+                insider.name,
+                insider.roles.join(", ") || "—",
+                insider.status,
+                insider.filedDate,
+                link("view", insider.sourceUrl),
+              ]),
+            ),
+            `_${OPEN_DART_INSIDER_CAVEAT}_`,
+          ));
+        }
         if (jurisdiction === "GB") {
           const officers = await getCompaniesHouseOfficers(company, options);
           if (!officers.length) {
@@ -389,21 +501,48 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyOwners = defineTool(
     "CompanyOwners",
-    "Return US Schedule 13D/13G beneficial-ownership filers (default/US) or " +
-      "UK Companies House persons with significant control (explicit GB). GB " +
-      "rows include individual/corporate/legal/super-secure kinds, statutory " +
-      "natures of control, percentage bands where derivable, ceased entries, " +
-      "and PSC statements when no ordinary PSC record exists. Each row states " +
-      "its threshold/control regime. Neither source is guaranteed-complete UBO/KYC evidence. " +
-      "KR/OpenDART and JP/EDINET are planned.",
+    "Return US Schedule 13D/13G beneficial-ownership filers (default/US), " +
+      "UK Companies House persons with significant control (explicit GB), or " +
+      "Korean 5% mass-holding reports from DART (explicit KR). GB rows include " +
+      "individual/corporate/legal/super-secure kinds, statutory natures of " +
+      "control, percentage bands where derivable, ceased entries, and PSC " +
+      "statements when no ordinary PSC record exists. Each row states its " +
+      "threshold/control regime. No source is guaranteed-complete UBO/KYC " +
+      "evidence. JP/EDINET is planned.",
     {
       ...companyInput,
     },
     async ({ company, jurisdiction }) => {
-      if (jurisdiction === "KR" || jurisdiction === "JP") {
+      if (jurisdiction === "JP") {
         return plannedJurisdiction(jurisdiction, "CompanyOwners");
       }
       try {
+        if (jurisdiction === "KR") {
+          const owners = await getOpenDartOwners(company, options);
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No Korean 5% mass-holding reports found on DART for "${company}".`,
+              `_Threshold regime: ${OPEN_DART_5_PERCENT_THRESHOLD_REGIME}._`,
+            ));
+          }
+          return textResult(joinSections(
+            `# 5% mass-holding filers (OpenDART): ${company}`,
+            markdownTable(
+              ["Holder", "Report type", "Stake %", "Change %", "Reason", "Filed", "Link"],
+              owners.map((owner) => [
+                owner.holderName,
+                owner.holderType,
+                owner.pct !== undefined ? `${owner.pct}%` : undefined,
+                owner.change !== undefined ? `${owner.change}%` : undefined,
+                owner.naturesOfControl?.join(", "),
+                owner.filedDate,
+                link("view", owner.sourceUrl),
+              ]),
+            ),
+            `_Threshold regime: ${OPEN_DART_5_PERCENT_THRESHOLD_REGIME}._`,
+            `_${OPEN_DART_OWNER_CAVEAT}_`,
+          ));
+        }
         if (jurisdiction === "GB") {
           const owners = await getCompaniesHouseOwners(company, options);
           if (!owners.length) {
@@ -472,9 +611,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "CompanyFinancials",
     "Annual as-filed financial figures from XBRL-tagged US SEC annual " +
       `reports (10-K/20-F/40-F): ${SEC_FINANCIAL_CONCEPT_NAMES.join(", ")}. ` +
-      "Explicit GB returns an explanation directing callers to Companies House " +
-      "accounts filings because this release does not parse normalized UK " +
-      "financial facts. KR/OpenDART and JP/EDINET are planned.",
+      "Explicit KR returns Korean DART major-account figures (" +
+      `${Object.keys(OPEN_DART_ACCOUNT_CONCEPTS).join(", ")}), showing ` +
+      "consolidated and separate bases where both are filed. Explicit GB " +
+      "returns an explanation directing callers to Companies House accounts " +
+      "filings because this release does not parse normalized UK financial " +
+      "facts. JP/EDINET is planned.",
     {
       ...companyInput,
       concepts: z
@@ -485,8 +627,55 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .describe("Fiscal years per concept (default 5)"),
     },
     async ({ company, jurisdiction, concepts, periods }) => {
-      if (jurisdiction === "KR" || jurisdiction === "JP") {
+      if (jurisdiction === "JP") {
         return plannedJurisdiction(jurisdiction, "CompanyFinancials");
+      }
+      if (jurisdiction === "KR") {
+        try {
+          const supported = Object.keys(OPEN_DART_ACCOUNT_CONCEPTS);
+          const requested = concepts?.filter((concept) => supported.includes(concept));
+          const facts = await getOpenDartFinancials(company, {
+            ...(requested && requested.length ? { concepts: requested } : {}),
+            periods: periods ?? 5,
+          }, options);
+          if (!facts.length) {
+            return textResult(
+              `No annual major-account financials found on DART for "${company}". ` +
+                `OpenDART major accounts cover: ${supported.join(", ")}.`,
+            );
+          }
+          const byConcept = new Map<string, typeof facts>();
+          for (const fact of facts) {
+            const bucket = byConcept.get(fact.concept) ?? [];
+            bucket.push(fact);
+            byConcept.set(fact.concept, bucket);
+          }
+          const sections = [...byConcept.entries()].map(([concept, rows]) => {
+            const label = rows[0]?.label ?? concept;
+            const unit = rows[0]?.unit ?? "KRW";
+            return joinSections(
+              `## ${label} (${unit})`,
+              markdownTable(
+                ["Fiscal period end", "Basis", "Value", "Filed"],
+                rows.map((fact) => [
+                  fact.periodEnd,
+                  fact.basis ?? "—",
+                  formatNumber(fact.value, fact.unit),
+                  fact.filedDate,
+                ]),
+              ),
+            );
+          });
+          return textResult(joinSections(
+            `# Annual financials (OpenDART): ${company}`,
+            ...sections,
+            "_As-filed annual major-account values from DART 사업보고서 filings. " +
+              "\"Basis\" distinguishes consolidated (CFS) from separate (OFS) statements; " +
+              "both are shown where the company files both._",
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "GB") {
         return textResult(
@@ -590,18 +779,19 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "PrivateRaises",
     "US Form D (Regulation D) exempt-offering filings for a company: " +
       "amounts offered and sold, investor counts, industry, date of first sale, " +
-      "and named related persons. This capability is US-only; explicit GB " +
-      "returns an unsupported-jurisdiction explanation because Companies House " +
-      "does not provide an equivalent private-raise filing dataset. KR/OpenDART " +
-      "and JP/EDINET are planned.",
+      "and named related persons. This capability is US-only; explicit GB and " +
+      "KR return an unsupported-jurisdiction explanation because neither " +
+      "Companies House nor DART provides an equivalent private-raise filing " +
+      "dataset. JP/EDINET is planned.",
     companyInput,
     async ({ company, jurisdiction }) => {
-      if (jurisdiction === "KR" || jurisdiction === "JP") {
+      if (jurisdiction === "JP") {
         return plannedJurisdiction(jurisdiction, "PrivateRaises");
       }
-      if (jurisdiction === "GB") {
+      if (jurisdiction === "GB" || jurisdiction === "KR") {
+        const registry = jurisdiction === "GB" ? "Companies House" : "OpenDART/DART";
         return textResult(
-          "PrivateRaises is unsupported for jurisdiction \"GB\". Companies House " +
+          `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +
             "private offering amounts and investor counts in this release.",
         );
