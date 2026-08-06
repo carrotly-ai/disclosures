@@ -16,16 +16,18 @@ export const companyInput = {
         "6-digit stock code (KR), EDINET code (E + 5 digits), 4/5-digit " +
         "securities code, or 13-digit corporate number (JP), 6-digit A-share " +
         "or 5-digit HK stock code (CN, via cninfo), 6-digit BSE scrip code " +
-        "(IN), 4-digit TWSE listing code (TW), or 20-character LEI",
+        "(IN), 4-digit TWSE listing code (TW), numeric CVM code (BR), or " +
+        "20-character LEI",
     ),
   jurisdiction: z
-    .enum(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW"])
+    .enum(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR"])
     .optional()
     .describe(
       "Jurisdiction to search: US (SEC EDGAR), GB (Companies House), " +
         "EU (pan-European ESEF financials via filings.xbrl.org — CompanyFinancials " +
         "only), KR (OpenDART/DART), JP (EDINET), CN (cninfo — SSE/SZSE), " +
-        "IN (BSE India), or TW (TWSE OpenAPI — Taiwan listed companies). " +
+        "IN (BSE India), TW (TWSE OpenAPI — Taiwan listed companies), or " +
+        "BR (CVM open data — Brazilian listed companies). " +
         "Omit for the existing US default.",
     ),
 };
@@ -68,7 +70,7 @@ export function failureResult(company: string, error: unknown): ToolResult {
   }
   const message = error instanceof Error ? error.message : String(error);
   if (
-    /not found|no sec company found|no gleif entity|no companies house company found|no opendart company found|no edinet company found|no cninfo company found|no bse company found|no twse company found/i
+    /not found|no sec company found|no gleif entity|no companies house company found|no opendart company found|no edinet company found|no cninfo company found|no bse company found|no twse company found|no cvm company found/i
       .test(message)
   ) {
     return notFoundResult(company);
