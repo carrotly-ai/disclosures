@@ -80,10 +80,12 @@ npx -y disclosures@next
 
 ## 5. Publish the stable release
 
-Set and commit the stable version, then push its matching tag:
+Set and commit the stable version, then push its matching tag. If `package.json` is already
+at the target version (the `0.1.0` GA cut already dropped the `-rc` suffix), skip
+`npm version` and just tag:
 
 ```bash
-npm version 0.1.0 --no-git-tag-version
+npm version 0.1.0 --no-git-tag-version   # skip if already 0.1.0
 git add package.json bun.lock CHANGELOG.md
 git commit -m "Release 0.1.0"
 git tag v0.1.0
@@ -99,3 +101,29 @@ npx -y disclosures
 ```
 
 Never reuse a published version. If an RC is bad, publish a higher RC; if a stable release is bad, deprecate it and publish a patch rather than unpublishing unless npm's narrow unpublish policy clearly applies.
+
+## 6. Publish / update the MCP registry listing
+
+The repo ships a [`server.json`](server.json) manifest and a matching `mcpName`
+(`io.github.carrotly-ai/disclosures`) in `package.json`. The registry verifies ownership by
+reading that `mcpName` from the **published** npm package, so publish to npm (steps 4–5)
+first, then publish the registry entry with the official publisher CLI:
+
+```bash
+# Install the MCP registry publisher (see modelcontextprotocol/registry for the current name)
+mcp-publisher login github     # OAuth as a carrotly-ai org member
+mcp-publisher publish          # reads ./server.json
+```
+
+Keep `server.json`'s `version` and each `packages[].version` in lockstep with
+`package.json` on every release — bump all three together, then re-run `mcp-publisher
+publish`. Validate the manifest before publishing:
+
+```bash
+python3 - <<'PY'
+import json, urllib.request, jsonschema
+s = json.load(urllib.request.urlopen("https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"))
+jsonschema.validate(json.load(open("server.json")), s)
+print("server.json valid")
+PY
+```

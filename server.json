@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.carrotly-ai/disclosures",
+  "description": "Corporate-disclosure research across 11 official sources behind seven jurisdiction-agnostic tools.",
+  "repository": {
+    "url": "https://github.com/carrotly-ai/disclosures",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "disclosures",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "DISCLOSURES_USER_AGENT",
+          "description": "Descriptive User-Agent with contact info, required by SEC EDGAR (e.g. 'Your Org you@example.com'). SEC_EDGAR_USER_AGENT is also accepted.",
+          "isRequired": true
+        },
+        {
+          "name": "COMPANIES_HOUSE_API_KEY",
+          "description": "UK Companies House API key. Required only for GB operations.",
+          "isSecret": true
+        },
+        {
+          "name": "OPENDART_API_KEY",
+          "description": "South Korea OpenDART API key. Required only for KR operations.",
+          "isSecret": true
+        },
+        {
+          "name": "EDINET_API_KEY",
+          "description": "Japan EDINET API key. Required only for JP document search; JP resolution is keyless.",
+          "isSecret": true
+        }
+      ]
+    }
+  ]
+}
