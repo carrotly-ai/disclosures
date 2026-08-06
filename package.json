@@ -1,7 +1,8 @@
 {
   "name": "disclosures",
-  "version": "0.1.0-rc.3",
-  "description": "Corporate-disclosure research via SEC EDGAR and GLEIF, as a TypeScript library and MCP server.",
+  "version": "0.1.0",
+  "mcpName": "io.github.carrotly-ai/disclosures",
+  "description": "Corporate-disclosure research across 11 official sources (SEC EDGAR, GLEIF, UK Companies House, DART, EDINET, cninfo, BSE, TWSE, CVM, filings.xbrl.org) behind seven jurisdiction-agnostic tools, as a TypeScript library and MCP server.",
   "type": "module",
   "license": "Apache-2.0",
   "author": "Carrotly AI",

@@ -7,7 +7,7 @@ Version 0.1 ships eleven data sources behind seven jurisdiction-agnostic tools:
 - **US SEC EDGAR** (default) — filings, annual/quarterly report metadata, Section 16 insiders, Schedule 13D/13G filers, annual XBRL financials, and Form D private raises.
 - **GLEIF LEI** (global) — entity resolution and reported direct/ultimate accounting-consolidation relationships.
 - **filings.xbrl.org ESEF/UKSEF** (`jurisdiction: "EU"` and `"GB"`) — keyless, LEI-indexed annual IFRS financials parsed from the machine-readable xBRL-JSON reports European and UK issuers file under ESEF/UKSEF (FY2020+), surfaced inside `CompanyFinancials`.
-- **UK Companies House** (`jurisdiction: "GB"`) — company resolution, filing history, the officer register, and persons-with-significant-control records.
+- **UK Companies House** (`jurisdiction: "GB"`) — company resolution, filing history, the officer register, and persons-with-significant-control records, including the ECCTA identity-verification status (`identity_verification_details`, mandatory for new appointments from 18 Nov 2025) as an "Identity (ECCTA)" column on officers and PSCs.
 - **UK FCA National Storage Mechanism** (`jurisdiction: "GB"`, inject-only) — DTR5/TR-1 "notification of major holdings" (the ~3%+ equity/voting-rights signal Companies House PSC does not carry), surfaced inside `CompanyOwners`. The NSM has no public read API, so this source stays dormant unless you supply your own access via an injected `fetchFn`; otherwise the GB owners view explains how to enable it.
 - **South Korea DART / OpenDART** (`jurisdiction: "KR"`) — company resolution, periodic reports, executive/major-shareholder ownership, 5% mass-holding reports, and annual major-account financials.
 - **Japan EDINET** (`jurisdiction: "JP"`) — company resolution and date-indexed disclosure documents (annual securities reports, quarterly/semi-annual reports, and more).
@@ -17,6 +17,8 @@ Version 0.1 ships eleven data sources behind seven jurisdiction-agnostic tools:
 - **Brazil CVM open data** (`jurisdiction: "BR"`) — keyless company resolution against the CVM registration feed (`CompanyResolve`), the IPE disclosure index with direct RAD download links (`CompanyFilings`), and annual DFP financials — total assets, equity, revenue, operating income, and net income, consolidated-when-filed, in BRL (`CompanyFinancials`) — parsed from the whole-market open-data CSV/ZIP snapshots at `dados.cvm.gov.br`.
 
 The seven tool names and schemas stay stable as jurisdictions are added; each new source dispatches behind the same intents rather than adding jurisdiction-specific tool names. Every tool states its data source, its coverage limits, and that absence of a filing is not proof an event never happened.
+
+Per-jurisdiction reference pages — data source, credentials, accepted identifiers, supported intents, and caveats — live under [`docs/jurisdictions/`](docs/jurisdictions/README.md), which also carries the full intent × jurisdiction coverage matrix.
 
 ## Tools
 
@@ -186,7 +188,7 @@ bun run test:stdio
 npm pack --dry-run
 ```
 
-Tests use routed fetch stubs and do not make live HTTP requests. The optional live smoke test requires a real SEC User-Agent:
+Tests use routed fetch stubs and do not make live HTTP requests — the [testing discipline](docs/TESTING.md) explains the offline guarantee and the fixtures convention. The optional live smoke test requires a real SEC User-Agent:
 
 ```bash
 DISCLOSURES_USER_AGENT="Your Organization your-email@example.com" \
