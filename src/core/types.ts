@@ -12,6 +12,7 @@ export const JURISDICTIONS = {
   JP: "JP",
   CN: "CN",
   IN: "IN",
+  TW: "TW",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -27,6 +28,7 @@ export const DATA_SOURCES = {
   BSE: "BSE India",
   FCA_NSM: "FCA NSM",
   XBRL_FILINGS: "filings.xbrl.org",
+  TWSE: "TWSE",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
