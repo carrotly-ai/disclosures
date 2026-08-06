@@ -1,3 +1,4 @@
+import { readCachedJson, writeCachedJson } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import {
   AdapterConfigurationError,
@@ -220,8 +221,37 @@ export function parseEdinetCodeCsv(csv: string): EdinetCodeEntry[] {
 
 let codeListPromise: Promise<EdinetCodeEntry[]> | undefined;
 
+/** Cross-call cache key + TTL for the EDINET code list (regenerated daily). */
+export const EDINET_CODE_LIST_CACHE_KEY = "edinet:code-list:v1";
+export const EDINET_CODE_LIST_CACHE_TTL_MS = 24 * 60 * 60_000;
+
 export function resetEdinetCodeCache(): void {
   codeListPromise = undefined;
+}
+
+/** Validate a cached code-list payload; a bad shape returns undefined (miss). */
+function parseCodeListCache(value: unknown): EdinetCodeEntry[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries: EdinetCodeEntry[] = [];
+  for (const item of value) {
+    const record = asRecord(item);
+    const edinetCode = asString(record?.edinetCode);
+    const filerName = asString(record?.filerName);
+    if (!edinetCode || !filerName) return undefined;
+    const filerNameEn = asString(record?.filerNameEn);
+    const secCode = asString(record?.secCode);
+    const jcn = asString(record?.jcn);
+    const listed = record?.listed;
+    entries.push({
+      edinetCode,
+      filerName,
+      ...(filerNameEn ? { filerNameEn } : {}),
+      ...(secCode ? { secCode } : {}),
+      ...(jcn ? { jcn } : {}),
+      ...(typeof listed === "boolean" ? { listed } : {}),
+    });
+  }
+  return entries.length ? entries : undefined;
 }
 
 async function fetchCodeList(options: AdapterOptions): Promise<EdinetCodeEntry[]> {
@@ -245,13 +275,33 @@ async function fetchCodeList(options: AdapterOptions): Promise<EdinetCodeEntry[]
 }
 
 async function loadCodeList(options: AdapterOptions): Promise<EdinetCodeEntry[]> {
+  // Prefer an injected cross-call cache (survives process restarts) so the
+  // code-list archive is not re-downloaded on every cold start.
+  if (options.cache) {
+    const cached = await readCachedJson(
+      options.cache,
+      EDINET_CODE_LIST_CACHE_KEY,
+      parseCodeListCache,
+    );
+    if (cached) return cached;
+  }
   codeListPromise ??= fetchCodeList(options);
+  let entries: EdinetCodeEntry[];
   try {
-    return await codeListPromise;
+    entries = await codeListPromise;
   } catch (error) {
     codeListPromise = undefined;
     throw error;
   }
+  if (options.cache) {
+    await writeCachedJson(
+      options.cache,
+      EDINET_CODE_LIST_CACHE_KEY,
+      entries,
+      EDINET_CODE_LIST_CACHE_TTL_MS,
+    );
+  }
+  return entries;
 }
 
 function viewerUrl(): string {

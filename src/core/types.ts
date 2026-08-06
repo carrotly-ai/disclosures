@@ -1,4 +1,5 @@
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { DisclosuresCache } from "./cache.js";
 
 export type FetchFn = (url: string, init?: RequestInit) => Promise<Response>;
 export type Env = Record<string, string | undefined>;
@@ -31,6 +32,12 @@ export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
 export interface AdapterOptions {
   fetchFn?: FetchFn;
   env?: Env;
+  /**
+   * Optional cross-call cache for large, slow-changing reference downloads
+   * (OpenDART corp-code archive, EDINET code list). When omitted, adapters fall
+   * back to their per-process in-memory memoization only.
+   */
+  cache?: DisclosuresCache;
 }
 
 export interface IdentifierSet {
