@@ -16,8 +16,10 @@ import {
 } from "../adapters/secEdgar.js";
 import {
   getOwnershipChain,
+  isIsin,
   isLei,
   resolveGleifEntity,
+  resolveLeiByIsin,
   searchGleifEntities,
 } from "../adapters/gleif.js";
 import {
@@ -228,7 +230,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
   const companyResolve = defineTool(
     "CompanyResolve",
     "Resolve a company name or identifier to canonical candidates. US/default " +
-      "combines SEC ticker/CIK/title resolution with GLEIF legal-name search; " +
+      "combines SEC ticker/CIK/title resolution with GLEIF legal-name search, " +
+      "and resolves a bare LEI or ISIN to its issuer's GLEIF record; " +
       "explicit GB uses Companies House company numbers and legal-name search. " +
       "Returns compact identifier sets and match reasons without silently " +
       "merging ambiguous entities. Explicit KR uses OpenDART corp/stock codes " +
@@ -312,6 +315,16 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (isLei(company)) {
         const gleifEntity = await resolveGleifEntity(company, options);
         if (gleifEntity) results.push(gleifEntity);
+      } else if (isIsin(company)) {
+        // ISIN is a global security identifier; resolve it to its issuer's LEI
+        // record via GLEIF regardless of jurisdiction.
+        try {
+          const byIsin = await resolveLeiByIsin(company, options);
+          if (byIsin) results.push(byIsin);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          warnings.push(`GLEIF ISIN lookup unavailable: ${message}`);
+        }
       } else {
         if (hasSecConfiguration(options)) {
           try {

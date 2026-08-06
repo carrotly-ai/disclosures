@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
+  getIsinsForLei,
   getOwnershipChain,
+  isIsin,
   isLei,
   resolveGleifEntity,
+  resolveLeiByIsin,
   searchGleifEntities,
 } from "../src/adapters/gleif.js";
 import { resetRateLimiters } from "../src/core/rateLimiter.js";
@@ -67,6 +70,80 @@ describe("isLei", () => {
     expect(isLei("HWUPKR0MPOU8FGXBT39")).toBe(false); // 19 chars
     expect(isLei("HWUPKR0MPOU8FGXBT39XX")).toBe(false); // 21 chars
     expect(isLei("HWUPKR0MPOU8FGXBT3AA")).toBe(false); // non-digit checksum chars
+  });
+});
+
+describe("isIsin", () => {
+  test("accepts valid ISINs (check digit included) and rejects the rest", () => {
+    expect(isIsin("US0378331005")).toBe(true); // Apple
+    expect(isIsin("US5949181045")).toBe(true); // Microsoft
+    expect(isIsin("GB0002634946")).toBe(true); // BAE Systems
+    expect(isIsin("  us0378331005  ")).toBe(true); // trimmed + upcased
+    expect(isIsin("US0378331004")).toBe(false); // wrong check digit
+    expect(isIsin("0378331005US")).toBe(false); // wrong shape
+    expect(isIsin("US037833100")).toBe(false); // too short
+    expect(isIsin("AAPL")).toBe(false); // ticker
+    expect(isIsin("HWUPKR0MPOU8FGXBT394")).toBe(false); // an LEI, not an ISIN
+  });
+});
+
+describe("resolveLeiByIsin", () => {
+  test("resolves an ISIN to its issuer's LEI record via filter[isin]", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "filter%5Bisin%5D=US0378331005", body: collection([leiRecord(APPLE_LEI, "APPLE INC.")]) },
+    ]);
+    const entity = await resolveLeiByIsin("US0378331005", { fetchFn });
+    expect(entity?.lei).toBe(APPLE_LEI);
+    expect(entity?.isin).toBe("US0378331005");
+    expect(entity?.matchReason).toContain("ISIN US0378331005");
+    expect(fetchFn.requests[0]?.url).toContain("filter%5Bisin%5D=");
+  });
+
+  test("returns null when GLEIF maps no LEI to the ISIN", async () => {
+    const fetchFn = routedFetch([{ pattern: "filter%5Bisin%5D", body: collection([]) }]);
+    expect(await resolveLeiByIsin("US0378331005", { fetchFn })).toBeNull();
+  });
+
+  test("rejects a non-ISIN without any network call", async () => {
+    const fetchFn = routedFetch([]);
+    expect(await resolveLeiByIsin("not-an-isin", { fetchFn })).toBeNull();
+    expect(fetchFn.requests.length).toBe(0);
+  });
+});
+
+describe("getIsinsForLei", () => {
+  function isinPage(isins: string[], next?: string): Record<string, unknown> {
+    return {
+      meta: { pagination: { currentPage: 1, perPage: isins.length, total: isins.length } },
+      links: next ? { next } : {},
+      data: isins.map((isin) => ({ type: "isins", id: isin, attributes: { lei: APPLE_LEI, isin } })),
+    };
+  }
+
+  test("collects ISINs across paginated /isins responses", async () => {
+    const page2 = `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/isins?page%5Bnumber%5D=2`;
+    const fetchFn = routedFetch([
+      { pattern: "isins?page%5Bnumber%5D=2", body: isinPage(["US03785C7G70"]) },
+      { pattern: "/isins", body: isinPage(["US0378331005"], page2) },
+    ]);
+    const isins = await getIsinsForLei(APPLE_LEI, { fetchFn });
+    expect(isins).toEqual(["US0378331005", "US03785C7G70"]);
+  });
+
+  test("respects the page cap", async () => {
+    const loop = `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/isins?page%5Bnumber%5D=9`;
+    const fetchFn = routedFetch([{ pattern: "/isins", body: isinPage(["US0378331005"], loop) }]);
+    const isins = await getIsinsForLei(APPLE_LEI, { fetchFn }, { maxPages: 2 });
+    expect(isins).toEqual(["US0378331005"]);
+    expect(fetchFn.requests.length).toBe(2);
+  });
+
+  test("returns an empty list on a 404 and never calls out for a non-LEI", async () => {
+    const notFound = routedFetch([{ pattern: "/isins", body: { errors: [] }, status: 404 }]);
+    expect(await getIsinsForLei(APPLE_LEI, { fetchFn: notFound })).toEqual([]);
+    const idle = routedFetch([]);
+    expect(await getIsinsForLei("AAPL", { fetchFn: idle })).toEqual([]);
+    expect(idle.requests.length).toBe(0);
   });
 });
 

@@ -27,7 +27,7 @@ The seven tool names and schemas stay stable as jurisdictions are added; each ne
 | `OwnershipChain` | GLEIF direct and ultimate accounting-consolidating parents, reporting exceptions, and known direct children. |
 | `PrivateRaises` | US Form D exempt offerings, amounts, investor counts, and named executives/directors/promoters. US-only in v1. |
 
-All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK or LEI (US), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP), a 6-digit A-share or 5-digit HK stock code (CN), or a 6-digit BSE scrip code (IN). Tools accept `jurisdiction: "US" | "GB" | "KR" | "JP" | "CN" | "IN"` (default `US`); `OwnershipChain` is global via GLEIF.
+All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK, LEI, or ISIN (US — an ISIN resolves to its issuer's GLEIF record), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP), a 6-digit A-share or 5-digit HK stock code (CN), or a 6-digit BSE scrip code (IN). Tools accept `jurisdiction: "US" | "GB" | "KR" | "JP" | "CN" | "IN"` (default `US`); `OwnershipChain` is global via GLEIF.
 
 Where a jurisdiction lacks a normalized equivalent to a US intent — for example EDINET has no Section 16-style insider feed, neither Companies House nor DART nor EDINET exposes a Form D-equivalent private-raise dataset, and Chinese/Indian ownership and financial detail lives inside report PDFs this release does not parse — the tool returns an explicit unsupported-jurisdiction explanation rather than an empty or fabricated result. For CN and IN, `CompanyFilings` returns real announcement PDF links; the deeper insider/owner/financial intents are the ones that degrade honestly.
 
@@ -140,6 +140,22 @@ const tools = createDisclosuresTools({
 `InMemoryCache` (process-local, TTL-aware) and `FileCache` (one JSON file per key under a
 directory); a corrupt, expired, or missing entry is always treated as a cache miss and
 triggers a normal refetch, so a broken cache never breaks a lookup.
+
+### ISIN ↔ LEI cross-walk
+
+An ISIN identifies a security; a company can have many. GLEIF publishes the mapping in both
+directions, and the package exposes it directly:
+
+```ts
+import { isIsin, resolveLeiByIsin, getIsinsForLei } from "disclosures";
+
+isIsin("US0378331005"); // true — validates the ISIN check digit
+const issuer = await resolveLeiByIsin("US0378331005"); // → issuer's GLEIF Entity (with .lei)
+const isins = await getIsinsForLei("HWUPKR0MPOU8FGXBT394"); // → every ISIN mapped to that LEI
+```
+
+`CompanyResolve` accepts a bare ISIN and routes it through `resolveLeiByIsin`, so no code is
+needed for the common case; the helpers are for building an identifier cross-walk yourself.
 
 ## Honesty and scope
 
