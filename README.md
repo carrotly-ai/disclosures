@@ -2,7 +2,7 @@
 
 Free, open-source corporate-disclosure research through official sources. `disclosures` is both a TypeScript library and a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server.
 
-Version 0.1 ships nine data sources behind seven jurisdiction-agnostic tools:
+Version 0.1 ships ten data sources behind seven jurisdiction-agnostic tools:
 
 - **US SEC EDGAR** (default) — filings, annual/quarterly report metadata, Section 16 insiders, Schedule 13D/13G filers, annual XBRL financials, and Form D private raises.
 - **GLEIF LEI** (global) — entity resolution and reported direct/ultimate accounting-consolidation relationships.
@@ -13,6 +13,7 @@ Version 0.1 ships nine data sources behind seven jurisdiction-agnostic tools:
 - **Japan EDINET** (`jurisdiction: "JP"`) — company resolution and date-indexed disclosure documents (annual securities reports, quarterly/semi-annual reports, and more).
 - **China cninfo** (`jurisdiction: "CN"`) — keyless company resolution across the Shanghai and Shenzhen exchanges (and HKEX mirror) plus a date-filterable announcement feed with direct PDF links and latest annual/quarterly periodic-report lookup.
 - **India BSE** (`jurisdiction: "IN"`) — keyless company resolution and a corporate-announcement feed with attachment PDF links ("BSE-lite"; shareholding data is not surfaced).
+- **Taiwan TWSE OpenAPI** (`jurisdiction: "TW"`) — keyless company resolution, material-information announcements (`CompanyFilings`), the directors-and-supervisors register with per-holder share counts (`CompanyInsiders`), and >10% major shareholders (`CompanyOwners`), drawn from the Taiwan Stock Exchange's public open-data whole-market snapshots.
 
 The seven tool names and schemas stay stable as jurisdictions are added; each new source dispatches behind the same intents rather than adding jurisdiction-specific tool names. Every tool states its data source, its coverage limits, and that absence of a filing is not proof an event never happened.
 
@@ -28,9 +29,9 @@ The seven tool names and schemas stay stable as jurisdictions are added; each ne
 | `OwnershipChain` | GLEIF direct and ultimate accounting-consolidating parents, reporting exceptions, and known direct children. |
 | `PrivateRaises` | US Form D exempt offerings, amounts, investor counts, and named executives/directors/promoters. US-only in v1. |
 
-All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK, LEI, or ISIN (US — an ISIN resolves to its issuer's GLEIF record), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP), a 6-digit A-share or 5-digit HK stock code (CN), or a 6-digit BSE scrip code (IN). Tools accept `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN"` (default `US`); `OwnershipChain` is global via GLEIF. The `EU` route serves only `CompanyFinancials` (pan-European ESEF financials, keyed by legal name or 20-character LEI); every other intent under `EU` returns an explicit unsupported-jurisdiction explanation.
+All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK, LEI, or ISIN (US — an ISIN resolves to its issuer's GLEIF record), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP), a 6-digit A-share or 5-digit HK stock code (CN), a 6-digit BSE scrip code (IN), or a 4-digit TWSE listing code (TW). Tools accept `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW"` (default `US`); `OwnershipChain` is global via GLEIF. The `EU` route serves only `CompanyFinancials` (pan-European ESEF financials, keyed by legal name or 20-character LEI); every other intent under `EU` returns an explicit unsupported-jurisdiction explanation.
 
-Where a jurisdiction lacks a normalized equivalent to a US intent — for example EDINET has no Section 16-style insider feed, neither Companies House nor DART nor EDINET exposes a Form D-equivalent private-raise dataset, and Chinese/Indian ownership and financial detail lives inside report PDFs this release does not parse — the tool returns an explicit unsupported-jurisdiction explanation rather than an empty or fabricated result. For CN and IN, `CompanyFilings` returns real announcement PDF links; the deeper insider/owner/financial intents are the ones that degrade honestly.
+Where a jurisdiction lacks a normalized equivalent to a US intent — for example EDINET has no Section 16-style insider feed, neither Companies House nor DART nor EDINET exposes a Form D-equivalent private-raise dataset, and Chinese/Indian ownership and financial detail lives inside report PDFs this release does not parse — the tool returns an explicit unsupported-jurisdiction explanation rather than an empty or fabricated result. For CN and IN, `CompanyFilings` returns real announcement PDF links; the deeper insider/owner/financial intents are the ones that degrade honestly. For TW, `CompanyFilings`, `CompanyInsiders`, and `CompanyOwners` are backed by TWSE open data, while `CompanyFinancials` returns an explicit unsupported explanation (TWSE's open-data financials are not yet normalized here).
 
 ## SEC User-Agent configuration
 
@@ -54,6 +55,7 @@ Each non-US source uses its own free API key. Provide only the keys for the juri
 | JP — EDINET | `EDINET_API_KEY` | [EDINET API (v2) registration](https://api.edinet-fsa.go.jp/) | Required only for document search; JP `CompanyResolve` works without it because the EDINET code list is public. |
 | CN — cninfo | _(none)_ | — | Keyless. Resolution and the announcement feed use public POST endpoints. |
 | IN — BSE | _(none)_ | — | Keyless. BSE's `api.bseindia.com` host is anti-bot protected; if the default fetch is throttled, inject a browser-backed `fetchFn` via `AdapterOptions`. |
+| TW — TWSE OpenAPI | _(none)_ | — | Keyless. Resolution, announcements, directors/supervisors, and major shareholders read the public `openapi.twse.com.tw` whole-market open-data endpoints. |
 | GB / EU — filings.xbrl.org (ESEF/UKSEF) | _(none)_ | — | Keyless. `CompanyFinancials` with `jurisdiction: "GB"` or `"EU"` reads the public filings.xbrl.org JSON:API and xBRL-JSON reports; resolving a legal name to an LEI uses GLEIF (also keyless). |
 
 Missing credentials produce a readable, flagged error naming the variable to set — never a silent empty result.
@@ -208,6 +210,7 @@ Non-US jurisdictions now ship behind the existing tools:
 | Japan | EDINET | Shipped |
 | China | cninfo (SSE/SZSE) | Shipped — resolution + filings |
 | India | BSE (BSE-lite) | Shipped — resolution + filings |
+| Taiwan | TWSE OpenAPI | Shipped — resolution + filings + directors/supervisors + >10% owners |
 
 ESEF/UKSEF coverage is FY2020+ and not exhaustive: alternative-market issuers (e.g. First North) are ESEF-exempt, and some national officially-appointed mechanisms (OAMs) hamper collection, so a miss never proves a company did not report. Only undimensioned reported totals are surfaced (no segment breakdowns), and a newer report's restated figure supersedes an earlier one.
 

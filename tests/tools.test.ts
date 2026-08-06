@@ -10,6 +10,7 @@ import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { makeStoredZip } from "./helpers/zipFixture.js";
 import { edinetCodeListRoute, edinetDay } from "./helpers/edinetFixture.js";
 import { resetEdinetCodeCache } from "../src/adapters/edinet.js";
+import { resetTwseDatasetCache } from "../src/adapters/twseOpenApi.js";
 
 const ENV: Env = { DISCLOSURES_USER_AGENT: "Test test@example.com" };
 const GB_ENV: Env = {
@@ -245,11 +246,61 @@ const inAnnouncementRoute: Route = {
   },
 };
 
+// TW (TWSE) fixtures: whole-market basic list + intent datasets, keyed by the
+// live Chinese field names (note trailing spaces on 主旨 and 選任時持股).
+const twBasicRoute: Route = {
+  pattern: "t187ap03_L",
+  body: [
+    {
+      公司代號: "2330",
+      公司名稱: "台灣積體電路製造股份有限公司",
+      公司簡稱: "台積電",
+      英文簡稱: "TSMC",
+      上市日期: "19940905",
+    },
+  ],
+};
+const twAnnouncementRoute: Route = {
+  pattern: "t187ap04_L",
+  body: [
+    {
+      公司代號: "2330",
+      發言日期: "1150805",
+      符合條款: "第 4 款",
+      事實發生日: "1150805",
+      "主旨 ": "本公司受邀參加法人說明會",
+    },
+  ],
+};
+const twMajorRoute: Route = {
+  pattern: "t187ap02_L",
+  body: [
+    { 公司代號: "2317", 出表日期: "1150731", 大股東名稱: "某控股公司" },
+  ],
+};
+const twDirectorRoute: Route = {
+  pattern: "t187ap11_L",
+  body: [
+    {
+      公司代號: "2330",
+      出表日期: "1150731",
+      資料年月: "11506",
+      職稱: "董事長",
+      姓名: "魏哲家",
+      目前持股: "1,234,567",
+      "選任時持股 ": "1,000,000",
+      設質股數: "0",
+      設質股數佔持股比例: "0.00",
+    },
+  ],
+};
+
 beforeEach(() => {
   resetRateLimiters();
   resetSecTickerCache();
   resetOpenDartCorpCodeCache();
   resetEdinetCodeCache();
+  resetTwseDatasetCache();
 });
 
 describe("createTools", () => {
@@ -259,7 +310,7 @@ describe("createTools", () => {
     expect(TOOL_NAMES).toHaveLength(7);
   });
 
-  test("company jurisdiction accepts US/GB/KR/JP/CN/IN and descriptions cover KR and JP", () => {
+  test("company jurisdiction accepts US/GB/KR/JP/CN/IN/TW and descriptions cover KR and JP", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     for (const tool of tools.filter((candidate) => candidate.name !== "OwnershipChain")) {
       const jurisdiction = tool.inputSchema.jurisdiction;
@@ -269,6 +320,7 @@ describe("createTools", () => {
       expect(jurisdiction?.safeParse("JP").success).toBe(true);
       expect(jurisdiction?.safeParse("CN").success).toBe(true);
       expect(jurisdiction?.safeParse("IN").success).toBe(true);
+      expect(jurisdiction?.safeParse("TW").success).toBe(true);
       expect(jurisdiction?.safeParse("ZZ").success).toBe(false);
       expect(tool.description).toMatch(/KR|OpenDART/);
       expect(tool.description).toMatch(/JP|EDINET/);
@@ -1102,6 +1154,92 @@ describe("explicit IN routing", () => {
       } as never);
       expect(result.isError).toBeUndefined();
       expect(resultText(result)).toContain('unsupported for jurisdiction "IN"');
+    }
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit TW routing", () => {
+  test("CompanyResolve uses TWSE only and shows the listing code and profile", async () => {
+    const fetchFn = routedFetch([twBasicRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "2330",
+      jurisdiction: "TW",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("TWSE");
+    expect(text).toContain("stock 2330");
+    expect(text).toContain("台灣積體電路製造股份有限公司");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyFilings search renders TWSE material-information rows", async () => {
+    const fetchFn = routedFetch([twBasicRoute, twAnnouncementRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "2330",
+      jurisdiction: "TW",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("TWSE material-information announcements");
+    expect(text).toContain("本公司受邀參加法人說明會");
+    expect(text).toContain("2026-08-05");
+  });
+
+  test("CompanyFilings latest_annual is unsupported and points to search mode", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "2330",
+      jurisdiction: "TW",
+      mode: "latest_annual",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("unsupported for TW");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyInsiders renders the director/supervisor holdings table", async () => {
+    const fetchFn = routedFetch([twBasicRoute, twDirectorRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "2330",
+      jurisdiction: "TW",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Directors & supervisors (TWSE)");
+    expect(text).toContain("董事長");
+    expect(text).toContain("魏哲家");
+    expect(text).toContain("1,234,567");
+  });
+
+  test("CompanyOwners returns no >10% holders honestly for a company that has none", async () => {
+    const fetchFn = routedFetch([twBasicRoute, twMajorRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "2330",
+      jurisdiction: "TW",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("No >10% major shareholders");
+    expect(text).toContain("more than 10%");
+  });
+
+  test("CompanyFinancials and PrivateRaises explain the TW limits", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    for (const name of ["CompanyFinancials", "PrivateRaises"]) {
+      const result = await toolByName(tools, name).handler({
+        company: "2330",
+        jurisdiction: "TW",
+      } as never);
+      expect(result.isError).toBeUndefined();
+      expect(resultText(result)).toContain('unsupported for jurisdiction "TW"');
     }
     expect(fetchFn.requests).toHaveLength(0);
   });

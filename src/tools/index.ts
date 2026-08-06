@@ -67,6 +67,13 @@ import {
   getEsefFinancials,
 } from "../adapters/xbrlFilings.js";
 import {
+  getTwseDirectorHoldings,
+  getTwseMajorShareholders,
+  searchTwseCompanies,
+  searchTwseFilings,
+  TWSE_MAJOR_SHAREHOLDER_THRESHOLD_REGIME,
+} from "../adapters/twseOpenApi.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -221,6 +228,29 @@ const BSE_SHAREHOLDING_UNSUPPORTED =
   "AdapterOptions to enable it, or read the quarterly shareholding pattern on " +
   "bseindia.com.";
 
+const TWSE_FILINGS_CAVEAT =
+  "TWSE material-information announcements (重大訊息) are a whole-market daily " +
+  "snapshot with no per-row permalink, so every row links to the company's " +
+  "official TWSE profile page. Absence here is not proof a disclosure does not " +
+  "exist; older announcements roll off the daily feed.";
+
+const TWSE_INSIDER_CAVEAT =
+  "Director/supervisor shareholding balances (董監事持股餘額) published monthly " +
+  "by TWSE. Shows current holdings, holdings at election, and pledged shares. " +
+  "This is a statutory holdings register, not a Section 16-style transaction feed.";
+
+const TWSE_OWNER_CAVEAT =
+  "TWSE publishes the identity of shareholders holding more than 10% of a " +
+  "listed company (持股逾 10% 大股東) but not their exact percentage in this " +
+  "feed. A company with no >10% holder legitimately returns no rows. " +
+  "Filing-based disclosure only — not a full share register, not UBO tracing.";
+
+const TWSE_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"TW\". TWSE publishes " +
+  "financial statements as XBRL and PDF filings on the Market Observation Post " +
+  "System (MOPS), but this release does not parse them into normalized financial " +
+  "facts. Read the statements on mops.twse.com.tw.";
+
 function describeParent(parent: OwnershipParent | undefined): string {
   if (!parent) return "No parent information reported";
   if (parent.entity) {
@@ -245,7 +275,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "Returns compact identifier sets and match reasons without silently " +
       "merging ambiguous entities. Explicit KR uses OpenDART corp/stock codes " +
       "and legal-name search; explicit JP uses the EDINET code list (EDINET " +
-      "code, securities code, 法人番号, and legal name).",
+      "code, securities code, 法人番号, and legal name); explicit TW uses the " +
+      "TWSE listed-company basic-data list (4-digit listing code and legal name).",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("CompanyResolve");
@@ -318,6 +349,20 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return failureResult(company, error);
         }
       }
+      if (jurisdiction === "TW") {
+        try {
+          const results = await searchTwseCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, "Try a 4-digit TWSE listing code (e.g. 2330) or a company name.");
+          }
+          return textResult(joinSections(
+            `# Company resolution (TWSE): ${company}`,
+            entityRows(results.slice(0, 10)),
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
 
       const results: Entity[] = [];
       const warnings: string[] = [];
@@ -378,7 +423,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "SEC 10-Q or DART 분기·반기보고서, and is unsupported for GB because " +
       "Companies House has no equivalent normalized quarterly report mode. " +
       "Explicit JP scans EDINET's date-indexed document index (docTypeCode " +
-      "120=annual, 140/160=quarterly/semi-annual). Returns public filing/" +
+      "120=annual, 140/160=quarterly/semi-annual). Explicit TW returns TWSE " +
+      "daily material-information announcements (重大訊息); latest annual/" +
+      "quarterly modes are unsupported for TW. Returns public filing/" +
       "document links, never document text.",
     {
       ...companyInput,
@@ -553,6 +600,43 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             "_Attachment links open the public BSE corporate-filing PDF; this tool never returns document text._",
             `_${BSE_ANTIBOT_NOTE}_`,
+          ));
+        }
+        if (jurisdiction === "TW") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            return textResult(
+              `Latest ${mode === "latest_annual" ? "annual" : "quarterly"} mode is unsupported for TW. ` +
+                "The TWSE open-data feed exposes a daily material-information announcement stream, " +
+                "but not a normalized annual/quarterly report-metadata equivalent; financial reports " +
+                'live on MOPS (mops.twse.com.tw). Use mode "search" instead.',
+            );
+          }
+          const filings = await searchTwseFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No TWSE material-information announcements found for "${company}" in the current daily feed.`,
+              `_${TWSE_FILINGS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# TWSE material-information announcements: ${company}`,
+            markdownTable(
+              ["Filed", "Type", "Clause", "Subject", "Profile"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description,
+                link("company", filing.sourceUrl),
+              ]),
+            ),
+            `_${TWSE_FILINGS_CAVEAT}_`,
           ));
         }
         if (jurisdiction === "KR") {
@@ -738,7 +822,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "former status, but does not surface correspondence addresses, " +
       "nationality, or partial birth dates. Explicit JP is unsupported: EDINET " +
       "has no Section 16-style insider-dealing feed; officer data lives inside " +
-      "the annual securities report (有価証券報告書).",
+      "the annual securities report (有価証券報告書). Explicit TW returns the " +
+      "TWSE monthly director/supervisor shareholding-balance register " +
+      "(董監事持股餘額): current holdings, holdings at election, and pledged shares.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("CompanyInsiders");
@@ -764,6 +850,31 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         );
       }
       try {
+        if (jurisdiction === "TW") {
+          const holdings = await getTwseDirectorHoldings(company, options);
+          if (!holdings.length) {
+            return textResult(joinSections(
+              `No TWSE director/supervisor shareholding records found for "${company}".`,
+              `_${TWSE_INSIDER_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Directors & supervisors (TWSE): ${company}`,
+            markdownTable(
+              ["Title", "Name", "Current shares", "Shares at election", "Pledged shares", "Data month", "Profile"],
+              holdings.map((holding) => [
+                holding.title,
+                holding.name,
+                holding.currentShares !== undefined ? formatNumber(holding.currentShares, "") : undefined,
+                holding.electedShares !== undefined ? formatNumber(holding.electedShares, "") : undefined,
+                holding.pledgedShares !== undefined ? formatNumber(holding.pledgedShares, "") : undefined,
+                holding.dataMonth,
+                link("company", holding.sourceUrl),
+              ]),
+            ),
+            `_${TWSE_INSIDER_CAVEAT}_`,
+          ));
+        }
         if (jurisdiction === "KR") {
           const insiders = await getOpenDartInsiders(company, options);
           if (!insiders.length) {
@@ -851,7 +962,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "fetchFn, and otherwise explains how to enable it. Each row states its " +
       "threshold/control regime. No source is guaranteed-complete UBO/KYC " +
       "evidence. Explicit JP is unsupported: EDINET large-holding reports are " +
-      "indexed by the filer (the holder), not the subject issuer.",
+      "indexed by the filer (the holder), not the subject issuer. Explicit TW " +
+      "returns the TWSE list of shareholders holding more than 10% (持股逾 10% " +
+      "大股東); a company with no such holder returns no rows.",
     {
       ...companyInput,
     },
@@ -883,6 +996,30 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         ));
       }
       try {
+        if (jurisdiction === "TW") {
+          const owners = await getTwseMajorShareholders(company, options);
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No >10% major shareholders reported by TWSE for "${company}".`,
+              `_Threshold regime: ${TWSE_MAJOR_SHAREHOLDER_THRESHOLD_REGIME}._`,
+              `_${TWSE_OWNER_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Major shareholders (>10%, TWSE): ${company}`,
+            markdownTable(
+              ["Holder", "Type", "Filed", "Threshold regime", "Profile"],
+              owners.map((owner) => [
+                owner.holderName,
+                owner.holderType,
+                owner.filedDate || undefined,
+                owner.thresholdRegime,
+                link("company", owner.sourceUrl),
+              ]),
+            ),
+            `_${TWSE_OWNER_CAVEAT}_`,
+          ));
+        }
         if (jurisdiction === "KR") {
           const owners = await getOpenDartOwners(company, options);
           if (!owners.length) {
@@ -985,8 +1122,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "consolidated and separate bases where both are filed. Explicit GB or EU " +
       "returns normalized annual IFRS figures parsed from ESEF/UKSEF reports " +
       "indexed by filings.xbrl.org (FY2020+, LEI-indexed; pass a legal name or " +
-      "LEI). Explicit JP directs callers to the EDINET annual securities report " +
-      "because this release does not parse its XBRL.",
+      "LEI). Explicit JP directs callers to the EDINET annual securities report, " +
+      "and explicit TW to MOPS, because this release does not parse their XBRL.",
     {
       ...companyInput,
       concepts: z
@@ -1022,6 +1159,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             'normalized financial facts. Use CompanyFilings with jurisdiction "IN" ' +
             'and a forms filter like ["Result"] to locate the results announcement.',
         );
+      }
+      if (jurisdiction === "TW") {
+        return textResult(TWSE_FINANCIALS_UNSUPPORTED);
       }
       if (jurisdiction === "KR") {
         try {
@@ -1219,15 +1359,15 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "US Form D (Regulation D) exempt-offering filings for a company: " +
       "amounts offered and sold, investor counts, industry, date of first sale, " +
       "and named related persons. This capability is US-only; explicit GB, KR, " +
-      "JP, CN, and IN return an unsupported-jurisdiction explanation because " +
-      "none of Companies House, DART, EDINET, cninfo, or BSE provides an " +
+      "JP, CN, IN, and TW return an unsupported-jurisdiction explanation because " +
+      "none of Companies House, DART, EDINET, cninfo, BSE, or TWSE provides an " +
       "equivalent private-raise filing dataset.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("PrivateRaises");
       if (
         jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
-        jurisdiction === "CN" || jurisdiction === "IN"
+        jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -1237,7 +1377,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               ? "EDINET"
               : jurisdiction === "CN"
                 ? "cninfo (SSE/SZSE)"
-                : "BSE India";
+                : jurisdiction === "IN"
+                  ? "BSE India"
+                  : "TWSE";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +

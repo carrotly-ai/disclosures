@@ -146,6 +146,12 @@ export const fcaNsmRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 // budget that never self-trips on one bounded lookup while cross-call abuse does.
 export const xbrlFilingsRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
 
+// TWSE OpenAPI (openapi.twse.com.tw). The operator publishes no hard limit but
+// the feeds are whole-market snapshots, so one company lookup issues at most a
+// few dataset downloads. Keep a modest budget that never self-trips on one
+// bounded lookup while cross-call abuse still trips it.
+export const twseRateLimiter = new SlidingWindowRateLimiter(90, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
