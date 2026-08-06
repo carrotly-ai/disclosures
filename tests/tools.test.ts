@@ -338,6 +338,26 @@ describe("CompanyResolve", () => {
     expect(fetchFn.requests[0]?.url).toContain("api.gleif.org");
   });
 
+  test("ISIN input resolves to the issuer's GLEIF record, GLEIF-only", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "filter%5Bisin%5D=US0378331005",
+        body: gleifCollection([gleifRecord(APPLE_LEI, "APPLE INC.")]),
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "US0378331005",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain(APPLE_LEI);
+    expect(text).toContain("ISIN US0378331005");
+    // Only the GLEIF ISIN lookup ran — no SEC endpoints touched.
+    expect(fetchFn.requests).toHaveLength(1);
+    expect(fetchFn.requests[0]?.url).toContain("filter%5Bisin%5D=");
+  });
+
   test("unresolvable input returns Could not find without isError", async () => {
     const fetchFn = routedFetch([
       tickersRoute,

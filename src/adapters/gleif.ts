@@ -341,6 +341,102 @@ export async function resolveGleifEntity(
 
 export const resolveEntity = resolveGleifEntity;
 
+// --- ISIN <-> LEI cross-walk -------------------------------------------------
+//
+// GLEIF publishes the ISIN-to-LEI mapping through the same public API: the
+// `filter[isin]` collection query resolves an ISIN to its issuer's LEI record,
+// and `/lei-records/{lei}/isins` lists every ISIN mapped to an LEI. Both use the
+// standard injectable, rate-limited request path — no bulk golden-copy download.
+
+/** Default paging bounds for the (potentially large) LEI -> ISIN listing. */
+export const GLEIF_ISIN_PAGE_SIZE = 200;
+export const GLEIF_MAX_ISIN_PAGES = 5;
+
+/**
+ * True only for a syntactically valid ISIN, check digit included: two letters,
+ * nine alphanumerics, one digit, passing the Luhn check over the letter-expanded
+ * digit string. The check digit keeps this from firing a GLEIF call on an
+ * arbitrary 12-character token.
+ */
+export function isIsin(value: string): boolean {
+  const isin = value.trim().toUpperCase();
+  if (!/^[A-Z]{2}[A-Z0-9]{9}[0-9]$/.test(isin)) return false;
+  let digits = "";
+  for (const ch of isin) {
+    digits += ch >= "A" && ch <= "Z" ? String(ch.charCodeAt(0) - 55) : ch;
+  }
+  let sum = 0;
+  let double = false;
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    let d = digits.charCodeAt(i) - 48;
+    if (double) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    double = !double;
+  }
+  return sum % 10 === 0;
+}
+
+/** Resolve an ISIN to its issuer's LEI entity, or null if GLEIF maps none. */
+export async function resolveLeiByIsin(
+  isin: string,
+  options: AdapterOptions = {},
+): Promise<Entity | null> {
+  const trimmed = isin.trim().toUpperCase();
+  if (!isIsin(trimmed)) return null;
+  const payload = await requestJson(collectionUrl("isin", trimmed, 1), options);
+  const entity = parseLeiCollection(payload).entities[0];
+  if (!entity) return null;
+  return { ...entity, isin: trimmed, matchReason: `Resolved from ISIN ${trimmed}` };
+}
+
+/** Extract the ISIN strings and the next-page link from an `/isins` payload. */
+export function parseIsinList(payload: unknown): { isins: string[]; nextUrl?: string } {
+  const record = asRecord(payload);
+  const isins: string[] = [];
+  for (const item of asArray(record?.data)) {
+    const isin = asString(nestedRecord(item, "attributes")?.isin);
+    if (isin) isins.push(isin.toUpperCase());
+  }
+  const nextUrl = asString(nestedRecord(record, "links")?.next);
+  return nextUrl ? { isins, nextUrl } : { isins };
+}
+
+/**
+ * List the ISINs GLEIF maps to an LEI. Paginated and capped
+ * ({@link GLEIF_MAX_ISIN_PAGES}); a heavily-mapped issuer can exceed the cap, so
+ * the result is "the first N pages", not necessarily exhaustive.
+ */
+export async function getIsinsForLei(
+  lei: string,
+  options: AdapterOptions = {},
+  paging: { maxPages?: number } = {},
+): Promise<string[]> {
+  const trimmed = lei.trim().toUpperCase();
+  if (!isLei(trimmed)) return [];
+  const maxPages = paging.maxPages ?? GLEIF_MAX_ISIN_PAGES;
+  const first = new URL(`${GLEIF_BASE_URL}/lei-records/${encodeURIComponent(trimmed)}/isins`);
+  first.searchParams.set("page[size]", String(GLEIF_ISIN_PAGE_SIZE));
+  let url: string | undefined = first.toString();
+  const seen = new Set<string>();
+  const all: string[] = [];
+  for (let page = 0; page < maxPages && url; page += 1) {
+    const payload = await requestOptionalJson(url, options);
+    if (payload === null) break;
+    const { isins, nextUrl } = parseIsinList(payload);
+    for (const isin of isins) {
+      if (!seen.has(isin)) {
+        seen.add(isin);
+        all.push(isin);
+      }
+    }
+    url = nextUrl ? absoluteLink(nextUrl) : undefined;
+  }
+  return all;
+}
+
 function withReference(exception: ParsedReportingException): string | undefined {
   if (!exception.reason) return exception.reference;
   return exception.reference
