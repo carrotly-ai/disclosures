@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { TOOL_NAMES, createTools } from "../src/tools/index.js";
 import type { ToolDefinition } from "../src/core/toolDefs.js";
@@ -507,6 +508,10 @@ describe("explicit GB routing", () => {
           ],
         },
       },
+      // A fetchFn is present, so the supplementary FCA NSM TR-1 lookup fires.
+      // Return zero hits so it deterministically renders the "no notifications"
+      // line rather than hitting the graceful-degradation catch.
+      { pattern: "nsm-search", body: { hits: { hits: [] } } },
     ]);
     const tools = createTools({ fetchFn, env: GB_ENV });
     const result = await toolByName(tools, "CompanyOwners").handler({
@@ -521,6 +526,66 @@ describe("explicit GB routing", () => {
     expect(text).toContain("not guaranteed-complete");
     expect(text).toContain("corporate entities and legal persons");
     expect(text).toContain("ECCTA identity-verification transition");
+    // The GB owners view now also carries the UK equity (DTR5/TR-1) section.
+    expect(text).toContain("UK major holdings (DTR5/TR-1)");
+    expect(text).toContain("No FCA NSM TR-1 major-holding notifications");
+  });
+
+  test("CompanyOwners GB renders TR-1 major holdings when NSM access is injected", async () => {
+    const tr1Html = readFileSync(
+      new URL("./fixtures/fca/tr1-rws.html", import.meta.url),
+      "utf8",
+    );
+    const fetchFn = routedFetch([
+      {
+        pattern: "persons-with-significant-control?",
+        body: {
+          items_per_page: 100,
+          start_index: 0,
+          total_results: 1,
+          items: [
+            {
+              kind: "corporate-entity-person-with-significant-control",
+              name: "EXAMPLE PARENT LIMITED",
+              notified_on: "2020-01-01",
+              natures_of_control: ["ownership-of-shares-25-to-50-percent"],
+            },
+          ],
+        },
+      },
+      {
+        pattern: "nsm-search",
+        body: {
+          hits: {
+            hits: [
+              {
+                _source: {
+                  type_code: "HOL",
+                  company: "RWS HOLDINGS PLC",
+                  download_link: "NSM/RNS/abc.html",
+                  publication_date: "2025-11-06",
+                },
+              },
+            ],
+          },
+        },
+      },
+      { pattern: "artefacts/NSM/RNS/abc.html", body: tr1Html, headers: { "content-type": "text/html" } },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "01234567",
+      jurisdiction: "GB",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    // Primary PSC section and the supplementary TR-1 equity section coexist.
+    expect(text).toContain("Persons with significant control (Companies House)");
+    expect(text).toContain("UK major holdings (DTR5/TR-1): 01234567");
+    expect(text).toContain("Octopus Investments Limited");
+    expect(text).toContain("6.99%");
+    expect(text).toContain("Octopus Capital Limited");
+    expect(text).toContain("self-reported DTR5 major-holding disclosures");
   });
 
   test("GB financials and private raises return successful capability explanations", async () => {

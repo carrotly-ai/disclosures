@@ -54,6 +54,12 @@ import {
   searchBseCompanies,
   searchBseFilings,
 } from "../adapters/bseIndia.js";
+import {
+  FCA_NSM_INJECT_NOTE,
+  FCA_NSM_TR1_CAVEAT,
+  getFcaNsmMajorHoldings,
+  hasFcaNsmAccess,
+} from "../adapters/fcaNsm.js";
 import { companyInput, failureResult, notFoundResult } from "./shared.js";
 
 const CONSOLIDATION_CAVEAT =
@@ -73,6 +79,63 @@ function readableCode(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const text = value.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
   return text ? text[0]?.toUpperCase() + text.slice(1) : undefined;
+}
+
+// Companies House PSC (a statutory >25% control register) is NOT the UK
+// equity/voting-rights signal. That signal is DTR5/TR-1 "major holdings",
+// filed to the FCA National Storage Mechanism (NSM). The NSM has no public read
+// API, so this section is inject-only: with no supplied fetchFn it renders an
+// honest access note; with one it fetches and parses TR-1 artefacts. It is a
+// supplementary section — any failure here degrades to a note and never nukes
+// the primary PSC result above it.
+async function buildGbMajorHoldingsSection(
+  company: string,
+  options: AdapterOptions,
+): Promise<string> {
+  const heading = "## UK major holdings (DTR5/TR-1)";
+  if (!hasFcaNsmAccess(options)) {
+    return joinSections(heading, `_${FCA_NSM_INJECT_NOTE}_`);
+  }
+  try {
+    const holdings = await getFcaNsmMajorHoldings(company, options);
+    if (!holdings.length) {
+      return joinSections(
+        heading,
+        `No FCA NSM TR-1 major-holding notifications found for "${company}".`,
+        `_${FCA_NSM_TR1_CAVEAT}_`,
+      );
+    }
+    return joinSections(
+      `${heading}: ${company}`,
+      markdownTable(
+        [
+          "Holder",
+          "Resulting %",
+          "Change %",
+          "Ultimate controller",
+          "Notified",
+          "Link",
+        ],
+        holdings.map((holding) => [
+          holding.holderName,
+          holding.pct !== undefined ? `${holding.pct}%` : undefined,
+          holding.change !== undefined ? `${holding.change}%` : undefined,
+          holding.naturesOfControl
+            ?.join("; ")
+            .replace(/^Ultimate controller:\s*/, ""),
+          holding.notifiedDate ?? holding.filedDate,
+          link("view", holding.sourceUrl),
+        ]),
+      ),
+      `_${FCA_NSM_TR1_CAVEAT}_`,
+    );
+  } catch {
+    return joinSections(
+      heading,
+      "_TR-1 major-holdings lookup was unavailable for this request; the " +
+        "Companies House PSC data above is unaffected._",
+    );
+  }
 }
 
 function identifierText(entity: Entity): string {
@@ -756,7 +819,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "Korean 5% mass-holding reports from DART (explicit KR). GB rows include " +
       "individual/corporate/legal/super-secure kinds, statutory natures of " +
       "control, percentage bands where derivable, ceased entries, and PSC " +
-      "statements when no ordinary PSC record exists. Each row states its " +
+      "statements when no ordinary PSC record exists. The GB view also adds a " +
+      "UK equity/voting-rights (DTR5/TR-1 major-holdings) section from the FCA " +
+      "National Storage Mechanism; the NSM has no public read API, so that " +
+      "section is populated only when NSM access is supplied via an injected " +
+      "fetchFn, and otherwise explains how to enable it. Each row states its " +
       "threshold/control regime. No source is guaranteed-complete UBO/KYC " +
       "evidence. Explicit JP is unsupported: EDINET large-holding reports are " +
       "indexed by the filer (the holder), not the subject issuer.",
@@ -817,39 +884,42 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ));
         }
         if (jurisdiction === "GB") {
+          // PSC (statutory >25% control) is the primary section; its config /
+          // rate-limit errors must still surface as isError via the outer catch.
           const owners = await getCompaniesHouseOwners(company, options);
-          if (!owners.length) {
-            return textResult(joinSections(
+          const pscSection = owners.length
+            ? joinSections(
+              `# Persons with significant control (Companies House): ${company}`,
+              markdownTable(
+                [
+                  "PSC / statement",
+                  "Kind",
+                  "Control / statement",
+                  "Percentage band",
+                  "Notified",
+                  "Ceased",
+                  "Threshold regime",
+                  "Link",
+                ],
+                owners.map((owner) => [
+                  owner.holderName,
+                  owner.holderType,
+                  owner.naturesOfControl?.map(readableCode).join(", ") || readableCode(owner.form),
+                  owner.percentageBand,
+                  owner.notifiedDate,
+                  owner.ceasedDate,
+                  owner.thresholdRegime,
+                  link("view", owner.sourceUrl),
+                ]),
+              ),
+              `_${COMPANIES_HOUSE_PSC_CAVEAT}_`,
+            )
+            : joinSections(
               `No Companies House PSC records or PSC statements found for "${company}".`,
               `_${COMPANIES_HOUSE_PSC_CAVEAT}_`,
-            ));
-          }
-          return textResult(joinSections(
-            `# Persons with significant control (Companies House): ${company}`,
-            markdownTable(
-              [
-                "PSC / statement",
-                "Kind",
-                "Control / statement",
-                "Percentage band",
-                "Notified",
-                "Ceased",
-                "Threshold regime",
-                "Link",
-              ],
-              owners.map((owner) => [
-                owner.holderName,
-                owner.holderType,
-                owner.naturesOfControl?.map(readableCode).join(", ") || readableCode(owner.form),
-                owner.percentageBand,
-                owner.notifiedDate,
-                owner.ceasedDate,
-                owner.thresholdRegime,
-                link("view", owner.sourceUrl),
-              ]),
-            ),
-            `_${COMPANIES_HOUSE_PSC_CAVEAT}_`,
-          ));
+            );
+          const majorHoldings = await buildGbMajorHoldingsSection(company, options);
+          return textResult(joinSections(pscSection, majorHoldings));
         }
 
         const owners = await getSecOwners(company, options);

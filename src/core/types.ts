@@ -23,6 +23,7 @@ export const DATA_SOURCES = {
   EDINET: "EDINET",
   CNINFO: "cninfo",
   BSE: "BSE India",
+  FCA_NSM: "FCA NSM",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];

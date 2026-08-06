@@ -2,11 +2,12 @@
 
 Free, open-source corporate-disclosure research through official sources. `disclosures` is both a TypeScript library and a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server.
 
-Version 0.1 ships seven data sources behind seven jurisdiction-agnostic tools:
+Version 0.1 ships eight data sources behind seven jurisdiction-agnostic tools:
 
 - **US SEC EDGAR** (default) — filings, annual/quarterly report metadata, Section 16 insiders, Schedule 13D/13G filers, annual XBRL financials, and Form D private raises.
 - **GLEIF LEI** (global) — entity resolution and reported direct/ultimate accounting-consolidation relationships.
 - **UK Companies House** (`jurisdiction: "GB"`) — company resolution, filing history, the officer register, and persons-with-significant-control records.
+- **UK FCA National Storage Mechanism** (`jurisdiction: "GB"`, inject-only) — DTR5/TR-1 "notification of major holdings" (the ~3%+ equity/voting-rights signal Companies House PSC does not carry), surfaced inside `CompanyOwners`. The NSM has no public read API, so this source stays dormant unless you supply your own access via an injected `fetchFn`; otherwise the GB owners view explains how to enable it.
 - **South Korea DART / OpenDART** (`jurisdiction: "KR"`) — company resolution, periodic reports, executive/major-shareholder ownership, 5% mass-holding reports, and annual major-account financials.
 - **Japan EDINET** (`jurisdiction: "JP"`) — company resolution and date-indexed disclosure documents (annual securities reports, quarterly/semi-annual reports, and more).
 - **China cninfo** (`jurisdiction: "CN"`) — keyless company resolution across the Shanghai and Shenzhen exchanges (and HKEX mirror) plus a date-filterable announcement feed with direct PDF links and latest annual/quarterly periodic-report lookup.
@@ -47,6 +48,7 @@ Each non-US source uses its own free API key. Provide only the keys for the juri
 | Jurisdiction | Environment variable | Where to get it | Notes |
 |---|---|---|---|
 | GB — Companies House | `COMPANIES_HOUSE_API_KEY` | [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/) | Required for all GB operations. |
+| GB — FCA NSM (TR-1) | _(none — inject-only)_ | — | The FCA National Storage Mechanism has no public read API. `CompanyOwners` GB adds the DTR5/TR-1 major-holdings section only when you inject your own `fetchFn` via `AdapterOptions`; the default path never contacts `data.fca.org.uk`. |
 | KR — OpenDART | `OPENDART_API_KEY` | [opendart.fss.or.kr](https://opendart.fss.or.kr/) | Required for all KR operations. |
 | JP — EDINET | `EDINET_API_KEY` | [EDINET API (v2) registration](https://api.edinet-fsa.go.jp/) | Required only for document search; JP `CompanyResolve` works without it because the EDINET code list is public. |
 | CN — cninfo | _(none)_ | — | Keyless. Resolution and the announcement feed use public POST endpoints. |
@@ -160,6 +162,7 @@ Five non-US jurisdictions now ship behind the existing tools:
 | Jurisdiction | Adapter | Status |
 |---|---|---|
 | United Kingdom | Companies House | Shipped |
+| United Kingdom | FCA NSM (DTR5/TR-1 major holdings) | Shipped — inject-only, inside `CompanyOwners` |
 | South Korea | DART / OpenDART | Shipped |
 | Japan | EDINET | Shipped |
 | China | cninfo (SSE/SZSE) | Shipped — resolution + filings |

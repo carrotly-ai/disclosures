@@ -134,6 +134,12 @@ export const cninfoRateLimiter = new SlidingWindowRateLimiter(300, 60_000);
 // we never contribute to the throttling that plain-fetch callers already hit.
 export const bseRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
 
+// FCA National Storage Mechanism (UK TR-1 major holdings). Access is inject-only
+// (an explicitly supplied browser-backed fetchFn), and a single major-holdings
+// lookup issues one search plus a capped set of artefact fetches, so keep a
+// modest budget that never self-trips on one bounded lookup.
+export const fcaNsmRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -142,4 +148,5 @@ export function resetRateLimiters(): void {
   edinetRateLimiter.reset();
   cninfoRateLimiter.reset();
   bseRateLimiter.reset();
+  fcaNsmRateLimiter.reset();
 }
