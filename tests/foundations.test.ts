@@ -24,6 +24,7 @@ import {
   cninfoRateLimiter,
   companiesHouseRateLimiter,
   edinetRateLimiter,
+  fcaNsmRateLimiter,
   openDartRateLimiter,
   resetRateLimiters,
 } from "../src/core/rateLimiter.js";
@@ -147,6 +148,7 @@ describe("jurisdiction-neutral foundations", () => {
       "EDINET",
       "cninfo",
       "BSE India",
+      "FCA NSM",
     ]);
   });
 
@@ -205,6 +207,7 @@ describe("multi-jurisdiction rate limiters", () => {
     expect([edinetRateLimiter.limit, edinetRateLimiter.windowMs]).toEqual([600, 60_000]);
     expect([cninfoRateLimiter.limit, cninfoRateLimiter.windowMs]).toEqual([300, 60_000]);
     expect([bseRateLimiter.limit, bseRateLimiter.windowMs]).toEqual([120, 60_000]);
+    expect([fcaNsmRateLimiter.limit, fcaNsmRateLimiter.windowMs]).toEqual([60, 60_000]);
   });
 
   test("multi-window acquisition is atomic and reset clears every window", () => {
@@ -232,12 +235,14 @@ describe("multi-jurisdiction rate limiters", () => {
     expect(edinetRateLimiter.tryAcquire()).toBe(true);
     expect(cninfoRateLimiter.tryAcquire()).toBe(true);
     expect(bseRateLimiter.tryAcquire()).toBe(true);
+    expect(fcaNsmRateLimiter.tryAcquire()).toBe(true);
     resetRateLimiters();
     expect(companiesHouseRateLimiter.size).toBe(0);
     expect(openDartRateLimiter.sizes).toEqual([0, 0]);
     expect(edinetRateLimiter.size).toBe(0);
     expect(cninfoRateLimiter.size).toBe(0);
     expect(bseRateLimiter.size).toBe(0);
+    expect(fcaNsmRateLimiter.size).toBe(0);
   });
 });
 

@@ -98,6 +98,31 @@ export async function postForm(
   ).then((response) => response.json());
 }
 
+/**
+ * POST a JSON body and parse the JSON response. Some disclosure portals expose
+ * an undocumented Elasticsearch-style search proxy that only accepts a JSON
+ * POST (e.g. the FCA National Storage Mechanism), so this mirrors the GET
+ * helpers with the same timeout/error contract.
+ */
+export async function postJson(
+  url: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+  timeoutMs = 15_000,
+  fetchFn: FetchFn = fetch,
+): Promise<unknown> {
+  return request(
+    url,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers },
+      body: JSON.stringify(body),
+    },
+    timeoutMs,
+    fetchFn,
+  ).then((response) => response.json());
+}
+
 export async function getOptionalJson(
   url: string,
   headers: Record<string, string> = {},
