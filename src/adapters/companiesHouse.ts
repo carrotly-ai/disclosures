@@ -556,6 +556,42 @@ export async function getLatestCompaniesHouseReport(
   };
 }
 
+/**
+ * Summarise an officer/PSC item's `identity_verification_details` object
+ * (ECCTA identity verification, mandatory for new appointments from 18 Nov 2025).
+ *
+ * The block is optional and its presence is progressive: an ACSP-verified
+ * director carries `identity_verified_on` plus the provider name; a director
+ * who has supplied a verification statement carries the appointment-verification
+ * dates without an ACSP name; an unstarted director may carry only a due date.
+ *
+ * Absence of the whole block is NOT proof an officer is unverified — Companies
+ * House populates it progressively and the public web record can show a
+ * verified status before this REST field is filled in. Callers must caveat
+ * accordingly and never render a bare "unverified" for a missing block.
+ */
+export function formatIdentityVerification(value: unknown): string | undefined {
+  const details = asRecord(value);
+  if (!details) return undefined;
+  const verifiedOn = asString(details.identity_verified_on);
+  const acsp = asString(details.authorised_corporate_service_provider_name);
+  const statementStart = asString(details.appointment_verification_start_on);
+  const statementEnd = asString(details.appointment_verification_end_on);
+  const statementDue = asString(details.appointment_verification_statement_due_on);
+  if (verifiedOn) {
+    return acsp
+      ? `Verified ${verifiedOn} (ACSP: ${acsp})`
+      : `Verified ${verifiedOn}`;
+  }
+  if (statementStart) {
+    return statementEnd
+      ? `Verification statement ${statementStart} (ended ${statementEnd})`
+      : `Verification statement supplied ${statementStart}`;
+  }
+  if (statementDue) return `Statement due by ${statementDue}`;
+  return undefined;
+}
+
 function parseOfficer(
   value: unknown,
   companyNumber: string,
@@ -568,6 +604,9 @@ function parseOfficer(
   const appointedDate = asString(item?.appointed_on);
   const ceasedDate = asString(item?.resigned_on);
   const status = ceasedDate ? "Former" : "Active";
+  const identityVerification = formatIdentityVerification(
+    item?.identity_verification_details,
+  );
   const roles = unique([
     humanize(officerRole),
     ...(occupation ? [`Occupation: ${occupation}`] : []),
@@ -582,6 +621,7 @@ function parseOfficer(
     filedDate: ceasedDate ?? appointedDate ?? "Not stated",
     ...(appointedDate ? { appointedDate } : {}),
     ...(ceasedDate ? { ceasedDate } : {}),
+    ...(identityVerification ? { identityVerification } : {}),
     sourceUrl: publicOfficersUrl(companyNumber),
     source: "Companies House",
     sourceIdentifiers: sourceIdentifiers(companyNumber),
@@ -651,6 +691,9 @@ function parsePsc(
   const notifiedDate = asString(item?.notified_on);
   const ceasedDate = asString(item?.ceased_on);
   const percentageBand = deriveCompaniesHousePercentageBand(naturesOfControl);
+  const identityVerification = formatIdentityVerification(
+    item?.identity_verification_details,
+  );
   return {
     holderName: name,
     holderType: pscKind(kind),
@@ -660,6 +703,7 @@ function parsePsc(
     filedDate: notifiedDate ?? ceasedDate ?? "Not stated",
     ...(notifiedDate ? { notifiedDate } : {}),
     ...(ceasedDate ? { ceasedDate } : {}),
+    ...(identityVerification ? { identityVerification } : {}),
     ...(naturesOfControl.length ? { naturesOfControl } : {}),
     sourceUrl: publicPscUrl(companyNumber),
     source: "Companies House",

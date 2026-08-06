@@ -649,6 +649,10 @@ describe("explicit GB routing", () => {
               address: { address_line_1: "Private output" },
               nationality: "British",
               date_of_birth: { month: 1, year: 1980 },
+              identity_verification_details: {
+                identity_verified_on: "2025-11-20",
+                authorised_corporate_service_provider_name: "DE PINNA LLP",
+              },
             },
           ],
         },
@@ -660,9 +664,14 @@ describe("explicit GB routing", () => {
       jurisdiction: "GB",
     } as never);
     const text = resultText(result);
-    expect(text).toContain("| Name | Role | Occupation | Appointed | Resigned | Status | Link |");
+    expect(text).toContain(
+      "| Name | Role | Occupation | Appointed | Resigned | Status | Identity (ECCTA) | Link |",
+    );
     expect(text).toContain("DOE, Jane");
     expect(text).toContain("Active");
+    expect(text).toContain("Verified 2025-11-20 (ACSP: DE PINNA LLP)");
+    // Absence-is-not-proof caveat must accompany the column.
+    expect(text).toContain("not** proof");
     expect(text).not.toContain("Private output");
     expect(text).not.toContain("British");
     expect(text).not.toContain("1980");
