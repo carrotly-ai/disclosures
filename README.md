@@ -2,10 +2,11 @@
 
 Free, open-source corporate-disclosure research through official sources. `disclosures` is both a TypeScript library and a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server.
 
-Version 0.1 ships eight data sources behind seven jurisdiction-agnostic tools:
+Version 0.1 ships nine data sources behind seven jurisdiction-agnostic tools:
 
 - **US SEC EDGAR** (default) — filings, annual/quarterly report metadata, Section 16 insiders, Schedule 13D/13G filers, annual XBRL financials, and Form D private raises.
 - **GLEIF LEI** (global) — entity resolution and reported direct/ultimate accounting-consolidation relationships.
+- **filings.xbrl.org ESEF/UKSEF** (`jurisdiction: "EU"` and `"GB"`) — keyless, LEI-indexed annual IFRS financials parsed from the machine-readable xBRL-JSON reports European and UK issuers file under ESEF/UKSEF (FY2020+), surfaced inside `CompanyFinancials`.
 - **UK Companies House** (`jurisdiction: "GB"`) — company resolution, filing history, the officer register, and persons-with-significant-control records.
 - **UK FCA National Storage Mechanism** (`jurisdiction: "GB"`, inject-only) — DTR5/TR-1 "notification of major holdings" (the ~3%+ equity/voting-rights signal Companies House PSC does not carry), surfaced inside `CompanyOwners`. The NSM has no public read API, so this source stays dormant unless you supply your own access via an injected `fetchFn`; otherwise the GB owners view explains how to enable it.
 - **South Korea DART / OpenDART** (`jurisdiction: "KR"`) — company resolution, periodic reports, executive/major-shareholder ownership, 5% mass-holding reports, and annual major-account financials.
@@ -23,11 +24,11 @@ The seven tool names and schemas stay stable as jurisdictions are added; each ne
 | `CompanyFilings` | Filing dates, types, descriptions, and direct SEC links; a latest-report mode returns metadata and links to key sections, not the section text. |
 | `CompanyInsiders` | Recent named directors, officers and titles, and 10% owners reported in Forms 3/4/5. |
 | `CompanyOwners` | Schedule 13D/13G filers with form, date, links, and the US 5% threshold regime. |
-| `CompanyFinancials` | Annual as-filed revenue, income, balance-sheet, EPS, cash-flow, and R&D facts by fiscal period end. |
+| `CompanyFinancials` | Annual as-filed revenue, income, balance-sheet, EPS, cash-flow, and R&D facts by fiscal period end (US XBRL, KR DART major accounts, or GB/EU normalized IFRS from ESEF/UKSEF). |
 | `OwnershipChain` | GLEIF direct and ultimate accounting-consolidating parents, reporting exceptions, and known direct children. |
 | `PrivateRaises` | US Form D exempt offerings, amounts, investor counts, and named executives/directors/promoters. US-only in v1. |
 
-All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK, LEI, or ISIN (US — an ISIN resolves to its issuer's GLEIF record), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP), a 6-digit A-share or 5-digit HK stock code (CN), or a 6-digit BSE scrip code (IN). Tools accept `jurisdiction: "US" | "GB" | "KR" | "JP" | "CN" | "IN"` (default `US`); `OwnershipChain` is global via GLEIF.
+All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK, LEI, or ISIN (US — an ISIN resolves to its issuer's GLEIF record), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP), a 6-digit A-share or 5-digit HK stock code (CN), or a 6-digit BSE scrip code (IN). Tools accept `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN"` (default `US`); `OwnershipChain` is global via GLEIF. The `EU` route serves only `CompanyFinancials` (pan-European ESEF financials, keyed by legal name or 20-character LEI); every other intent under `EU` returns an explicit unsupported-jurisdiction explanation.
 
 Where a jurisdiction lacks a normalized equivalent to a US intent — for example EDINET has no Section 16-style insider feed, neither Companies House nor DART nor EDINET exposes a Form D-equivalent private-raise dataset, and Chinese/Indian ownership and financial detail lives inside report PDFs this release does not parse — the tool returns an explicit unsupported-jurisdiction explanation rather than an empty or fabricated result. For CN and IN, `CompanyFilings` returns real announcement PDF links; the deeper insider/owner/financial intents are the ones that degrade honestly.
 
@@ -53,6 +54,7 @@ Each non-US source uses its own free API key. Provide only the keys for the juri
 | JP — EDINET | `EDINET_API_KEY` | [EDINET API (v2) registration](https://api.edinet-fsa.go.jp/) | Required only for document search; JP `CompanyResolve` works without it because the EDINET code list is public. |
 | CN — cninfo | _(none)_ | — | Keyless. Resolution and the announcement feed use public POST endpoints. |
 | IN — BSE | _(none)_ | — | Keyless. BSE's `api.bseindia.com` host is anti-bot protected; if the default fetch is throttled, inject a browser-backed `fetchFn` via `AdapterOptions`. |
+| GB / EU — filings.xbrl.org (ESEF/UKSEF) | _(none)_ | — | Keyless. `CompanyFinancials` with `jurisdiction: "GB"` or `"EU"` reads the public filings.xbrl.org JSON:API and xBRL-JSON reports; resolving a legal name to an LEI uses GLEIF (also keyless). |
 
 Missing credentials produce a readable, flagged error naming the variable to set — never a silent empty result.
 
@@ -195,18 +197,21 @@ The server reserves stdout for newline-delimited JSON-RPC. Contributor diagnosti
 
 ## Roadmap
 
-Five non-US jurisdictions now ship behind the existing tools:
+Non-US jurisdictions now ship behind the existing tools:
 
 | Jurisdiction | Adapter | Status |
 |---|---|---|
 | United Kingdom | Companies House | Shipped |
 | United Kingdom | FCA NSM (DTR5/TR-1 major holdings) | Shipped — inject-only, inside `CompanyOwners` |
+| EU / UK | filings.xbrl.org (ESEF/UKSEF financials) | Shipped — normalized IFRS in `CompanyFinancials` |
 | South Korea | DART / OpenDART | Shipped |
 | Japan | EDINET | Shipped |
 | China | cninfo (SSE/SZSE) | Shipped — resolution + filings |
 | India | BSE (BSE-lite) | Shipped — resolution + filings |
 
-Deeper normalized data for the newer sources (GB/JP insider and financial parsing, and CN/IN ownership and financials that currently live inside report PDFs) will dispatch behind the same seven intent tools rather than adding jurisdiction-specific tool names.
+ESEF/UKSEF coverage is FY2020+ and not exhaustive: alternative-market issuers (e.g. First North) are ESEF-exempt, and some national officially-appointed mechanisms (OAMs) hamper collection, so a miss never proves a company did not report. Only undimensioned reported totals are surfaced (no segment breakdowns), and a newer report's restated figure supersedes an earlier one.
+
+Deeper normalized data for the remaining sources (GB/JP insider parsing, and CN/IN ownership and financials that currently live inside report PDFs) will dispatch behind the same seven intent tools rather than adding jurisdiction-specific tool names.
 
 ## License
 

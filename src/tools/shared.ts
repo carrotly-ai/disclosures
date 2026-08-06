@@ -19,16 +19,32 @@ export const companyInput = {
         "(IN), or 20-character LEI",
     ),
   jurisdiction: z
-    .enum(["US", "GB", "KR", "JP", "CN", "IN"])
+    .enum(["US", "GB", "EU", "KR", "JP", "CN", "IN"])
     .optional()
     .describe(
       "Jurisdiction to search: US (SEC EDGAR), GB (Companies House), " +
-        "KR (OpenDART/DART), JP (EDINET), CN (cninfo — SSE/SZSE), or " +
+        "EU (pan-European ESEF financials via filings.xbrl.org — CompanyFinancials " +
+        "only), KR (OpenDART/DART), JP (EDINET), CN (cninfo — SSE/SZSE), or " +
         "IN (BSE India). Omit for the existing US default.",
     ),
 };
 
 export type ToolRuntime = AdapterOptions;
+
+/**
+ * The EU jurisdiction is served only by filings.xbrl.org (ESEF/UKSEF annual
+ * financials), so every intent other than CompanyFinancials returns this honest
+ * unsupported explanation rather than silently falling through to the US path.
+ */
+export function euUnsupportedResult(tool: string): ToolResult {
+  return textResult(
+    `${tool} is unsupported for jurisdiction "EU". The EU route covers only ` +
+      "ESEF/UKSEF annual financial reports indexed by filings.xbrl.org, which serve " +
+      'CompanyFinancials. For an EU issuer use CompanyFinancials with jurisdiction "EU", ' +
+      "OwnershipChain (global GLEIF), or the issuer's national jurisdiction where this " +
+      "release supports one.",
+  );
+}
 
 export function notFoundResult(company: string, detail?: string): ToolResult {
   return textResult(

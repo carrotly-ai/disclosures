@@ -49,6 +49,7 @@ export * as edinet from "./adapters/edinet.js";
 export * as cninfo from "./adapters/cninfo.js";
 export * as bseIndia from "./adapters/bseIndia.js";
 export * as fcaNsm from "./adapters/fcaNsm.js";
+export * as xbrlFilings from "./adapters/xbrlFilings.js";
 
 function isMainModule(): boolean {
   const entry = process.argv[1];

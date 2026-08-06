@@ -62,7 +62,16 @@ import {
   getFcaNsmMajorHoldings,
   hasFcaNsmAccess,
 } from "../adapters/fcaNsm.js";
-import { companyInput, failureResult, notFoundResult } from "./shared.js";
+import {
+  ESEF_FINANCIAL_CONCEPT_NAMES,
+  getEsefFinancials,
+} from "../adapters/xbrlFilings.js";
+import {
+  companyInput,
+  euUnsupportedResult,
+  failureResult,
+  notFoundResult,
+} from "./shared.js";
 
 const CONSOLIDATION_CAVEAT =
   "Caveat: GLEIF Level 2 relationships are accounting-consolidation parents " +
@@ -239,6 +248,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "code, securities code, 法人番号, and legal name).",
     companyInput,
     async ({ company, jurisdiction }) => {
+      if (jurisdiction === "EU") return euUnsupportedResult("CompanyResolve");
       if (jurisdiction === "JP") {
         try {
           const results = await searchEdinetCompanies(company, options);
@@ -394,6 +404,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .describe("\"search\" (default) or latest annual/quarterly report metadata"),
     },
     async ({ company, jurisdiction, forms, start_date, end_date, limit, mode }) => {
+      if (jurisdiction === "EU") return euUnsupportedResult("CompanyFilings");
       try {
         if (jurisdiction === "JP") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
@@ -730,6 +741,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "the annual securities report (有価証券報告書).",
     companyInput,
     async ({ company, jurisdiction }) => {
+      if (jurisdiction === "EU") return euUnsupportedResult("CompanyInsiders");
       if (jurisdiction === "JP") {
         return textResult(
           "CompanyInsiders is unsupported for jurisdiction \"JP\". EDINET does not " +
@@ -844,6 +856,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       ...companyInput,
     },
     async ({ company, jurisdiction }) => {
+      if (jurisdiction === "EU") return euUnsupportedResult("CompanyOwners");
       if (jurisdiction === "JP") {
         return textResult(joinSections(
           "CompanyOwners is unsupported for jurisdiction \"JP\". Japan's large-holding " +
@@ -969,11 +982,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       `reports (10-K/20-F/40-F): ${SEC_FINANCIAL_CONCEPT_NAMES.join(", ")}. ` +
       "Explicit KR returns Korean DART major-account figures (" +
       `${Object.keys(OPEN_DART_ACCOUNT_CONCEPTS).join(", ")}), showing ` +
-      "consolidated and separate bases where both are filed. Explicit GB " +
-      "returns an explanation directing callers to Companies House accounts " +
-      "filings because this release does not parse normalized UK financial " +
-      "facts. Explicit JP likewise directs callers to the EDINET annual " +
-      "securities report because this release does not parse its XBRL.",
+      "consolidated and separate bases where both are filed. Explicit GB or EU " +
+      "returns normalized annual IFRS figures parsed from ESEF/UKSEF reports " +
+      "indexed by filings.xbrl.org (FY2020+, LEI-indexed; pass a legal name or " +
+      "LEI). Explicit JP directs callers to the EDINET annual securities report " +
+      "because this release does not parse its XBRL.",
     {
       ...companyInput,
       concepts: z
@@ -1057,13 +1070,59 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return failureResult(company, error);
         }
       }
-      if (jurisdiction === "GB") {
-        return textResult(
-          "Companies House exposes UK accounts filings and linked documents, but this " +
-            "release does not parse them into normalized financial facts. Use " +
-            'CompanyFilings with jurisdiction "GB" and an accounts filter to retrieve ' +
-            "the latest accounts metadata and public document links.",
-        );
+      if (jurisdiction === "GB" || jurisdiction === "EU") {
+        try {
+          const requested = concepts?.filter((concept) =>
+            ESEF_FINANCIAL_CONCEPT_NAMES.includes(concept)
+          );
+          const facts = await getEsefFinancials(
+            company,
+            requested && requested.length ? requested : ESEF_FINANCIAL_CONCEPT_NAMES,
+            options,
+            periods ?? 5,
+          );
+          if (!facts.length) {
+            return textResult(
+              `No ESEF/UKSEF annual financials found on filings.xbrl.org for "${company}". ` +
+                "Coverage is FY2020+ and LEI-indexed — pass a legal name or 20-character " +
+                "LEI. Not every European issuer is present (alternative-market issuers are " +
+                "ESEF-exempt, and some national OAMs hamper collection), so absence here is " +
+                "not proof the company did not report.",
+            );
+          }
+          const byConcept = new Map<string, typeof facts>();
+          for (const fact of facts) {
+            const bucket = byConcept.get(fact.concept) ?? [];
+            bucket.push(fact);
+            byConcept.set(fact.concept, bucket);
+          }
+          const sections = [...byConcept.entries()].map(([, rows]) => {
+            const label = rows[0]?.label ?? "";
+            const unit = rows[0]?.unit ?? "";
+            return joinSections(
+              `## ${label}${unit ? ` (${unit})` : ""}`,
+              markdownTable(
+                ["Fiscal period end", "Value", "Report", "Filed"],
+                rows.map((fact) => [
+                  fact.periodEnd,
+                  formatNumber(fact.value, fact.unit),
+                  fact.sourceUrl ? link(fact.form, fact.sourceUrl) : fact.form,
+                  fact.filedDate || "—",
+                ]),
+              ),
+            );
+          });
+          return textResult(joinSections(
+            `# Annual financials (ESEF/UKSEF): ${company}`,
+            ...sections,
+            "_As-filed annual IFRS values from ESEF/UKSEF reports indexed by " +
+              "filings.xbrl.org, labeled by fiscal period end; a newer report's " +
+              "restated figure supersedes an earlier one. Only undimensioned reported " +
+              "totals are shown (no segment breakdowns)._",
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       try {
         const facts = await getSecFinancials(company, concepts ?? SEC_FINANCIAL_CONCEPT_NAMES, options);
@@ -1165,6 +1224,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "equivalent private-raise filing dataset.",
     companyInput,
     async ({ company, jurisdiction }) => {
+      if (jurisdiction === "EU") return euUnsupportedResult("PrivateRaises");
       if (
         jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
         jurisdiction === "CN" || jurisdiction === "IN"

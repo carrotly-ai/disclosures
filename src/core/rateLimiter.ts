@@ -140,6 +140,12 @@ export const bseRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
 // modest budget that never self-trips on one bounded lookup.
 export const fcaNsmRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 
+// filings.xbrl.org (EU/UK ESEF). The operator publishes no hard limit but asks
+// clients to be gentle. One CompanyFinancials lookup issues a single filings
+// query plus a small capped set of xBRL-JSON report fetches, so keep a modest
+// budget that never self-trips on one bounded lookup while cross-call abuse does.
+export const xbrlFilingsRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -149,4 +155,5 @@ export function resetRateLimiters(): void {
   cninfoRateLimiter.reset();
   bseRateLimiter.reset();
   fcaNsmRateLimiter.reset();
+  xbrlFilingsRateLimiter.reset();
 }

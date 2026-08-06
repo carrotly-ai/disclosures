@@ -7,6 +7,7 @@ export type Env = Record<string, string | undefined>;
 export const JURISDICTIONS = {
   US: "US",
   GB: "GB",
+  EU: "EU",
   KR: "KR",
   JP: "JP",
   CN: "CN",
@@ -25,6 +26,7 @@ export const DATA_SOURCES = {
   CNINFO: "cninfo",
   BSE: "BSE India",
   FCA_NSM: "FCA NSM",
+  XBRL_FILINGS: "filings.xbrl.org",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
