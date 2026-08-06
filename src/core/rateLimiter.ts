@@ -152,6 +152,13 @@ export const xbrlFilingsRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
 // bounded lookup while cross-call abuse still trips it.
 export const twseRateLimiter = new SlidingWindowRateLimiter(90, 60_000);
 
+// Brazil CVM open data (dados.cvm.gov.br). The portal publishes no documented
+// rate limit but each intent pulls one large whole-market CSV/ZIP snapshot
+// (registration ~1.5 MB, an IPE year ~1-12 MB, a DFP year ~13 MB), so one
+// company lookup is a small number of heavy downloads. Keep a modest budget
+// that never self-trips on one bounded lookup while cross-call abuse still trips.
+export const cvmRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -162,4 +169,6 @@ export function resetRateLimiters(): void {
   bseRateLimiter.reset();
   fcaNsmRateLimiter.reset();
   xbrlFilingsRateLimiter.reset();
+  twseRateLimiter.reset();
+  cvmRateLimiter.reset();
 }

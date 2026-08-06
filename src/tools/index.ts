@@ -74,6 +74,12 @@ import {
   TWSE_MAJOR_SHAREHOLDER_THRESHOLD_REGIME,
 } from "../adapters/twseOpenApi.js";
 import {
+  CVM_FINANCIAL_CONCEPT_NAMES,
+  getCvmFinancials,
+  searchCvmCompanies,
+  searchCvmFilings,
+} from "../adapters/cvmOpenData.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -251,6 +257,34 @@ const TWSE_FINANCIALS_UNSUPPORTED =
   "System (MOPS), but this release does not parse them into normalized financial " +
   "facts. Read the statements on mops.twse.com.tw.";
 
+const CVM_FILINGS_CAVEAT =
+  "CVM IPE disclosures (Informações Periódicas e Eventuais) are the Brazilian " +
+  "regulator's whole-market open-data index; each row links to the official RAD " +
+  "document download. Coverage is per calendar year (2003+), so a date window " +
+  "outside the scanned years returns nothing here — absence is not proof a " +
+  "disclosure does not exist.";
+
+const CVM_FINANCIALS_CAVEAT =
+  "CVM DFP (Demonstrações Financeiras Padronizadas) are annual as-filed " +
+  "statements. Consolidated figures are shown when filed, otherwise individual; " +
+  "each fact carries the account line exactly as the company reported it, in BRL. " +
+  "Only the headline balance-sheet and income-statement lines are normalized " +
+  "(no segment or note detail), and a later restatement in a newer bundle " +
+  "supersedes an earlier figure for the same period end.";
+
+const CVM_INSIDER_UNSUPPORTED =
+  "CompanyInsiders is unsupported for jurisdiction \"BR\". CVM discloses officer " +
+  "and administrator data inside the Formulário de Referência and governance " +
+  "filings, but this release does not parse them into a normalized insider feed. " +
+  "Use CompanyFilings with jurisdiction \"BR\" to reach the underlying documents.";
+
+const CVM_OWNER_UNSUPPORTED =
+  "CompanyOwners is unsupported for jurisdiction \"BR\". CVM discloses relevant " +
+  "(5%+) shareholding movements and controlling-block data inside the Formulário " +
+  "de Referência and CVM 44 communications, but this release does not parse them " +
+  "into a normalized ownership feed. Use CompanyFilings with jurisdiction \"BR\" " +
+  "to reach the underlying documents.";
+
 function describeParent(parent: OwnershipParent | undefined): string {
   if (!parent) return "No parent information reported";
   if (parent.entity) {
@@ -357,6 +391,20 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           }
           return textResult(joinSections(
             `# Company resolution (TWSE): ${company}`,
+            entityRows(results.slice(0, 10)),
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "BR") {
+        try {
+          const results = await searchCvmCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, "Try a numeric CVM code (e.g. 4170 for Vale) or a company name.");
+          }
+          return textResult(joinSections(
+            `# Company resolution (CVM): ${company}`,
             entityRows(results.slice(0, 10)),
           ));
         } catch (error) {
@@ -639,6 +687,45 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `_${TWSE_FILINGS_CAVEAT}_`,
           ));
         }
+        if (jurisdiction === "BR") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            return textResult(
+              `Latest ${mode === "latest_annual" ? "annual" : "quarterly"} mode is unsupported for BR. ` +
+                "The CVM IPE feed is a flat disclosure index without a normalized " +
+                "annual/quarterly report-metadata equivalent; for annual financials use " +
+                'CompanyFinancials with jurisdiction "BR" (DFP), or mode "search" here to ' +
+                "browse the disclosure index.",
+            );
+          }
+          const filings = await searchCvmFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No CVM IPE disclosures found for "${company}" in the scanned years.`,
+              `_${CVM_FILINGS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# CVM disclosures (IPE): ${company}`,
+            markdownTable(
+              ["Filed", "Category", "Species", "Subject", "Document"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category ?? "",
+                filing.description,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            "_Document links open the official CVM RAD download; this tool never returns document text._",
+            `_${CVM_FILINGS_CAVEAT}_`,
+          ));
+        }
         if (jurisdiction === "KR") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
             const report = await getLatestOpenDartReport(
@@ -849,6 +936,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             BSE_SHAREHOLDING_UNSUPPORTED,
         );
       }
+      if (jurisdiction === "BR") {
+        return textResult(CVM_INSIDER_UNSUPPORTED);
+      }
       try {
         if (jurisdiction === "TW") {
           const holdings = await getTwseDirectorHoldings(company, options);
@@ -992,6 +1082,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         return textResult(joinSections(
           "CompanyOwners is unsupported for jurisdiction \"IN\". " +
             BSE_SHAREHOLDING_UNSUPPORTED,
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "BR") {
+        return textResult(joinSections(
+          CVM_OWNER_UNSUPPORTED,
           "_Absence of a result here is not evidence that no large holder exists._",
         ));
       }
@@ -1162,6 +1258,54 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "TW") {
         return textResult(TWSE_FINANCIALS_UNSUPPORTED);
+      }
+      if (jurisdiction === "BR") {
+        try {
+          const requested = concepts?.filter((concept) =>
+            CVM_FINANCIAL_CONCEPT_NAMES.includes(concept)
+          );
+          const facts = await getCvmFinancials({
+            company,
+            ...(requested && requested.length ? { concepts: requested } : {}),
+            ...(periods ? { periods } : {}),
+          }, options);
+          if (!facts.length) {
+            return textResult(joinSections(
+              `No annual DFP financials found on CVM open data for "${company}". ` +
+                `CVM normalized concepts cover: ${CVM_FINANCIAL_CONCEPT_NAMES.join(", ")}.`,
+              `_${CVM_FINANCIALS_CAVEAT}_`,
+            ));
+          }
+          const byConcept = new Map<string, typeof facts>();
+          for (const fact of facts) {
+            const bucket = byConcept.get(fact.concept) ?? [];
+            bucket.push(fact);
+            byConcept.set(fact.concept, bucket);
+          }
+          const sections = [...byConcept.entries()].map(([concept, rows]) => {
+            const label = rows[0]?.label ?? concept;
+            const unit = rows[0]?.unit ?? "BRL";
+            return joinSections(
+              `## ${label} (${unit})`,
+              markdownTable(
+                ["Fiscal period end", "Basis", "Value", "Filed"],
+                rows.map((fact) => [
+                  fact.periodEnd,
+                  fact.basis ?? "—",
+                  formatNumber(fact.value, fact.unit),
+                  fact.filedDate,
+                ]),
+              ),
+            );
+          });
+          return textResult(joinSections(
+            `# Annual financials (CVM DFP): ${company}`,
+            ...sections,
+            `_${CVM_FINANCIALS_CAVEAT}_`,
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "KR") {
         try {
@@ -1359,15 +1503,16 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "US Form D (Regulation D) exempt-offering filings for a company: " +
       "amounts offered and sold, investor counts, industry, date of first sale, " +
       "and named related persons. This capability is US-only; explicit GB, KR, " +
-      "JP, CN, IN, and TW return an unsupported-jurisdiction explanation because " +
-      "none of Companies House, DART, EDINET, cninfo, BSE, or TWSE provides an " +
-      "equivalent private-raise filing dataset.",
+      "JP, CN, IN, TW, and BR return an unsupported-jurisdiction explanation " +
+      "because none of Companies House, DART, EDINET, cninfo, BSE, TWSE, or CVM " +
+      "provides an equivalent private-raise filing dataset.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("PrivateRaises");
       if (
         jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
-        jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW"
+        jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
+        jurisdiction === "BR"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -1379,7 +1524,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 ? "cninfo (SSE/SZSE)"
                 : jurisdiction === "IN"
                   ? "BSE India"
-                  : "TWSE";
+                  : jurisdiction === "TW"
+                    ? "TWSE"
+                    : "CVM (Brazil)";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +

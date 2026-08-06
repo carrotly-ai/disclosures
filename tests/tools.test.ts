@@ -7,10 +7,11 @@ import { resetOpenDartCorpCodeCache } from "../src/adapters/openDart.js";
 import { resetRateLimiters, secRateLimiter } from "../src/core/rateLimiter.js";
 import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
-import { makeStoredZip } from "./helpers/zipFixture.js";
+import { latin1Bytes, makeStoredZip, makeStoredZipMulti } from "./helpers/zipFixture.js";
 import { edinetCodeListRoute, edinetDay } from "./helpers/edinetFixture.js";
 import { resetEdinetCodeCache } from "../src/adapters/edinet.js";
 import { resetTwseDatasetCache } from "../src/adapters/twseOpenApi.js";
+import { resetCvmDatasetCache } from "../src/adapters/cvmOpenData.js";
 
 const ENV: Env = { DISCLOSURES_USER_AGENT: "Test test@example.com" };
 const GB_ENV: Env = {
@@ -295,12 +296,69 @@ const twDirectorRoute: Route = {
   ],
 };
 
+// BR (CVM open data) fixtures: Latin-1 registration CSV plus IPE and DFP ZIP
+// bundles, keyed by the live column names. The tool handlers pick years from the
+// real clock (IPE = current year, DFP = latest complete fiscal year = last
+// year), so the fixture years are computed the same way to stay run-date-robust.
+const BR_IPE_YEAR = new Date().getUTCFullYear();
+const BR_DFP_YEAR = BR_IPE_YEAR - 1;
+const brRegistrationRoute: Route = {
+  pattern: "cad_cia_aberta.csv",
+  body: latin1Bytes(
+    "CNPJ_CIA;DENOM_SOCIAL;DENOM_COMERC;SIT;CD_CVM;SETOR_ATIV;CATEG_REG\n" +
+      "33.592.510/0001-54;VALE S.A.;VALE;ATIVO;4170;Extração Mineral;Categoria A\n",
+  ),
+};
+const brIpeRoute: Route = {
+  pattern: `ipe_cia_aberta_${BR_IPE_YEAR}.zip`,
+  body: makeStoredZipMulti([
+    {
+      name: `ipe_cia_aberta_${BR_IPE_YEAR}.csv`,
+      content: latin1Bytes(
+        "CNPJ_Companhia;Nome_Companhia;Codigo_CVM;Data_Referencia;Categoria;Tipo;Especie;Assunto;Data_Entrega;Link_Download\n" +
+          `33.592.510/0001-54;VALE;004170;${BR_IPE_YEAR}-05-10;Fato Relevante;Comunicado;Fato Relevante;Aquisição de ativos;${BR_IPE_YEAR}-05-10;https://www.rad.cvm.gov.br/ENET/frmDownloadDocumento.aspx?doc=1\n`,
+      ),
+    },
+  ]),
+};
+const BR_BPA_HEADER =
+  "CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;GRUPO_DFP;MOEDA;ESCALA_MOEDA;ORDEM_EXERC;DT_FIM_EXERC;CD_CONTA;DS_CONTA;VL_CONTA;ST_CONTA_FIXA";
+const BR_DRE_HEADER =
+  "CNPJ_CIA;DT_REFER;VERSAO;DENOM_CIA;CD_CVM;GRUPO_DFP;MOEDA;ESCALA_MOEDA;ORDEM_EXERC;DT_INI_EXERC;DT_FIM_EXERC;CD_CONTA;DS_CONTA;VL_CONTA;ST_CONTA_FIXA";
+const brDfpRoute: Route = {
+  pattern: `dfp_cia_aberta_${BR_DFP_YEAR}.zip`,
+  body: makeStoredZipMulti([
+    {
+      name: `dfp_cia_aberta_BPA_con_${BR_DFP_YEAR}.csv`,
+      content: latin1Bytes(
+        BR_BPA_HEADER + "\n" +
+          `33.592.510/0001-54;${BR_DFP_YEAR}-12-31;1;VALE S.A.;004170;DF Consolidado;Real;MIL;ÚLTIMO;${BR_DFP_YEAR}-12-31;1;Ativo Total;496325000.00;S\n`,
+      ),
+    },
+    {
+      name: `dfp_cia_aberta_BPP_con_${BR_DFP_YEAR}.csv`,
+      content: latin1Bytes(
+        BR_BPA_HEADER + "\n" +
+          `33.592.510/0001-54;${BR_DFP_YEAR}-12-31;1;VALE S.A.;004170;DF Consolidado;Real;MIL;ÚLTIMO;${BR_DFP_YEAR}-12-31;2.03;Patrimônio Líquido Consolidado;250000000.00;S\n`,
+      ),
+    },
+    {
+      name: `dfp_cia_aberta_DRE_con_${BR_DFP_YEAR}.csv`,
+      content: latin1Bytes(
+        BR_DRE_HEADER + "\n" +
+          `33.592.510/0001-54;${BR_DFP_YEAR}-12-31;1;VALE S.A.;004170;DF Consolidado;Real;MIL;ÚLTIMO;${BR_DFP_YEAR}-01-01;${BR_DFP_YEAR}-12-31;3.01;Receita de Venda de Bens e/ou Serviços;206005000.00;S\n`,
+      ),
+    },
+  ]),
+};
+
 beforeEach(() => {
   resetRateLimiters();
   resetSecTickerCache();
   resetOpenDartCorpCodeCache();
   resetEdinetCodeCache();
   resetTwseDatasetCache();
+  resetCvmDatasetCache();
 });
 
 describe("createTools", () => {
@@ -1241,6 +1299,93 @@ describe("explicit TW routing", () => {
       expect(result.isError).toBeUndefined();
       expect(resultText(result)).toContain('unsupported for jurisdiction "TW"');
     }
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit BR routing", () => {
+  test("CompanyResolve uses CVM only and shows the registered name", async () => {
+    const fetchFn = routedFetch([brRegistrationRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "4170",
+      jurisdiction: "BR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Company resolution (CVM)");
+    expect(text).toContain("VALE S.A.");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyFilings search renders CVM IPE disclosure rows with the RAD link", async () => {
+    const fetchFn = routedFetch([brRegistrationRoute, brIpeRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "4170",
+      jurisdiction: "BR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("CVM disclosures (IPE)");
+    expect(text).toContain("Fato Relevante");
+    expect(text).toContain("rad.cvm.gov.br");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyFilings latest_annual is unsupported and points to search mode", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "4170",
+      jurisdiction: "BR",
+      mode: "latest_annual",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("unsupported for BR");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyFinancials renders consolidated DFP facts scaled by ESCALA_MOEDA", async () => {
+    const fetchFn = routedFetch([brRegistrationRoute, brDfpRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "4170",
+      jurisdiction: "BR",
+      periods: 1,
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Annual financials (CVM DFP)");
+    expect(text).toContain("Ativo Total");
+    expect(text).toContain("R$496,325,000,000");
+    expect(text).toContain("consolidated");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyInsiders and CompanyOwners explain the BR limits without a network hit", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    for (const name of ["CompanyInsiders", "CompanyOwners"]) {
+      const result = await toolByName(tools, name).handler({
+        company: "4170",
+        jurisdiction: "BR",
+      } as never);
+      expect(result.isError).toBeUndefined();
+      expect(resultText(result)).toContain('unsupported for jurisdiction "BR"');
+    }
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("PrivateRaises explains the BR limit without a network hit", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PrivateRaises").handler({
+      company: "4170",
+      jurisdiction: "BR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "BR"');
     expect(fetchFn.requests).toHaveLength(0);
   });
 });

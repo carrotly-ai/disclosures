@@ -11,6 +11,14 @@ export interface ZipReaderOptions {
   maxEntrySize?: number;
   maxCompressedSize?: number;
   maxTotalSize?: number;
+  /**
+   * Optional member filter, tested against each central-directory file name. A
+   * non-matching entry is skipped before its data is decompressed, so callers
+   * that need only a few members of a large multi-file archive (e.g. three
+   * statement CSVs out of a ~130 MB Brazilian CVM DFP bundle) never pay to
+   * inflate — or hold in memory — the members they will discard.
+   */
+  filter?: (name: string) => boolean;
 }
 
 export interface ZipEntry {
@@ -327,6 +335,9 @@ export function readZipEntries(
   const entries: ZipEntry[] = [];
   let totalSize = 0;
   for (const entry of centralEntries) {
+    if (options.filter && !entry.directory && !options.filter(entry.name)) {
+      continue;
+    }
     const data = readEntryData(archive, view, entry, centralOffset);
     if (entry.directory) {
       if (entry.uncompressedSize !== 0) {

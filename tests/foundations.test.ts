@@ -138,7 +138,7 @@ beforeEach(() => {
 
 describe("jurisdiction-neutral foundations", () => {
   test("exports the planned jurisdictions and data sources", () => {
-    expect(Object.values(JURISDICTIONS)).toEqual(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW"]);
+    expect(Object.values(JURISDICTIONS)).toEqual(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR"]);
     expect(Object.values(DATA_SOURCES)).toEqual([
       "SEC",
       "GLEIF",
@@ -151,6 +151,7 @@ describe("jurisdiction-neutral foundations", () => {
       "FCA NSM",
       "filings.xbrl.org",
       "TWSE",
+      "CVM",
     ]);
   });
 
@@ -291,6 +292,7 @@ describe("currency formatting", () => {
     expect(formatNumber(1_234_567.89, "GBP")).toBe("£1,234,567.89");
     expect(formatNumber(1_234_567.89, "KRW")).toBe("₩1,234,568");
     expect(formatNumber(1_234_567.89, "JPY")).toBe("¥1,234,568");
+    expect(formatNumber(1_234_567.89, "BRL")).toBe("R$1,234,567.89");
     expect(formatNumber(12.34567, "shares")).toBe("12.3457");
   });
 });

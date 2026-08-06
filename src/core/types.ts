@@ -13,6 +13,7 @@ export const JURISDICTIONS = {
   CN: "CN",
   IN: "IN",
   TW: "TW",
+  BR: "BR",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -29,6 +30,7 @@ export const DATA_SOURCES = {
   FCA_NSM: "FCA NSM",
   XBRL_FILINGS: "filings.xbrl.org",
   TWSE: "TWSE",
+  CVM: "CVM",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -60,6 +62,8 @@ export interface IdentifierSet {
   scripCode?: string;
   /** ISIN, e.g. INE002A01018 (used by the India/BSE adapter). */
   isin?: string;
+  /** Brazil CVM registration code (código CVM), e.g. 4170 (Vale). */
+  cvmCode?: string;
   jurisdiction?: string;
 }
 
