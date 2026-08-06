@@ -4,6 +4,7 @@ import {
   CompaniesHouseConfigurationError,
   CompaniesHouseRateLimitError,
   deriveCompaniesHousePercentageBand,
+  formatIdentityVerification,
   getCompaniesHouseOfficers,
   getCompaniesHouseOwners,
   getCompaniesHousePscStatements,
@@ -391,6 +392,87 @@ describe("Companies House officers", () => {
     expect(serialized).not.toContain("date_of_birth");
     expect(serialized).not.toContain("London");
   });
+
+  test("surfaces ECCTA identity verification when present and omits it when absent", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/officers",
+        body: {
+          items_per_page: 100,
+          start_index: 0,
+          total_results: 2,
+          items: [
+            {
+              name: "VERIFIED, Alex",
+              officer_role: "director",
+              appointed_on: "2025-12-01",
+              identity_verification_details: {
+                identity_verified_on: "2025-11-20",
+                authorised_corporate_service_provider_name: "DE PINNA LLP",
+              },
+            },
+            {
+              name: "UNRECORDED, Sam",
+              officer_role: "director",
+              appointed_on: "2019-05-01",
+            },
+          ],
+        },
+      },
+    ]);
+    const officers = await getCompaniesHouseOfficers(
+      COMPANY_NUMBER,
+      options(fetchFn),
+    );
+    const verified = officers.find((o) => o.name === "VERIFIED, Alex");
+    const unrecorded = officers.find((o) => o.name === "UNRECORDED, Sam");
+    expect(verified?.identityVerification).toBe(
+      "Verified 2025-11-20 (ACSP: DE PINNA LLP)",
+    );
+    expect(unrecorded?.identityVerification).toBeUndefined();
+    // Absence must not be serialized as a false "unverified" signal.
+    expect(Object.keys(unrecorded ?? {})).not.toContain("identityVerification");
+  });
+});
+
+describe("ECCTA identity_verification_details formatting", () => {
+  test("verified via ACSP includes the provider name", () => {
+    expect(formatIdentityVerification({
+      identity_verified_on: "2025-11-20",
+      authorised_corporate_service_provider_name: "DE PINNA LLP",
+    })).toBe("Verified 2025-11-20 (ACSP: DE PINNA LLP)");
+  });
+
+  test("verified without an ACSP name omits the provider clause", () => {
+    expect(formatIdentityVerification({
+      identity_verified_on: "2025-11-20",
+    })).toBe("Verified 2025-11-20");
+  });
+
+  test("verification statement supplied without a verified date", () => {
+    expect(formatIdentityVerification({
+      appointment_verification_start_on: "2026-04-16",
+    })).toBe("Verification statement supplied 2026-04-16");
+  });
+
+  test("verification statement with an end date is noted as ended", () => {
+    expect(formatIdentityVerification({
+      appointment_verification_start_on: "2026-04-16",
+      appointment_verification_end_on: "2026-05-01",
+    })).toBe("Verification statement 2026-04-16 (ended 2026-05-01)");
+  });
+
+  test("only a due date surfaces as a pending statement", () => {
+    expect(formatIdentityVerification({
+      appointment_verification_statement_due_on: "2026-11-17",
+    })).toBe("Statement due by 2026-11-17");
+  });
+
+  test("an absent or empty block yields undefined, never a false 'unverified'", () => {
+    expect(formatIdentityVerification(undefined)).toBeUndefined();
+    expect(formatIdentityVerification({})).toBeUndefined();
+    expect(formatIdentityVerification("not-an-object")).toBeUndefined();
+  });
 });
 
 describe("Companies House PSC register", () => {
@@ -452,6 +534,34 @@ describe("Companies House PSC register", () => {
     expect(owners.every((owner) =>
       owner.thresholdRegime === COMPANIES_HOUSE_PSC_THRESHOLD_REGIME
     )).toBe(true);
+  });
+
+  test("surfaces ECCTA identity verification on a PSC record", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "persons-with-significant-control?",
+        body: {
+          items_per_page: 100,
+          start_index: 0,
+          total_results: 1,
+          items: [
+            {
+              kind: "individual-person-with-significant-control",
+              name: "Jane Doe",
+              notified_on: "2025-12-01",
+              natures_of_control: ["ownership-of-shares-75-to-100-percent"],
+              identity_verification_details: {
+                appointment_verification_start_on: "2026-04-16",
+              },
+            },
+          ],
+        },
+      },
+    ]);
+    const owners = await getCompaniesHousePscs(COMPANY_NUMBER, options(fetchFn));
+    expect(owners[0]?.identityVerification).toBe(
+      "Verification statement supplied 2026-04-16",
+    );
   });
 
   test("derives every supported statutory percentage band", () => {

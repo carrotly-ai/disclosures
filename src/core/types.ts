@@ -106,6 +106,7 @@ export interface Insider extends SourceScopedRecord {
   appointedDate?: string;
   ceasedDate?: string;
   notifiedDate?: string;
+  identityVerification?: string;
   pct?: number;
   change?: number;
   accession?: string;
@@ -123,6 +124,7 @@ export interface OwnerRecord extends SourceScopedRecord {
   filedDate: string;
   notifiedDate?: string;
   ceasedDate?: string;
+  identityVerification?: string;
   accession?: string;
   naturesOfControl?: string[];
   sourceUrl: string;

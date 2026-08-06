@@ -992,10 +992,22 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           if (!officers.length) {
             return textResult(`No Companies House officers found for "${company}".`);
           }
+          const anyIdentity = officers.some((officer) =>
+            officer.identityVerification
+          );
           return textResult(joinSections(
             `# Officers (Companies House): ${company}`,
             markdownTable(
-              ["Name", "Role", "Occupation", "Appointed", "Resigned", "Status", "Link"],
+              [
+                "Name",
+                "Role",
+                "Occupation",
+                "Appointed",
+                "Resigned",
+                "Status",
+                "Identity (ECCTA)",
+                "Link",
+              ],
               officers.map((officer) => [
                 officer.name,
                 readableCode(officer.officerRole),
@@ -1003,11 +1015,21 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 officer.appointedDate,
                 officer.ceasedDate,
                 officer.status,
+                officer.identityVerification,
                 link("view", officer.sourceUrl),
               ]),
             ),
             "_Public officer-register fields only. Correspondence addresses, nationality, " +
               "and partial dates of birth are intentionally omitted from this output._",
+            anyIdentity
+              ? "_Identity (ECCTA) reflects the Companies House `identity_verification_details` " +
+                "field (identity verification became mandatory for new appointments on 18 Nov 2025). " +
+                "A blank cell means the field is absent, which is **not** proof the officer is " +
+                "unverified — Companies House populates it progressively and the public record may " +
+                "show a verified status before this field is filled in._"
+              : "_No ECCTA identity-verification details are present on these records yet. Absence " +
+                "is not proof of non-verification: Companies House populates the " +
+                "`identity_verification_details` field progressively following the 18 Nov 2025 rollout._",
           ));
         }
 
@@ -1146,6 +1168,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           // PSC (statutory >25% control) is the primary section; its config /
           // rate-limit errors must still surface as isError via the outer catch.
           const owners = await getCompaniesHouseOwners(company, options);
+          const anyPscIdentity = owners.some((owner) =>
+            owner.identityVerification
+          );
           const pscSection = owners.length
             ? joinSections(
               `# Persons with significant control (Companies House): ${company}`,
@@ -1157,6 +1182,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                   "Percentage band",
                   "Notified",
                   "Ceased",
+                  "Identity (ECCTA)",
                   "Threshold regime",
                   "Link",
                 ],
@@ -1167,11 +1193,17 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                   owner.percentageBand,
                   owner.notifiedDate,
                   owner.ceasedDate,
+                  owner.identityVerification,
                   owner.thresholdRegime,
                   link("view", owner.sourceUrl),
                 ]),
               ),
               `_${COMPANIES_HOUSE_PSC_CAVEAT}_`,
+              anyPscIdentity
+                ? "_Identity (ECCTA) reflects the Companies House `identity_verification_details` " +
+                  "field. A blank cell means the field is absent, which is **not** proof the PSC is " +
+                  "unverified — the field is populated progressively following the 18 Nov 2025 rollout._"
+                : undefined,
             )
             : joinSections(
               `No Companies House PSC records or PSC statements found for "${company}".`,
