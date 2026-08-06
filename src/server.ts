@@ -32,6 +32,7 @@ export async function runServer(options: AdapterOptions = {}): Promise<void> {
 export { createTools, TOOL_NAMES } from "./tools/index.js";
 export { defineTool, textResult, errorResult } from "./core/toolDefs.js";
 export type { ToolDefinition } from "./core/toolDefs.js";
+export * from "./core/cache.js";
 export * from "./core/types.js";
 export * from "./core/entityMatching.js";
 export * from "./core/errors.js";

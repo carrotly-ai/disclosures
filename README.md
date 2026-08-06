@@ -117,7 +117,29 @@ const result = await tools.CompanyResolve.handler({
 const server = createDisclosuresServer();
 ```
 
-Adapter functions accept `{ fetchFn?, env? }`, making them suitable for deterministic tests and embedding.
+Adapter functions accept `{ fetchFn?, env?, cache? }`, making them suitable for deterministic tests and embedding.
+
+### Caching reference downloads
+
+Two adapters resolve companies against large, slow-changing reference archives that
+regenerate about once a day: the OpenDART corp-code list (`jurisdiction: "KR"`) and the
+EDINET code list (`jurisdiction: "JP"`). Without a cache these are memoized per process,
+so a fresh MCP process re-downloads the multi-megabyte archive on its first lookup. Supply
+a `cache` to persist them across restarts:
+
+```ts
+import { FileCache, createDisclosuresTools } from "disclosures";
+
+const tools = createDisclosuresTools({
+  env: { OPENDART_API_KEY: process.env.OPENDART_API_KEY },
+  cache: new FileCache("/var/cache/disclosures"), // survives restarts, 24h TTL
+});
+```
+
+`cache` is any object implementing `DisclosuresCache` (`get`/`set`). The package ships
+`InMemoryCache` (process-local, TTL-aware) and `FileCache` (one JSON file per key under a
+directory); a corrupt, expired, or missing entry is always treated as a cache miss and
+triggers a normal refetch, so a broken cache never breaks a lookup.
 
 ## Honesty and scope
 

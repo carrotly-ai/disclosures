@@ -1,3 +1,4 @@
+import { readCachedJson, writeCachedJson } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import {
   AdapterConfigurationError,
@@ -245,8 +246,35 @@ async function requestJson(
 
 let corpCodeListPromise: Promise<OpenDartCorpCode[]> | undefined;
 
+/** Cross-call cache key + TTL for the corp-code archive (regenerated daily). */
+export const OPEN_DART_CORP_CODE_CACHE_KEY = "opendart:corp-code:v1";
+export const OPEN_DART_CORP_CODE_CACHE_TTL_MS = 24 * 60 * 60_000;
+
 export function resetOpenDartCorpCodeCache(): void {
   corpCodeListPromise = undefined;
+}
+
+/** Validate a cached corp-code payload; a bad shape returns undefined (miss). */
+function parseCorpCodeCache(value: unknown): OpenDartCorpCode[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const entries: OpenDartCorpCode[] = [];
+  for (const item of value) {
+    const record = asRecord(item);
+    const corpCode = asString(record?.corpCode);
+    const corpName = asString(record?.corpName);
+    if (!corpCode || !corpName) return undefined;
+    const corpEngName = asString(record?.corpEngName);
+    const stockCode = asString(record?.stockCode);
+    const modifyDate = asString(record?.modifyDate);
+    entries.push({
+      corpCode,
+      corpName,
+      ...(corpEngName ? { corpEngName } : {}),
+      ...(stockCode ? { stockCode } : {}),
+      ...(modifyDate ? { modifyDate } : {}),
+    });
+  }
+  return entries.length ? entries : undefined;
 }
 
 function fieldValue(block: string, field: string): string | undefined {
@@ -302,16 +330,36 @@ async function fetchCorpCodes(options: AdapterOptions): Promise<OpenDartCorpCode
 }
 
 async function loadCorpCodes(options: AdapterOptions): Promise<OpenDartCorpCode[]> {
-  // The corp-code archive lists every filer; cache it per process. A fresh
-  // AdapterOptions.fetchFn (e.g. per test) still shares the cache, so tests
-  // reset it explicitly via resetOpenDartCorpCodeCache().
+  // Prefer an injected cross-call cache (survives process restarts) so the
+  // multi-MB archive is not re-downloaded on every cold start.
+  if (options.cache) {
+    const cached = await readCachedJson(
+      options.cache,
+      OPEN_DART_CORP_CODE_CACHE_KEY,
+      parseCorpCodeCache,
+    );
+    if (cached) return cached;
+  }
+  // The corp-code archive lists every filer; also memoize it per process. A
+  // fresh AdapterOptions.fetchFn (e.g. per test) still shares this in-memory
+  // cache, so tests reset it explicitly via resetOpenDartCorpCodeCache().
   corpCodeListPromise ??= fetchCorpCodes(options);
+  let entries: OpenDartCorpCode[];
   try {
-    return await corpCodeListPromise;
+    entries = await corpCodeListPromise;
   } catch (error) {
     corpCodeListPromise = undefined;
     throw error;
   }
+  if (options.cache) {
+    await writeCachedJson(
+      options.cache,
+      OPEN_DART_CORP_CODE_CACHE_KEY,
+      entries,
+      OPEN_DART_CORP_CODE_CACHE_TTL_MS,
+    );
+  }
+  return entries;
 }
 
 function companyViewerUrl(corpCode: string): string {
