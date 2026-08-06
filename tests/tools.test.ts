@@ -19,6 +19,54 @@ const GB_ENV: Env = {
 
 const APPLE_LEI = "HWUPKR0MPOU8FGXBT394";
 
+// A minimal filings.xbrl.org (ESEF) fixture: one UK filing linking one xBRL-JSON
+// report with a single annual Revenue fact. OIM encodes the FY-ended-31-March
+// period as a duration ending at the following midnight (2025-04-01T00:00:00).
+const ESEF_LEI = "213800H2PQMIF3OVZY47";
+const esefRoutes: Route[] = [
+  {
+    pattern: `filter%5Bentity.identifier%5D=${ESEF_LEI}`,
+    body: {
+      data: [
+        {
+          type: "filing",
+          id: "1",
+          attributes: {
+            fxo_id: `${ESEF_LEI}-2025-03-31`,
+            country: "GB",
+            period_end: "2025-03-31",
+            json_url: "/esef-report.json",
+            viewer_url: "/esef-view/",
+            date_added: "2025-08-21T00:00:00Z",
+          },
+          relationships: { entity: { data: { type: "entity", id: "ent-1" } } },
+        },
+      ],
+      included: [
+        { type: "entity", id: "ent-1", attributes: { identifier: ESEF_LEI, name: "KAINOS GROUP PLC" } },
+      ],
+    },
+  },
+  {
+    pattern: "/esef-report.json",
+    body: {
+      documentInfo: { documentType: "xbrl-json" },
+      facts: {
+        f0: {
+          value: 367_246_000,
+          dimensions: {
+            concept: "ifrs-full:Revenue",
+            entity: `lei:${ESEF_LEI}`,
+            period: "2024-04-01T00:00:00/2025-04-01T00:00:00",
+            unit: "iso4217:GBP",
+            language: "en",
+          },
+        },
+      },
+    },
+  },
+];
+
 const TICKERS = {
   "0": { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." },
 };
@@ -608,24 +656,73 @@ describe("explicit GB routing", () => {
     expect(text).toContain("self-reported DTR5 major-holding disclosures");
   });
 
-  test("GB financials and private raises return successful capability explanations", async () => {
-    const fetchFn = routedFetch([]);
+  test("CompanyFinancials renders normalized ESEF/UKSEF annual figures", async () => {
+    const fetchFn = routedFetch(esefRoutes);
     const tools = createTools({ fetchFn, env: GB_ENV });
     const financials = await toolByName(tools, "CompanyFinancials").handler({
-      company: "01234567",
+      company: ESEF_LEI,
       jurisdiction: "GB",
+      concepts: ["revenue"],
+      periods: 2,
     } as never);
     expect(financials.isError).toBeUndefined();
-    expect(resultText(financials)).toContain("does not parse them into normalized financial facts");
-    expect(resultText(financials)).toContain("CompanyFilings");
-    expect(resultText(financials)).toContain("accounts filter");
+    const text = resultText(financials);
+    expect(text).toContain("Annual financials (ESEF/UKSEF)");
+    expect(text).toContain("£367,246,000");
+    expect(text).toContain("2025-03-31"); // inclusive period end, not the OIM boundary
+    expect(text).toContain("ESEF (GB)");
+    expect(text).toContain("filings.xbrl.org");
+    // The SEC path is never touched for a GB financials lookup.
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
 
+  test("PrivateRaises stays unsupported for GB", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
     const raises = await toolByName(tools, "PrivateRaises").handler({
       company: "01234567",
       jurisdiction: "GB",
     } as never);
     expect(raises.isError).toBeUndefined();
     expect(resultText(raises)).toContain('unsupported for jurisdiction "GB"');
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit EU routing", () => {
+  test("CompanyFinancials renders pan-European ESEF figures by LEI", async () => {
+    const fetchFn = routedFetch(esefRoutes);
+    const tools = createTools({ fetchFn, env: ENV });
+    const financials = await toolByName(tools, "CompanyFinancials").handler({
+      company: ESEF_LEI,
+      jurisdiction: "EU",
+      concepts: ["revenue"],
+    } as never);
+    expect(financials.isError).toBeUndefined();
+    const text = resultText(financials);
+    expect(text).toContain("Annual financials (ESEF/UKSEF)");
+    expect(text).toContain("£367,246,000");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("every non-financials tool returns the honest EU-unsupported message without any network call", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    for (const name of [
+      "CompanyResolve",
+      "CompanyFilings",
+      "CompanyInsiders",
+      "CompanyOwners",
+      "PrivateRaises",
+    ]) {
+      const result = await toolByName(tools, name).handler({
+        company: ESEF_LEI,
+        jurisdiction: "EU",
+      } as never);
+      expect(result.isError).toBeUndefined();
+      expect(resultText(result)).toContain('unsupported for jurisdiction "EU"');
+      expect(resultText(result)).toContain("CompanyFinancials");
+    }
     expect(fetchFn.requests).toHaveLength(0);
   });
 });

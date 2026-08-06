@@ -26,8 +26,14 @@ const CURRENCY_FORMATS: Record<
 > = {
   USD: { symbol: "$", maximumFractionDigits: 2 },
   GBP: { symbol: "£", maximumFractionDigits: 2 },
+  EUR: { symbol: "€", maximumFractionDigits: 2 },
   KRW: { symbol: "₩", maximumFractionDigits: 0 },
   JPY: { symbol: "¥", maximumFractionDigits: 0 },
+  CHF: { symbol: "CHF ", maximumFractionDigits: 2 },
+  SEK: { symbol: "kr ", maximumFractionDigits: 2 },
+  NOK: { symbol: "kr ", maximumFractionDigits: 2 },
+  DKK: { symbol: "kr ", maximumFractionDigits: 2 },
+  PLN: { symbol: "zł ", maximumFractionDigits: 2 },
 };
 
 export function formatNumber(value: number, unit: string): string {

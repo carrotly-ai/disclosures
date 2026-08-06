@@ -138,7 +138,7 @@ beforeEach(() => {
 
 describe("jurisdiction-neutral foundations", () => {
   test("exports the planned jurisdictions and data sources", () => {
-    expect(Object.values(JURISDICTIONS)).toEqual(["US", "GB", "KR", "JP", "CN", "IN"]);
+    expect(Object.values(JURISDICTIONS)).toEqual(["US", "GB", "EU", "KR", "JP", "CN", "IN"]);
     expect(Object.values(DATA_SOURCES)).toEqual([
       "SEC",
       "GLEIF",
@@ -149,6 +149,7 @@ describe("jurisdiction-neutral foundations", () => {
       "cninfo",
       "BSE India",
       "FCA NSM",
+      "filings.xbrl.org",
     ]);
   });
 
