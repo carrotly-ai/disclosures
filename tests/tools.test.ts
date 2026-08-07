@@ -415,11 +415,12 @@ describe("createTools", () => {
     expect(jurisdiction?.safeParse("CN").success).toBe(false);
   });
 
-  test("PersonAppointments jurisdiction is restricted to US and GB", () => {
+  test("PersonAppointments jurisdiction is restricted to US, GB and DE", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     const jurisdiction = toolByName(tools, "PersonAppointments").inputSchema.jurisdiction;
     expect(jurisdiction?.safeParse("US").success).toBe(true);
     expect(jurisdiction?.safeParse("GB").success).toBe(true);
+    expect(jurisdiction?.safeParse("DE").success).toBe(true);
     expect(jurisdiction?.safeParse("JP").success).toBe(false);
   });
 
@@ -2016,6 +2017,91 @@ describe("explicit DE routing", () => {
     expect(text).toContain("Jürgen Müller");
     expect(text).toContain("Buy (Kauf)");
     expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  const dePersonSearchRoute: Route = {
+    pattern: "meldepflichtigerName=",
+    body: loadFixture("bafin", "dealings-person-search.html"),
+  };
+  const dePersonDetailRoute: Route = {
+    pattern: "DealingsInfo/ergebnisListe.do",
+    body: loadFixture("bafin", "dealings-person-appointments.html"),
+  };
+
+  test("PersonAppointments search lists BaFin notifying persons with ids", async () => {
+    const fetchFn = routedFetch([dePersonSearchRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "DE",
+      mode: "search",
+      query: "Klein",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("DE reporting-person search: Klein");
+    expect(text).toContain("Christian Kurt");
+    expect(text).toContain("34505");
+    expect(text).toContain("Management board (Vorstand)");
+    expect(text).toContain("Dr.");
+    expect(text).toContain("DealingsInfo");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("PersonAppointments appointments collapses a person's trades by issuer", async () => {
+    const fetchFn = routedFetch([dePersonDetailRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "DE",
+      mode: "appointments",
+      officer_id: "34505",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("DE reporting-person issuers: Klein, Christian Kurt");
+    expect(text).toContain("SAP SE");
+    expect(text).toContain("40001244");
+    expect(text).toContain("SAP Fioneer GmbH");
+    // Two SAP SE trades collapse to one row with a count of 2.
+    expect(text).toContain("| 2 |");
+    expect(text).toContain("2026-07-24");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("PersonAppointments appointments requires an officer_id", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "DE",
+      mode: "appointments",
+    } as never);
+    expect(resultText(result)).toContain("meldepflichtigerId");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("PersonAppointments search requires a query", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "DE",
+      mode: "search",
+    } as never);
+    expect(resultText(result)).toContain("requires a query");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("PersonAppointments disqualifications is honestly unsupported without a network hit", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "DE",
+      mode: "disqualifications",
+      query: "Klein",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("DE disqualifications: Klein");
+    expect(text).toContain("no public disqualified-directors register");
+    expect(fetchFn.requests).toHaveLength(0);
   });
 
   test("CompanyFilings, CompanyFinancials and PrivateRaises explain DE limits with no network hit", async () => {
