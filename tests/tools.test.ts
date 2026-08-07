@@ -9,7 +9,10 @@ import { loadFixture } from "./helpers/loadFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { latin1Bytes, makeStoredZip, makeStoredZipMulti } from "./helpers/zipFixture.js";
 import { edinetCodeListRoute, edinetDay } from "./helpers/edinetFixture.js";
-import { resetEdinetCodeCache } from "../src/adapters/edinet.js";
+import {
+  EDINET_5_PERCENT_THRESHOLD_REGIME,
+  resetEdinetCodeCache,
+} from "../src/adapters/edinet.js";
 import { resetTwseDatasetCache } from "../src/adapters/twseOpenApi.js";
 import { resetCvmDatasetCache } from "../src/adapters/cvmOpenData.js";
 
@@ -190,6 +193,25 @@ const JP_DAY = [
 ];
 
 const jpDocumentsRoute: Route = { pattern: "documents.json", body: edinetDay(JP_DAY) };
+
+// A day of large-volume holding reports whose subject issuer is Toyota (E02144).
+const JP_HOLDERS_DAY = [
+  {
+    docID: "S100LVH1",
+    edinetCode: "E12345",
+    filerName: "野村アセットマネジメント株式会社",
+    issuerEdinetCode: "E02144",
+    docTypeCode: "350",
+    docDescription: "大量保有報告書",
+    currentReportReason: "新規保有",
+    submitDateTime: "2026-08-05 09:00",
+  },
+];
+
+const jpHoldersRoute: Route = {
+  pattern: "documents.json",
+  body: edinetDay(JP_HOLDERS_DAY),
+};
 
 // CN (cninfo) fixtures: keyless topSearch array + one announcement page.
 const cnSearchRoute: Route = {
@@ -1064,18 +1086,43 @@ describe("explicit JP routing", () => {
     expect(fetchFn.requests).toHaveLength(0);
   });
 
-  test("CompanyOwners explains the filer-indexed large-holding limitation for JP", async () => {
-    const fetchFn = routedFetch([]);
+  test("CompanyOwners reverse-maps EDINET large-holding reports for JP", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute, jpHoldersRoute]);
     const tools = createTools({ fetchFn, env: JP_ENV });
     const result = await toolByName(tools, "CompanyOwners").handler({
       company: "E02144",
       jurisdiction: "JP",
+      start_date: "2026-08-05",
+      end_date: "2026-08-05",
     } as never);
+    expect(result.isError).toBeUndefined();
     const text = resultText(result);
-    expect(text).toContain('unsupported for jurisdiction "JP"');
+    expect(text).toContain("Large-volume holders (≥5%, EDINET)");
+    expect(text).toContain("野村アセットマネジメント株式会社");
     expect(text).toContain("大量保有報告書");
-    expect(text).toContain("not evidence");
-    expect(fetchFn.requests).toHaveLength(0);
+    expect(text).toContain("新規保有");
+    expect(text).toContain("S100LVH1");
+    // Honesty caveats: no exact percentage; absence is not proof.
+    expect(text).toContain("no holding ratio");
+    expect(text).toContain("not proof");
+  });
+
+  test("CompanyOwners reports an honest empty result for JP when no holder is named", async () => {
+    const fetchFn = routedFetch([
+      edinetCodeListRoute,
+      { pattern: "documents.json", body: edinetDay([], "404") },
+    ]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+      start_date: "2026-08-05",
+      end_date: "2026-08-05",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("No EDINET large-volume holding reports");
+    expect(text).toContain(EDINET_5_PERCENT_THRESHOLD_REGIME);
   });
 
   test("CompanyFinancials directs JP callers to the EDINET annual report", async () => {

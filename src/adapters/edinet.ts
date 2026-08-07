@@ -14,6 +14,7 @@ import type {
   Entity,
   Filing,
   LatestReportMetadata,
+  OwnerRecord,
 } from "../core/types.js";
 
 export const EDINET_API_BASE_URL = "https://api.edinet-fsa.go.jp/api/v2";
@@ -27,6 +28,19 @@ export const EDINET_REQUEST_TIMEOUT_MS = 20_000;
 // caps bound the request count (and wall-clock) of a single scan.
 export const EDINET_DEFAULT_SEARCH_DAYS = 90;
 export const EDINET_MAX_SCAN_DAYS = 365;
+
+// Large-volume holding report (350, 大量保有報告書) and its change report
+// (360, 変更報告書) — the two filing types that carry a ≥5%-rule holder.
+export const EDINET_LARGE_HOLDING_DOC_TYPES: ReadonlySet<string> = new Set([
+  "350",
+  "360",
+]);
+
+// Large-holding events are sparse per issuer and EDINET has no server-side
+// subject filter, so the CompanyOwners reverse lookup scans the full retained
+// window (one request per calendar day) to keep recall meaningful.
+export const EDINET_OWNERS_SCAN_DAYS = EDINET_MAX_SCAN_DAYS;
+export const EDINET_OWNERS_DEFAULT_LIMIT = 50;
 
 /** docTypeCode → English label (EDINET API specification, appendix). */
 export const EDINET_DOC_TYPE_LABELS: Record<string, string> = {
@@ -505,38 +519,60 @@ export interface EdinetScanParams {
 }
 
 /**
- * Walk backwards one calendar day at a time (EDINET's only query axis),
- * collecting this filer's documents. Bounded by maxDays and by limit so a
- * single call issues a predictable number of requests.
+ * Walk backwards one calendar day at a time — EDINET's only query axis —
+ * invoking `onRow` for every document in each day's index. The walk stops when
+ * the day budget is exhausted, the start bound is crossed, or `shouldStop`
+ * returns true after a day has been processed, so a single call issues a
+ * predictable number of requests. The subscription key is resolved up front so
+ * a missing key fails fast (and consistently) before any request is made.
  */
-async function scanEdinetDocuments(
-  params: EdinetScanParams,
+async function walkEdinetDays(
+  params: { startDate?: string; endDate?: string; maxDays?: number },
   options: AdapterOptions,
-): Promise<Filing[]> {
+  onRow: (row: JsonRecord, scanDate: string) => void,
+  shouldStop: () => boolean = () => false,
+): Promise<void> {
   const apiKey = getEdinetApiKey(options);
   const end = params.endDate ? toUtcDate(params.endDate) : toUtcDate(toIsoDate(new Date()));
   const maxDays = Math.min(params.maxDays ?? EDINET_MAX_SCAN_DAYS, EDINET_MAX_SCAN_DAYS);
   const startBound = params.startDate ? toUtcDate(params.startDate) : undefined;
-  const limit = params.limit ?? Number.POSITIVE_INFINITY;
 
-  const filings: Filing[] = [];
   const cursor = new Date(end);
   for (let day = 0; day < maxDays; day += 1) {
     if (startBound && cursor.getTime() < startBound.getTime()) break;
     const date = toIsoDate(cursor);
     const rows = await fetchEdinetDay(date, apiKey, options);
-    for (const row of rows) {
-      if (asString(row.edinetCode) !== params.edinetCode) continue;
+    for (const row of rows) onRow(row, date);
+    if (shouldStop()) break;
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+}
+
+/**
+ * Walk backwards one calendar day at a time, collecting this filer's documents.
+ * Bounded by maxDays and by limit so a single call issues a predictable number
+ * of requests.
+ */
+async function scanEdinetDocuments(
+  params: EdinetScanParams,
+  options: AdapterOptions,
+): Promise<Filing[]> {
+  const limit = params.limit ?? Number.POSITIVE_INFINITY;
+  const filings: Filing[] = [];
+  await walkEdinetDays(
+    params,
+    options,
+    (row, date) => {
+      if (asString(row.edinetCode) !== params.edinetCode) return;
       if (params.docTypeCodes) {
         const code = asString(row.docTypeCode);
-        if (!code || !params.docTypeCodes.has(code)) continue;
+        if (!code || !params.docTypeCodes.has(code)) return;
       }
       const filing = documentToFiling(row, date);
       if (filing) filings.push(filing);
-    }
-    if (filings.length >= limit) break;
-    cursor.setUTCDate(cursor.getUTCDate() - 1);
-  }
+    },
+    () => filings.length >= limit,
+  );
   return filings;
 }
 
@@ -607,12 +643,104 @@ export async function getLatestEdinetReport(
   };
 }
 
+// --- Large-volume holding reports (大量保有報告書 — the 5% rule) --------------
+
+/**
+ * Map one large-volume holding document to an owner record for a given subject
+ * issuer. The filer (`filerName`) is the ≥5% holder; the subject issuer is
+ * identified upstream by `issuerEdinetCode`. EDINET's day index does not carry
+ * the holding ratio, so `pct` is intentionally omitted — parity with the SEC
+ * 13D/G owners path, which likewise reports the filing, not the exact stake.
+ */
+function documentToOwner(
+  row: JsonRecord,
+  subjectEdinetCode: string,
+  scanDate: string,
+): OwnerRecord | undefined {
+  const docId = asString(row.docID);
+  const holderName = asString(row.filerName);
+  if (!docId || !holderName) return undefined;
+  const docTypeCode = asString(row.docTypeCode);
+  const label = (docTypeCode ? EDINET_DOC_TYPE_LABELS[docTypeCode] : undefined) ??
+    "Large-volume holding report (大量保有報告書)";
+  const filedDate = formatSubmitDate(asString(row.submitDateTime), scanDate);
+  const reason = asString(row.currentReportReason);
+  return {
+    holderName,
+    holderType: docTypeCode === "360"
+      ? "Large-volume holding change report filer (変更報告書)"
+      : "Large-volume holding report filer (大量保有報告書)",
+    thresholdRegime: EDINET_5_PERCENT_THRESHOLD_REGIME,
+    form: label,
+    filedDate,
+    notifiedDate: filedDate,
+    ...(reason ? { naturesOfControl: [reason] } : {}),
+    accession: docId,
+    sourceUrl: viewerUrl(),
+    source: "EDINET",
+    // sourceIdentifiers scope the *subject* issuer (whose shares are held); the
+    // ≥5% holder itself is carried in holderName.
+    sourceIdentifiers: {
+      edinetCode: subjectEdinetCode,
+      jurisdiction: "JP",
+    },
+  };
+}
+
+export interface EdinetOwnersParams {
+  startDate?: string;
+  endDate?: string;
+  maxDays?: number;
+  limit?: number;
+}
+
+/**
+ * Reverse-map EDINET's filer-indexed large-holding reports onto a subject
+ * issuer: scan the date index for 大量保有報告書 (docType 350) and its change
+ * reports (360) whose `issuerEdinetCode` is the resolved company, so each row's
+ * filer is a ≥5% holder of that company. EDINET's metadata does not carry the
+ * holding ratio, so exact percentages require opening the linked report.
+ */
+export async function getEdinetLargeHolders(
+  company: string,
+  params: EdinetOwnersParams = {},
+  options: AdapterOptions = {},
+): Promise<OwnerRecord[]> {
+  const subjectEdinetCode = await resolveEdinetCode(company, options);
+  const endDate = params.endDate ?? toIsoDate(new Date());
+  const startDate = params.startDate ??
+    toIsoDate(new Date(toUtcDate(endDate).getTime() - EDINET_OWNERS_SCAN_DAYS * 86_400_000));
+  const limit = Math.max(1, params.limit ?? EDINET_OWNERS_DEFAULT_LIMIT);
+
+  const owners: OwnerRecord[] = [];
+  await walkEdinetDays(
+    {
+      startDate,
+      endDate,
+      ...(params.maxDays !== undefined ? { maxDays: params.maxDays } : {}),
+    },
+    options,
+    (row, date) => {
+      if (asString(row.issuerEdinetCode) !== subjectEdinetCode) return;
+      const code = asString(row.docTypeCode);
+      if (!code || !EDINET_LARGE_HOLDING_DOC_TYPES.has(code)) return;
+      const owner = documentToOwner(row, subjectEdinetCode, date);
+      if (owner) owners.push(owner);
+    },
+    () => owners.length >= limit,
+  );
+  return owners
+    .sort((left, right) => right.filedDate.localeCompare(left.filedDate))
+    .slice(0, limit);
+}
+
 // --- Aliases and adapter factory -------------------------------------------
 
 export const resolveCompany = resolveEdinetCompany;
 export const searchCompanies = searchEdinetCompanies;
 export const searchFilings = searchEdinetFilings;
 export const getLatestReport = getLatestEdinetReport;
+export const getOwners = getEdinetLargeHolders;
 
 export function createEdinetAdapter(options: AdapterOptions = {}) {
   return {
@@ -622,5 +750,7 @@ export function createEdinetAdapter(options: AdapterOptions = {}) {
       searchEdinetFilings(input, options),
     getLatestReport: (company: string, reportKind: "annual" | "quarterly") =>
       getLatestEdinetReport(company, reportKind, options),
+    getOwners: (company: string, params?: EdinetOwnersParams) =>
+      getEdinetLargeHolders(company, params, options),
   };
 }

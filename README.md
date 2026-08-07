@@ -107,7 +107,7 @@ Restart the client after changing its configuration, then try:
 | `CompanyResolve` | "Which company is this?" — canonical name plus CIK, ticker, LEI, ISIN, and local registry identifiers. | US, GB, KR, JP, CN, IN, TW, BR + global LEI/ISIN |
 | `CompanyFilings` | "What has it filed?" — dates, types, descriptions, direct source links; a latest annual/quarterly report mode. | US, GB, KR, JP, CN, IN, TW, BR |
 | `CompanyInsiders` | "Who runs it?" — directors, officers, titles, and 10%+ owners from insider registers. | US, GB (incl. ECCTA identity status), KR, TW |
-| `CompanyOwners` | "Who owns it?" — major-shareholder filers with thresholds, dates, and filing links. | US (13D/13G), GB (PSC + TR-1), KR (5% rule), TW (>10%) |
+| `CompanyOwners` | "Who owns it?" — major-shareholder filers with thresholds, dates, and filing links. | US (13D/13G), GB (PSC + TR-1), KR (5% rule), JP (5% rule / 大量保有報告書), TW (>10%) |
 | `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, BR |
 | `OwnershipChain` | "Who consolidates it?" — GLEIF direct/ultimate accounting-consolidation parents and children. | 🌐 Global (any LEI or legal name) |
 | `PrivateRaises` | "Has it raised privately?" — Form D exempt offerings, amounts, investor counts, named related persons. | US only in v1 |
@@ -121,7 +121,7 @@ Every `company` input accepts a **name or a local identifier** — ticker, CIK, 
 | `CompanyResolve` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `CompanyFilings` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — |
 | `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 global via GLEIF — jurisdiction-independent |
@@ -267,7 +267,7 @@ DISCLOSURES_USER_AGENT="Your Organization your-email@example.com" bun run smoke:
 
 ### Roadmap
 
-The seven tool names and schemas stay stable; new sources and deeper data dispatch behind the same intents rather than adding jurisdiction-specific tools. Next up: JP large-shareholding (5% rule) reports for `CompanyOwners`, GB/JP insider depth, and CN/IN ownership and financials currently locked inside report PDFs. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
+The seven tool names and schemas stay stable; new sources and deeper data dispatch behind the same intents rather than adding jurisdiction-specific tools. Next up: GB/JP insider depth, CN/IN ownership and financials currently locked inside report PDFs, and a DE (Germany) adapter. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
 
 ## License
 

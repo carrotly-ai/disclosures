@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Added
+
+- Japan `CompanyOwners` (`jurisdiction: "JP"`): large-volume holding reports (大量保有報告書, the 5% rule under the Financial Instruments and Exchange Act) and their change reports (変更報告書), reverse-mapped to the subject issuer. EDINET's document index is filer-indexed with no server-side subject filter, so the adapter matches each report's `issuerEdinetCode` to the resolved company — making each returned row a ≥5% holder of it — while walking a bounded window one calendar day per request (default ~1 year; narrow with the new optional `start_date`/`end_date`, which apply only to the JP scan). EDINET's day index carries no holding ratio, so exact percentages are intentionally omitted (parity with the SEC 13D/G path, which likewise returns the filing, not the stake) and the output directs the caller to the linked docID in the EDINET viewer. Document search requires `EDINET_API_KEY`; resolution remains keyless. Previously `CompanyOwners` under `JP` returned an unsupported-jurisdiction explanation.
+
 ## 0.1.0 - 2026-08-06
 
 ### Added

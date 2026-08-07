@@ -5,6 +5,7 @@ import {
   EdinetConfigurationError,
   EdinetRateLimitError,
   getEdinetConfigurationError,
+  getEdinetLargeHolders,
   getLatestEdinetReport,
   hasEdinetConfiguration,
   parseEdinetCodeCsv,
@@ -235,6 +236,133 @@ describe("getLatestEdinetReport", () => {
     const fetchFn = routedFetch([edinetCodeListRoute, documentsRoute]);
     const report = await getLatestEdinetReport("E02144", "quarterly", options(fetchFn));
     expect(report?.accession).toBe("S100QTR");
+  });
+});
+
+// One calendar day of documents.json results for the reverse-lookup path: two
+// large-volume holding reports whose *subject* issuer (issuerEdinetCode) is
+// Toyota (E02144), plus rows that must be filtered out — a 350 for a different
+// issuer, and a non-large-holding filing that happens to name Toyota.
+const TOYOTA_HOLDERS_DAY = [
+  {
+    docID: "S100LVH1",
+    edinetCode: "E12345",
+    filerName: "野村アセットマネジメント株式会社",
+    issuerEdinetCode: "E02144",
+    docTypeCode: "350",
+    docDescription: "大量保有報告書",
+    currentReportReason: "新規保有",
+    submitDateTime: "2026-08-04 09:00",
+  },
+  {
+    docID: "S100LVH2",
+    edinetCode: "E67890",
+    filerName: "ブラックロック・ジャパン株式会社",
+    issuerEdinetCode: "E02144",
+    docTypeCode: "360",
+    docDescription: "変更報告書",
+    currentReportReason: "保有割合の変更",
+    submitDateTime: "2026-08-05 10:00",
+  },
+  {
+    // A large-holding report for a *different* issuer — must be excluded.
+    docID: "S100LVHX",
+    edinetCode: "E11111",
+    filerName: "みずほ信託銀行株式会社",
+    issuerEdinetCode: "E09999",
+    docTypeCode: "350",
+    docDescription: "大量保有報告書",
+    submitDateTime: "2026-08-05 08:00",
+  },
+  {
+    // Toyota is the filer here, not the subject of a large-holding report.
+    docID: "S100ANN",
+    edinetCode: "E02144",
+    filerName: "トヨタ自動車株式会社",
+    docTypeCode: "120",
+    docDescription: "有価証券報告書",
+    submitDateTime: "2026-08-05 07:00",
+  },
+];
+
+const holdersRoute: Route = {
+  pattern: "documents.json",
+  body: edinetDay(TOYOTA_HOLDERS_DAY),
+};
+
+describe("getEdinetLargeHolders", () => {
+  test("reverse-maps large-holding reports to the subject issuer", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute, holdersRoute]);
+    const owners = await getEdinetLargeHolders(
+      "7203",
+      { startDate: "2026-08-05", endDate: "2026-08-05" },
+      options(fetchFn),
+    );
+    // Only the two 350/360 rows whose issuerEdinetCode is Toyota, newest first.
+    expect(owners.map((owner) => owner.accession)).toEqual(["S100LVH2", "S100LVH1"]);
+    const change = owners[0];
+    expect(change?.holderName).toBe("ブラックロック・ジャパン株式会社");
+    expect(change?.holderType).toContain("変更報告書");
+    expect(change?.form).toBe("Change report — large-volume holding (変更報告書)");
+    expect(change?.filedDate).toBe("2026-08-05");
+    expect(change?.notifiedDate).toBe("2026-08-05");
+    expect(change?.naturesOfControl).toEqual(["保有割合の変更"]);
+    expect(change?.pct).toBeUndefined();
+    expect(change?.thresholdRegime).toBe(EDINET_5_PERCENT_THRESHOLD_REGIME);
+    expect(change?.source).toBe("EDINET");
+    expect(change?.sourceUrl).toBe(EDINET_VIEWER_URL);
+    // sourceIdentifiers describe the subject issuer, not the filer.
+    expect(change?.sourceIdentifiers?.edinetCode).toBe("E02144");
+    expect(change?.sourceIdentifiers?.jurisdiction).toBe("JP");
+
+    const initial = owners[1];
+    expect(initial?.holderName).toBe("野村アセットマネジメント株式会社");
+    expect(initial?.holderType).toContain("大量保有報告書");
+    expect(initial?.form).toBe("Large-volume holding report (大量保有報告書)");
+  });
+
+  test("excludes large-holding reports for a different issuer", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute, holdersRoute]);
+    const owners = await getEdinetLargeHolders(
+      "E02144",
+      { startDate: "2026-08-05", endDate: "2026-08-05" },
+      options(fetchFn),
+    );
+    expect(owners.some((owner) => owner.accession === "S100LVHX")).toBe(false);
+    // The non-large-holding annual report naming Toyota as filer is not an owner.
+    expect(owners.some((owner) => owner.accession === "S100ANN")).toBe(false);
+  });
+
+  test("honours the limit and keeps the newest reports", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute, holdersRoute]);
+    const owners = await getEdinetLargeHolders(
+      "E02144",
+      { startDate: "2026-08-05", endDate: "2026-08-05", limit: 1 },
+      options(fetchFn),
+    );
+    expect(owners).toHaveLength(1);
+    expect(owners[0]?.accession).toBe("S100LVH2");
+  });
+
+  test("returns no owners when no large-holding report names the issuer", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute, holdersRoute]);
+    const owners = await getEdinetLargeHolders(
+      "6758", // Sony — only its exclusion row exists, for a different subject
+      { startDate: "2026-08-05", endDate: "2026-08-05" },
+      options(fetchFn),
+    );
+    expect(owners).toHaveLength(0);
+  });
+
+  test("throws a configuration error without an API key (after resolution)", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute]);
+    await expect(
+      getEdinetLargeHolders(
+        "E02144",
+        { startDate: "2026-08-05", endDate: "2026-08-05" },
+        options(fetchFn, {}),
+      ),
+    ).rejects.toBeInstanceOf(EdinetConfigurationError);
   });
 });
 
