@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented here.
 
-## Unreleased
+## 0.1.1 - 2026-08-07
+
+All additions are backward-compatible: the ten tool names and their schemas are unchanged. New coverage arrives behind existing parameters — a widened `jurisdiction` enum on `CompanyDocument`/`PersonAppointments`, deeper Companies House data, and a new German source — so existing calls behave exactly as before.
 
 ### Added
 
