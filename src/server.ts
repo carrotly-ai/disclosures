@@ -7,7 +7,7 @@ import { createTools, TOOL_NAMES } from "./tools/index.js";
 import type { AdapterOptions } from "./core/types.js";
 
 export const SERVER_NAME = "disclosures";
-export const SERVER_VERSION = "0.1.0";
+export const SERVER_VERSION = "0.1.1";
 
 export function createDisclosuresServer(options: AdapterOptions = {}): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });

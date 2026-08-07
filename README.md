@@ -11,7 +11,7 @@
 
 `disclosures` is a free, open-source [Model Context Protocol](https://modelcontextprotocol.io/) server **and** a TypeScript library. It answers questions like *"who are NVIDIA's directors?"*, *"who owns 5% of Samsung Electronics?"*, or *"show me Vale's last three annual results"* — with every answer linked back to the official source document.
 
-- **7 stable tools, 10 jurisdictions** — one `jurisdiction` parameter routes each intent to the right national source. Tool names and schemas never change as coverage grows.
+- **10 stable tools, 10 jurisdictions** — seven intent tools each route across national sources via one `jurisdiction` parameter; three register tools add filed-document, secured-charge, and person-appointment lookups. Tool names and schemas never change as coverage grows.
 - **Official sources only** — SEC EDGAR, GLEIF, UK Companies House, FCA NSM, filings.xbrl.org, Korea DART, Japan EDINET, China cninfo, India BSE, Taiwan TWSE, Brazil CVM, Germany BaFin.
 - **Honest by design** — real source links only, explicit "unsupported here" answers instead of empty or fabricated results, and clear caveats ("absence of a filing is not proof").
 - **Zero runtime dependencies** — one bundled file, runs anywhere Node 18+ runs.
@@ -258,7 +258,7 @@ Requires [Bun](https://bun.sh/) for development; the published artifact runs on 
 ```bash
 bun install
 bunx tsc --noEmit     # strict typecheck
-bun test              # 278 tests, fully offline — no live HTTP
+bun test              # 371 tests, fully offline — no live HTTP
 bun run build         # bundles dist/server.mjs (zero runtime deps)
 bun run test:stdio    # stdio integration against the built artifact
 ```
