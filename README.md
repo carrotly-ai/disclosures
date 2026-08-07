@@ -1,72 +1,24 @@
 # disclosures
 
-Free, open-source corporate-disclosure research through official sources. `disclosures` is both a TypeScript library and a stdio [Model Context Protocol](https://modelcontextprotocol.io/) server.
+**Corporate-disclosure research for AI agents and TypeScript — filings, insiders, owners, financials, and ownership chains from 11 official sources across 9 jurisdictions.**
 
-Version 0.1 ships eleven data sources behind seven jurisdiction-agnostic tools:
+[![npm version](https://img.shields.io/npm/v/disclosures?logo=npm&color=cb3837)](https://www.npmjs.com/package/disclosures)
+[![CI](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml/badge.svg)](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Node >= 18](https://img.shields.io/node/v/disclosures?logo=node.js&logoColor=white)](https://www.npmjs.com/package/disclosures)
+[![Zero runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://www.npmjs.com/package/disclosures?activeTab=dependencies)
+[![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.carrotly--ai%2Fdisclosures-6b46c1)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.carrotly-ai/disclosures)
 
-- **US SEC EDGAR** (default) — filings, annual/quarterly report metadata, Section 16 insiders, Schedule 13D/13G filers, annual XBRL financials, and Form D private raises.
-- **GLEIF LEI** (global) — entity resolution and reported direct/ultimate accounting-consolidation relationships.
-- **filings.xbrl.org ESEF/UKSEF** (`jurisdiction: "EU"` and `"GB"`) — keyless, LEI-indexed annual IFRS financials parsed from the machine-readable xBRL-JSON reports European and UK issuers file under ESEF/UKSEF (FY2020+), surfaced inside `CompanyFinancials`.
-- **UK Companies House** (`jurisdiction: "GB"`) — company resolution, filing history, the officer register, and persons-with-significant-control records, including the ECCTA identity-verification status (`identity_verification_details`, mandatory for new appointments from 18 Nov 2025) as an "Identity (ECCTA)" column on officers and PSCs.
-- **UK FCA National Storage Mechanism** (`jurisdiction: "GB"`, inject-only) — DTR5/TR-1 "notification of major holdings" (the ~3%+ equity/voting-rights signal Companies House PSC does not carry), surfaced inside `CompanyOwners`. The NSM has no public read API, so this source stays dormant unless you supply your own access via an injected `fetchFn`; otherwise the GB owners view explains how to enable it.
-- **South Korea DART / OpenDART** (`jurisdiction: "KR"`) — company resolution, periodic reports, executive/major-shareholder ownership, 5% mass-holding reports, and annual major-account financials.
-- **Japan EDINET** (`jurisdiction: "JP"`) — company resolution and date-indexed disclosure documents (annual securities reports, quarterly/semi-annual reports, and more).
-- **China cninfo** (`jurisdiction: "CN"`) — keyless company resolution across the Shanghai and Shenzhen exchanges (and HKEX mirror) plus a date-filterable announcement feed with direct PDF links and latest annual/quarterly periodic-report lookup.
-- **India BSE** (`jurisdiction: "IN"`) — keyless company resolution and a corporate-announcement feed with attachment PDF links ("BSE-lite"; shareholding data is not surfaced).
-- **Taiwan TWSE OpenAPI** (`jurisdiction: "TW"`) — keyless company resolution, material-information announcements (`CompanyFilings`), the directors-and-supervisors register with per-holder share counts (`CompanyInsiders`), and >10% major shareholders (`CompanyOwners`), drawn from the Taiwan Stock Exchange's public open-data whole-market snapshots.
-- **Brazil CVM open data** (`jurisdiction: "BR"`) — keyless company resolution against the CVM registration feed (`CompanyResolve`), the IPE disclosure index with direct RAD download links (`CompanyFilings`), and annual DFP financials — total assets, equity, revenue, operating income, and net income, consolidated-when-filed, in BRL (`CompanyFinancials`) — parsed from the whole-market open-data CSV/ZIP snapshots at `dados.cvm.gov.br`.
+`disclosures` is a free, open-source [Model Context Protocol](https://modelcontextprotocol.io/) server **and** a TypeScript library. It answers questions like *"who are NVIDIA's directors?"*, *"who owns 5% of Samsung Electronics?"*, or *"show me Vale's last three annual results"* — with every answer linked back to the official source document.
 
-The seven tool names and schemas stay stable as jurisdictions are added; each new source dispatches behind the same intents rather than adding jurisdiction-specific tool names. Every tool states its data source, its coverage limits, and that absence of a filing is not proof an event never happened.
+- **7 stable tools, 9 jurisdictions** — one `jurisdiction` parameter routes each intent to the right national source. Tool names and schemas never change as coverage grows.
+- **Official sources only** — SEC EDGAR, GLEIF, UK Companies House, FCA NSM, filings.xbrl.org, Korea DART, Japan EDINET, China cninfo, India BSE, Taiwan TWSE, Brazil CVM.
+- **Honest by design** — real source links only, explicit "unsupported here" answers instead of empty or fabricated results, and clear caveats ("absence of a filing is not proof").
+- **Zero runtime dependencies** — one bundled file, runs anywhere Node 18+ runs.
 
-Per-jurisdiction reference pages — data source, credentials, accepted identifiers, supported intents, and caveats — live under [`docs/jurisdictions/`](docs/jurisdictions/README.md), which also carries the full intent × jurisdiction coverage matrix.
+## Quick start
 
-## Tools
-
-| Tool | Returns |
-|---|---|
-| `CompanyResolve` | Canonical candidates and known CIK, ticker, LEI, and jurisdiction identifiers. |
-| `CompanyFilings` | Filing dates, types, descriptions, and direct SEC links; a latest-report mode returns metadata and links to key sections, not the section text. |
-| `CompanyInsiders` | Recent named directors, officers and titles, and 10% owners reported in Forms 3/4/5. |
-| `CompanyOwners` | Schedule 13D/13G filers with form, date, links, and the US 5% threshold regime. |
-| `CompanyFinancials` | Annual as-filed revenue, income, balance-sheet, EPS, cash-flow, and R&D facts by fiscal period end (US XBRL, KR DART major accounts, or GB/EU normalized IFRS from ESEF/UKSEF). |
-| `OwnershipChain` | GLEIF direct and ultimate accounting-consolidating parents, reporting exceptions, and known direct children. |
-| `PrivateRaises` | US Form D exempt offerings, amounts, investor counts, and named executives/directors/promoters. US-only in v1. |
-
-All `company` inputs accept a name or a jurisdiction-specific identifier: a ticker/CIK, LEI, or ISIN (US — an ISIN resolves to its issuer's GLEIF record), a Companies House company number (GB), an OpenDART 8-digit corp code or 6-digit stock code (KR), an EDINET code (`E` + 5 digits), 4/5-digit securities code, or 13-digit corporate number (JP), a 6-digit A-share or 5-digit HK stock code (CN), a 6-digit BSE scrip code (IN), a 4-digit TWSE listing code (TW), or a CVM registration code (BR — e.g. `4170` for Vale). Tools accept `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR"` (default `US`); `OwnershipChain` is global via GLEIF. The `EU` route serves only `CompanyFinancials` (pan-European ESEF financials, keyed by legal name or 20-character LEI); every other intent under `EU` returns an explicit unsupported-jurisdiction explanation.
-
-Where a jurisdiction lacks a normalized equivalent to a US intent — for example EDINET has no Section 16-style insider feed, neither Companies House nor DART nor EDINET exposes a Form D-equivalent private-raise dataset, and Chinese/Indian ownership and financial detail lives inside report PDFs this release does not parse — the tool returns an explicit unsupported-jurisdiction explanation rather than an empty or fabricated result. For CN and IN, `CompanyFilings` returns real announcement PDF links; the deeper insider/owner/financial intents are the ones that degrade honestly. For TW, `CompanyFilings`, `CompanyInsiders`, and `CompanyOwners` are backed by TWSE open data, while `CompanyFinancials` returns an explicit unsupported explanation (TWSE's open-data financials are not yet normalized here). For BR, `CompanyResolve`, `CompanyFilings` (IPE index), and `CompanyFinancials` (DFP annual accounts) are backed by CVM open data, while `CompanyInsiders` and `CompanyOwners` return explicit unsupported explanations — CVM discloses officer and relevant-holder data inside the Formulário de Referência and CVM 44 documents, which this release does not parse into a normalized feed.
-
-## SEC User-Agent configuration
-
-SEC EDGAR requires a descriptive User-Agent containing contact information. Set:
-
-```bash
-export DISCLOSURES_USER_AGENT="Your Organization your-email@example.com"
-```
-
-`SEC_EDGAR_USER_AGENT` is also accepted for compatibility. `DISCLOSURES_USER_AGENT` takes precedence. No API key is required for SEC EDGAR or GLEIF.
-
-## Non-US jurisdiction credentials
-
-Each non-US source uses its own free API key. Provide only the keys for the jurisdictions you query; US/GLEIF calls keep working without them.
-
-| Jurisdiction | Environment variable | Where to get it | Notes |
-|---|---|---|---|
-| GB — Companies House | `COMPANIES_HOUSE_API_KEY` | [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/) | Required for all GB operations. |
-| GB — FCA NSM (TR-1) | _(none — inject-only)_ | — | The FCA National Storage Mechanism has no public read API. `CompanyOwners` GB adds the DTR5/TR-1 major-holdings section only when you inject your own `fetchFn` via `AdapterOptions`; the default path never contacts `data.fca.org.uk`. |
-| KR — OpenDART | `OPENDART_API_KEY` | [opendart.fss.or.kr](https://opendart.fss.or.kr/) | Required for all KR operations. |
-| JP — EDINET | `EDINET_API_KEY` | [EDINET API (v2) registration](https://api.edinet-fsa.go.jp/) | Required only for document search; JP `CompanyResolve` works without it because the EDINET code list is public. |
-| CN — cninfo | _(none)_ | — | Keyless. Resolution and the announcement feed use public POST endpoints. |
-| IN — BSE | _(none)_ | — | Keyless. BSE's `api.bseindia.com` host is anti-bot protected; if the default fetch is throttled, inject a browser-backed `fetchFn` via `AdapterOptions`. |
-| TW — TWSE OpenAPI | _(none)_ | — | Keyless. Resolution, announcements, directors/supervisors, and major shareholders read the public `openapi.twse.com.tw` whole-market open-data endpoints. |
-| BR — CVM open data | _(none)_ | — | Keyless. Resolution, the IPE disclosure index, and DFP annual financials read the public whole-market CSV/ZIP snapshots at `dados.cvm.gov.br`. |
-| GB / EU — filings.xbrl.org (ESEF/UKSEF) | _(none)_ | — | Keyless. `CompanyFinancials` with `jurisdiction: "GB"` or `"EU"` reads the public filings.xbrl.org JSON:API and xBRL-JSON reports; resolving a legal name to an LEI uses GLEIF (also keyless). |
-
-Missing credentials produce a readable, flagged error naming the variable to set — never a silent empty result.
-
-## Quickstart
-
-Run the server with Node 18+ through npm:
+Requires Node 18+. The only required configuration is a descriptive User-Agent for SEC EDGAR (their [fair-access policy](https://www.sec.gov/os/accessing-edgar-data)) — set it to your name/org and contact email.
 
 ```bash
 npx -y disclosures
@@ -80,9 +32,9 @@ claude mcp add --transport stdio disclosures \
   -- npx -y disclosures
 ```
 
-### Claude Desktop and Cursor
+### Claude Desktop
 
-Add this server to the client's MCP configuration:
+Add to `claude_desktop_config.json` (Settings → Developer → Edit Config):
 
 ```json
 {
@@ -98,128 +50,224 @@ Add this server to the client's MCP configuration:
 }
 ```
 
-Restart the client after changing its configuration.
+### Cursor
 
-## TypeScript library
+Add the same `mcpServers` block as Claude Desktop to `~/.cursor/mcp.json` (or per-project `.cursor/mcp.json`).
 
-The same package can be imported without starting stdio:
+### VS Code (Copilot / MCP)
 
-```ts
-import {
-  createDisclosuresServer,
-  createDisclosuresTools,
-  resolveCompanyCik,
-  resolveLei,
-} from "disclosures";
+Add to `.vscode/mcp.json`:
 
-const tools = createDisclosuresTools({
-  env: {
-    DISCLOSURES_USER_AGENT: "Your Organization your-email@example.com",
-  },
-});
-
-const result = await tools.CompanyResolve.handler({
-  company: "NVDA",
-});
-
-const server = createDisclosuresServer();
+```json
+{
+  "servers": {
+    "disclosures": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "disclosures"],
+      "env": {
+        "DISCLOSURES_USER_AGENT": "Your Organization your-email@example.com"
+      }
+    }
+  }
+}
 ```
 
-Adapter functions accept `{ fetchFn?, env?, cache? }`, making them suitable for deterministic tests and embedding.
+<details>
+<summary><b>Other clients</b> — Windsurf, Codex CLI, Gemini CLI, and any stdio MCP client</summary>
 
-### Caching reference downloads
+**Windsurf** (`~/.codeium/windsurf/mcp_config.json`) uses the same `mcpServers` JSON as Claude Desktop.
 
-Two adapters resolve companies against large, slow-changing reference archives that
-regenerate about once a day: the OpenDART corp-code list (`jurisdiction: "KR"`) and the
-EDINET code list (`jurisdiction: "JP"`). Without a cache these are memoized per process,
-so a fresh MCP process re-downloads the multi-megabyte archive on its first lookup. Supply
-a `cache` to persist them across restarts:
+**Codex CLI** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.disclosures]
+command = "npx"
+args = ["-y", "disclosures"]
+env = { DISCLOSURES_USER_AGENT = "Your Organization your-email@example.com" }
+```
+
+**Gemini CLI** (`~/.gemini/settings.json`) uses the same `mcpServers` JSON as Claude Desktop.
+
+**Any other client:** run `npx -y disclosures` as a stdio command with the `DISCLOSURES_USER_AGENT` environment variable set. The server speaks newline-delimited JSON-RPC on stdout. It is also listed on the [official MCP registry](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.carrotly-ai/disclosures) as `io.github.carrotly-ai/disclosures`.
+
+</details>
+
+Restart the client after changing its configuration, then try:
+
+> *"Use disclosures to list Apple's board of directors and their latest Form 4 activity."*
+> *"Who holds 5% or more of NVIDIA? Link the filings."*
+> *"Resolve Samsung Electronics in Korea and show its latest annual financials."*
+> *"What's the GLEIF ownership chain above Apple Operations India?"*
+
+## The seven tools
+
+| Tool | What it answers | Coverage |
+|---|---|---|
+| `CompanyResolve` | "Which company is this?" — canonical name plus CIK, ticker, LEI, ISIN, and local registry identifiers. | US, GB, KR, JP, CN, IN, TW, BR + global LEI/ISIN |
+| `CompanyFilings` | "What has it filed?" — dates, types, descriptions, direct source links; a latest annual/quarterly report mode. | US, GB, KR, JP, CN, IN, TW, BR |
+| `CompanyInsiders` | "Who runs it?" — directors, officers, titles, and 10%+ owners from insider registers. | US, GB (incl. ECCTA identity status), KR, TW |
+| `CompanyOwners` | "Who owns it?" — major-shareholder filers with thresholds, dates, and filing links. | US (13D/13G), GB (PSC + TR-1), KR (5% rule), TW (>10%) |
+| `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, BR |
+| `OwnershipChain` | "Who consolidates it?" — GLEIF direct/ultimate accounting-consolidation parents and children. | 🌐 Global (any LEI or legal name) |
+| `PrivateRaises` | "Has it raised privately?" — Form D exempt offerings, amounts, investor counts, named related persons. | US only in v1 |
+
+Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR"` (default `US`).
+
+### Coverage matrix
+
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — |
+| `OwnershipChain` | 🌐 global via GLEIF — jurisdiction-independent |
+
+✅ supported · — returns an honest unsupported-jurisdiction explanation, never an empty or fabricated result
+
+Each jurisdiction has a full reference page — data source, credentials, accepted identifiers, per-intent behavior, and caveats — under [`docs/jurisdictions/`](docs/jurisdictions/README.md).
+
+## Data sources and credentials
+
+US and global lookups work with just the User-Agent. Non-US sources are keyless where the upstream allows it; the two that need keys are **free**. Provide only the keys for jurisdictions you query — everything else keeps working without them, and a missing credential produces a readable error naming the exact variable to set.
+
+| Source | Jurisdiction | Key required | Notes |
+|---|---|---|---|
+| [SEC EDGAR](https://www.sec.gov/os/accessing-edgar-data) | `US` (default) | None — set `DISCLOSURES_USER_AGENT` | Filings, insiders, 13D/13G owners, XBRL financials, Form D. |
+| [GLEIF](https://www.gleif.org/) | 🌐 global | None | LEI/ISIN resolution, ownership chain. |
+| [Companies House](https://developer.company-information.service.gov.uk/) | `GB` | `COMPANIES_HOUSE_API_KEY` (free) | Resolution, filings, officers, PSC — incl. ECCTA identity-verification status. |
+| [FCA NSM](https://data.fca.org.uk/) | `GB` | None — **inject-only** | DTR5/TR-1 ~3%+ major holdings inside `CompanyOwners`; activates only when you inject a `fetchFn` (no public read API). |
+| [filings.xbrl.org](https://filings.xbrl.org/) | `GB`, `EU` | None | ESEF/UKSEF normalized annual IFRS financials (FY2020+). |
+| [DART / OpenDART](https://opendart.fss.or.kr/) | `KR` | `OPENDART_API_KEY` (free) | Resolution, reports, executive ownership, 5% mass holdings, financials. |
+| [EDINET](https://api.edinet-fsa.go.jp/) | `JP` | `EDINET_API_KEY` (free, search only) | Resolution is keyless; document search needs the key. |
+| [cninfo](http://www.cninfo.com.cn/) | `CN` | None | SSE/SZSE (+ HKEX mirror) resolution and announcement PDFs. |
+| [BSE India](https://www.bseindia.com/) | `IN` | None | Resolution and announcement PDFs; anti-bot host — inject a `fetchFn` if throttled. |
+| [TWSE OpenAPI](https://openapi.twse.com.tw/) | `TW` | None | Resolution, material information, directors/supervisors, >10% shareholders. |
+| [CVM open data](https://dados.cvm.gov.br/) | `BR` | None | Resolution, IPE disclosure index, DFP annual financials in BRL. |
+
+```bash
+# Required (SEC fair-access policy — your name/org and contact email)
+export DISCLOSURES_USER_AGENT="Your Organization your-email@example.com"
+
+# Optional, per jurisdiction
+export COMPANIES_HOUSE_API_KEY="..."   # GB
+export OPENDART_API_KEY="..."          # KR
+export EDINET_API_KEY="..."            # JP document search
+```
+
+`SEC_EDGAR_USER_AGENT` is accepted as a fallback for compatibility; `DISCLOSURES_USER_AGENT` wins.
+
+## Use as a TypeScript library
+
+The same package imports cleanly without starting stdio — every adapter takes injectable `{ fetchFn?, env?, cache? }`, so it embeds and tests deterministically.
 
 ```ts
-import { FileCache, createDisclosuresTools } from "disclosures";
+import { createTools } from "disclosures";
 
-const tools = createDisclosuresTools({
+const tools = createTools({
+  env: { DISCLOSURES_USER_AGENT: "Your Organization your-email@example.com" },
+});
+
+const resolve = tools.find((tool) => tool.name === "CompanyResolve")!;
+const result = await resolve.handler({ company: "NVDA" });
+```
+
+Handlers never throw — every failure comes back as a readable MCP-shaped result. Individual adapters are also exported as namespaces (`secEdgar`, `gleif`, `companiesHouse`, `openDart`, `edinet`, `cninfo`, `bseIndia`, `fcaNsm`, `xbrlFilings`, `twseOpenApi`, `cvmOpenData`) if you want the raw normalized records instead of Markdown.
+
+<details>
+<summary><b>Persistent caching</b> — skip re-downloading the KR/JP reference archives on restart</summary>
+
+The OpenDART corp-code list (KR) and EDINET code list (JP) are multi-megabyte archives that regenerate about daily. Without a cache they are memoized per process; supply one to persist across restarts:
+
+```ts
+import { FileCache, createTools } from "disclosures";
+
+const tools = createTools({
   env: { OPENDART_API_KEY: process.env.OPENDART_API_KEY },
-  cache: new FileCache("/var/cache/disclosures"), // survives restarts, 24h TTL
+  cache: new FileCache("/var/cache/disclosures"), // TTL-aware, survives restarts
 });
 ```
 
-`cache` is any object implementing `DisclosuresCache` (`get`/`set`). The package ships
-`InMemoryCache` (process-local, TTL-aware) and `FileCache` (one JSON file per key under a
-directory); a corrupt, expired, or missing entry is always treated as a cache miss and
-triggers a normal refetch, so a broken cache never breaks a lookup.
+`cache` is any `DisclosuresCache` (`get`/`set`). `InMemoryCache` and `FileCache` ship in the box; a corrupt, expired, or missing entry degrades to a normal refetch — a broken cache never breaks a lookup.
 
-### ISIN ↔ LEI cross-walk
+</details>
 
-An ISIN identifies a security; a company can have many. GLEIF publishes the mapping in both
-directions, and the package exposes it directly:
+<details>
+<summary><b>ISIN ↔ LEI cross-walk</b> — map securities to issuers and back via GLEIF</summary>
 
 ```ts
-import { isIsin, resolveLeiByIsin, getIsinsForLei } from "disclosures";
+import { gleif } from "disclosures";
 
-isIsin("US0378331005"); // true — validates the ISIN check digit
-const issuer = await resolveLeiByIsin("US0378331005"); // → issuer's GLEIF Entity (with .lei)
-const isins = await getIsinsForLei("HWUPKR0MPOU8FGXBT394"); // → every ISIN mapped to that LEI
+gleif.isIsin("US0378331005");                               // true — validates the check digit
+const issuer = await gleif.resolveLeiByIsin("US0378331005"); // → issuer's GLEIF Entity (with .lei)
+const isins = await gleif.getIsinsForLei("HWUPKR0MPOU8FGXBT394"); // → every ISIN for that LEI
 ```
 
-`CompanyResolve` accepts a bare ISIN and routes it through `resolveLeiByIsin`, so no code is
-needed for the common case; the helpers are for building an identifier cross-walk yourself.
+`CompanyResolve` already accepts a bare ISIN and routes it through this cross-walk; the helpers are for building your own identifier maps.
+
+</details>
+
+<details>
+<summary><b>MCP server factory</b> — embed the server in your own process</summary>
+
+```ts
+import { createDisclosuresServer } from "disclosures";
+
+const server = createDisclosuresServer(); // McpServer with the seven tools registered
+```
+
+Importing the package never opens stdio; only the CLI entry point connects the transport.
+
+</details>
 
 ## Honesty and scope
 
-- EDGAR and GLEIF are public disclosure/reference systems, **not KYC or UBO registries**.
-- GLEIF Level 2 parents are accounting-consolidation relationships. They are not the same as market-disclosure ownership, voting control, or ultimate beneficial ownership.
-- Schedule 13D/13G identifies filers under the relevant threshold regime (5% in the US). It is not a complete or continuously current capitalization table, and exact percentages may require reading the linked filing.
-- Section 16 insiders reflect recent Forms 3/4/5 available for the issuer and may not be a complete current management roster.
-- Absence of a Form D does not mean an issuer never raised private capital; it may have used another exemption or entity name.
-- Filings can be amended, restated, late, incomplete, or reported under alternate XBRL tags. Results should be verified against the linked source documents.
-- This package does not provide legal, investment, accounting, or financial advice.
+These tools report **public disclosures**, faithfully — they are not KYC, UBO, or cap-table products:
+
+- **Absence is not proof.** No Form D doesn't mean a company never raised privately; a missing PSC doesn't prove no controller exists; a blank ECCTA identity field doesn't prove an officer is unverified.
+- GLEIF parents are **accounting-consolidation** relationships — not voting control, market-disclosure ownership, or ultimate beneficial ownership.
+- Schedule 13D/13G identifies filers at the 5% threshold; it is not a complete or continuously current capitalization table.
+- Section 16 insiders reflect recent Forms 3/4/5 and may not be a complete current roster.
+- Filings can be amended, restated, late, or tagged under alternate XBRL concepts — verify against the linked source documents.
+- Nothing here is legal, investment, accounting, or financial advice.
+
+Resolution misses come back as plain "Could not find…" text; configuration, upstream, and rate-limit failures come back as flagged errors naming the fix. Every link is a real, resolvable source URL.
+
+## Documentation
+
+| Page | Contents |
+|---|---|
+| [`docs/jurisdictions/`](docs/jurisdictions/README.md) | Per-jurisdiction reference: sources, credentials, accepted identifiers, per-intent behavior, caveats, and the coverage matrix. |
+| [`docs/TESTING.md`](docs/TESTING.md) | The offline testing discipline — routed fetch stubs, recorded fixtures, live smoke. |
+| [`PUBLISHING.md`](https://github.com/carrotly-ai/disclosures/blob/main/PUBLISHING.md) | npm trusted publishing and MCP-registry release automation. |
+| [`CHANGELOG.md`](https://github.com/carrotly-ai/disclosures/blob/main/CHANGELOG.md) | Release history. |
 
 ## Development
 
-Requires [Bun](https://bun.sh/) for development and Node 18+ for the published artifact.
+Requires [Bun](https://bun.sh/) for development; the published artifact runs on Node 18+.
 
 ```bash
 bun install
-bunx tsc --noEmit
-bun test
-bun run build
-bun run test:stdio
-npm pack --dry-run
+bunx tsc --noEmit     # strict typecheck
+bun test              # 278 tests, fully offline — no live HTTP
+bun run build         # bundles dist/server.mjs (zero runtime deps)
+bun run test:stdio    # stdio integration against the built artifact
 ```
 
-Tests use routed fetch stubs and do not make live HTTP requests — the [testing discipline](docs/TESTING.md) explains the offline guarantee and the fixtures convention. The optional live smoke test requires a real SEC User-Agent:
+Tests never touch the network: routed fetch stubs throw on any unmatched request ([testing discipline](docs/TESTING.md)). An optional live smoke test exercises real upstreams:
 
 ```bash
-DISCLOSURES_USER_AGENT="Your Organization your-email@example.com" \
-  bun run smoke:live
+DISCLOSURES_USER_AGENT="Your Organization your-email@example.com" bun run smoke:live
 ```
 
-For npm name reservation, trusted publishing, prerelease tests, and stable releases, see the [publishing guide](https://github.com/carrotly-ai/disclosures/blob/main/PUBLISHING.md).
+**stdio rule:** the server reserves stdout for JSON-RPC — contributor diagnostics must go to stderr, since `console.log` corrupts the MCP transport.
 
-### stdio rule
+### Roadmap
 
-The server reserves stdout for newline-delimited JSON-RPC. Contributor diagnostics must go to stderr; `console.log` can corrupt the MCP transport.
-
-## Roadmap
-
-Non-US jurisdictions now ship behind the existing tools:
-
-| Jurisdiction | Adapter | Status |
-|---|---|---|
-| United Kingdom | Companies House | Shipped |
-| United Kingdom | FCA NSM (DTR5/TR-1 major holdings) | Shipped — inject-only, inside `CompanyOwners` |
-| EU / UK | filings.xbrl.org (ESEF/UKSEF financials) | Shipped — normalized IFRS in `CompanyFinancials` |
-| South Korea | DART / OpenDART | Shipped |
-| Japan | EDINET | Shipped |
-| China | cninfo (SSE/SZSE) | Shipped — resolution + filings |
-| India | BSE (BSE-lite) | Shipped — resolution + filings |
-| Taiwan | TWSE OpenAPI | Shipped — resolution + filings + directors/supervisors + >10% owners |
-| Brazil | CVM open data | Shipped — resolution + IPE filings + DFP annual financials |
-
-ESEF/UKSEF coverage is FY2020+ and not exhaustive: alternative-market issuers (e.g. First North) are ESEF-exempt, and some national officially-appointed mechanisms (OAMs) hamper collection, so a miss never proves a company did not report. Only undimensioned reported totals are surfaced (no segment breakdowns), and a newer report's restated figure supersedes an earlier one.
-
-Deeper normalized data for the remaining sources (GB/JP insider parsing, and CN/IN ownership and financials that currently live inside report PDFs) will dispatch behind the same seven intent tools rather than adding jurisdiction-specific tool names.
+The seven tool names and schemas stay stable; new sources and deeper data dispatch behind the same intents rather than adding jurisdiction-specific tools. Next up: JP large-shareholding (5% rule) reports for `CompanyOwners`, GB/JP insider depth, and CN/IN ownership and financials currently locked inside report PDFs. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
 
 ## License
 
