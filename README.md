@@ -267,7 +267,7 @@ DISCLOSURES_USER_AGENT="Your Organization your-email@example.com" bun run smoke:
 
 ### Roadmap
 
-The seven tool names and schemas stay stable; new sources and deeper data dispatch behind the same intents rather than adding jurisdiction-specific tools. Next up: GB/JP insider depth, CN/IN ownership and financials currently locked inside report PDFs, and a DE (Germany) adapter. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
+The seven tool names and schemas stay stable; new sources and deeper data dispatch behind the same intents rather than adding jurisdiction-specific tools. Next up: GB/JP insider depth, CN/IN ownership and financials currently locked inside report PDFs, and a DE (Germany) adapter — [feasibility confirmed](docs/DE-FEASIBILITY.md) for `CompanyResolve`/`CompanyOwners`/`CompanyInsiders` over BaFin's free voting-rights and directors'-dealings databases. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
 
 ## License
 
