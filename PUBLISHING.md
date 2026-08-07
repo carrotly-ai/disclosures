@@ -106,18 +106,27 @@ Never reuse a published version. If an RC is bad, publish a higher RC; if a stab
 
 The repo ships a [`server.json`](server.json) manifest and a matching `mcpName`
 (`io.github.carrotly-ai/disclosures`) in `package.json`. The registry verifies ownership by
-reading that `mcpName` from the **published** npm package, so publish to npm (steps 4–5)
-first, then publish the registry entry with the official publisher CLI:
+reading that `mcpName` from the **published** npm package, so the npm publish (steps 4–5)
+must land first.
+
+**This is automated.** [`.github/workflows/publish-mcp.yml`](.github/workflows/publish-mcp.yml)
+runs on every `v*` tag: it checks that `package.json`, `server.json`, and
+`server.json`'s `packages[0]` agree on the version, waits for that version to appear on
+npm (so it never races `release.yml`), authenticates to the registry via GitHub **OIDC**
+(no stored secret), and runs `mcp-publisher publish`. It can also be re-run manually via
+*workflow_dispatch* to refresh the listing for an already-released version.
+
+Manual fallback from a workstation:
 
 ```bash
-# Install the MCP registry publisher (see modelcontextprotocol/registry for the current name)
+# Install: brew install mcp-publisher (or download from modelcontextprotocol/registry releases)
 mcp-publisher login github     # OAuth as a carrotly-ai org member
 mcp-publisher publish          # reads ./server.json
 ```
 
 Keep `server.json`'s `version` and each `packages[].version` in lockstep with
-`package.json` on every release — bump all three together, then re-run `mcp-publisher
-publish`. Validate the manifest before publishing:
+`package.json` on every release — bump all three together; the workflow enforces this.
+Validate the manifest before publishing:
 
 ```bash
 python3 - <<'PY'
