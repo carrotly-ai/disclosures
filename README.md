@@ -111,11 +111,11 @@ Restart the client after changing its configuration, then try:
 | `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, BR |
 | `OwnershipChain` | "Who consolidates it?" — GLEIF direct/ultimate accounting-consolidation parents and children. | 🌐 Global (any LEI or legal name) |
 | `PrivateRaises` | "Has it raised privately?" — Form D exempt offerings, amounts, investor counts, named related persons. | US only in v1 |
-| `CompanyDocument` | "What does the filing actually say?" — fetches a filed document's content: extracted iXBRL text or the source PDF saved to disk (image-only accounts are reported honestly, never faked). | GB (Companies House) |
+| `CompanyDocument` | "What does the filing actually say?" — fetches a filed document's content: extracted iXBRL/HTML text or the source PDF saved to disk (image-only / pre-inline filings are reported honestly, never faked). | GB (Companies House), US (SEC EDGAR) |
 | `CompanyCharges` | "What's secured against it?" — registered charges/mortgages with status, dates, persons entitled, and fixed/floating/negative-pledge particulars. | GB (Companies House) |
 | `PersonAppointments` | "Where else does this person sit?" — officer search, cross-company appointment history, and disqualifications (linked to the safe public register). | GB (Companies House) |
 
-The first seven tools dispatch across jurisdictions via `jurisdiction`. The last three (`CompanyDocument`, `CompanyCharges`, `PersonAppointments`) are Companies House-specific and take no `jurisdiction` — they always query the UK register.
+The first seven tools dispatch across jurisdictions via `jurisdiction`. Of the last three, `CompanyDocument` accepts a `jurisdiction` of `US` or `GB` (default `GB`); `CompanyCharges` and `PersonAppointments` are Companies House-specific and take no `jurisdiction` — they always query the UK register.
 
 Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR), BaFin-Id or ISIN (DE). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR" | "DE"` (default `US`).
 

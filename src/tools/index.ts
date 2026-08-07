@@ -7,8 +7,14 @@ import type { ToolDefinition } from "../core/toolDefs.js";
 import { formatNumber, joinSections, link, markdownTable } from "../core/markdown.js";
 import type { AdapterOptions, Entity, OwnershipParent } from "../core/types.js";
 import {
+  NO_SEC_CONFIG_MESSAGE,
+  SEC_DOCUMENT_CONTENT_WARNING,
+  SEC_DOCUMENT_IMAGE_ONLY_MESSAGE,
   SEC_FINANCIAL_CONCEPT_NAMES,
   getLatestSecReport,
+  getSecDocumentPdf,
+  getSecDocumentText,
+  getSecFilingManifest,
   getSecFinancials,
   getSecInsiders,
   getSecOwners,
@@ -1952,33 +1958,150 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     },
   );
 
+  async function companyDocumentUs(
+    company: string,
+    accession: string | undefined,
+    documentName: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!hasSecConfiguration(options)) {
+      return failureResult(company, new Error(NO_SEC_CONFIG_MESSAGE));
+    }
+    if (!accession) {
+      return textResult(
+        "Provide a transaction_id (the SEC accession number, from CompanyFilings) " +
+          "to fetch a US filing's documents.",
+      );
+    }
+    try {
+      const manifest = await getSecFilingManifest(company, accession, options);
+      const metaRows: [string, string][] = [
+        ["Accession", manifest.accession],
+        ["CIK", manifest.cik],
+        ...(manifest.form ? [["Form", manifest.form] as [string, string]] : []),
+        ...(manifest.filedDate ? [["Filed", manifest.filedDate] as [string, string]] : []),
+        ...(manifest.reportDate ? [["Period", manifest.reportDate] as [string, string]] : []),
+        ...(manifest.primaryDocument
+          ? [["Primary document", manifest.primaryDocument] as [string, string]]
+          : []),
+        ["Filing index", link("view", manifest.indexUrl)],
+      ];
+      const documentTable = manifest.documents.length
+        ? markdownTable(
+            ["Document", "Size (bytes)", "Modified"],
+            manifest.documents.map((doc) => [
+              doc.name === manifest.primaryDocument ? `**${doc.name}**` : doc.name,
+              doc.sizeBytes !== undefined ? String(doc.sizeBytes) : "—",
+              doc.lastModified ?? "—",
+            ]),
+          )
+        : "_No documents listed in this filing's manifest._";
+      const metaSection = joinSections(
+        `# SEC filing: ${manifest.form ?? "filing"} ${manifest.accession}`,
+        markdownTable(["Field", "Value"], metaRows),
+        "## Documents in this filing",
+        documentTable,
+      );
+
+      if (mode === "xhtml") {
+        const text = await getSecDocumentText(manifest, options, documentName);
+        if (!text) {
+          return textResult(joinSections(metaSection, `_${SEC_DOCUMENT_IMAGE_ONLY_MESSAGE}_`));
+        }
+        const MAX_TEXT = 50_000;
+        const truncated = text.text.length > MAX_TEXT;
+        const body = truncated ? text.text.slice(0, MAX_TEXT) : text.text;
+        return textResult(joinSections(
+          metaSection,
+          `## Extracted text (${text.documentName})`,
+          `_${SEC_DOCUMENT_CONTENT_WARNING}_`,
+          truncated
+            ? `_Text truncated to ${MAX_TEXT} characters (of ${text.text.length})._`
+            : "",
+          "```\n" + body + "\n```",
+        ));
+      }
+
+      if (mode === "pdf") {
+        const pdf = await getSecDocumentPdf(manifest, options, documentName);
+        if (!pdf) {
+          return textResult(joinSections(
+            metaSection,
+            "_This filing has no PDF rendition. SEC filings are filed as inline " +
+              "HTML/XBRL — use mode=\"xhtml\" for the primary document's extracted text._",
+          ));
+        }
+        const target = outputPath
+          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
+          : join(tmpdir(), pdf.suggestedFilename);
+        await writeFile(target, pdf.bytes);
+        return textResult(joinSections(
+          metaSection,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Document", pdf.documentName],
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
+            ],
+          ),
+          `_${SEC_DOCUMENT_CONTENT_WARNING} The file was written to disk; its bytes are not inlined here._`,
+        ));
+      }
+
+      return textResult(joinSections(
+        metaSection,
+        "_Use mode=\"xhtml\" for the primary document's extracted text, or " +
+          "mode=\"pdf\" to download a PDF exhibit if the filing has one. " +
+          SEC_DOCUMENT_CONTENT_WARNING + "_",
+      ));
+    } catch (error) {
+      return failureResult(accession, error);
+    }
+  }
+
   const companyDocument = defineTool(
     "CompanyDocument",
-    "Fetch a document filed at UK Companies House by transaction id (from " +
-      "CompanyFilings) or document id. Mode \"metadata\" (default) returns the " +
-      "filing's metadata and the renditions available (PDF and/or iXBRL/XHTML) " +
-      "with their sizes. Mode \"xhtml\" downloads the machine-readable iXBRL/" +
-      "XHTML rendition and returns its extracted plain text; image-only (paper/" +
-      "scanned) accounts have no such rendition and this is reported honestly. " +
-      "Mode \"pdf\" downloads the PDF and saves it to a local file, returning the " +
-      "path, byte size, and page count — it never inlines document bytes. " +
-      "Downloads are capped at 25 MB. This is Companies-House-specific (no " +
-      "jurisdiction parameter).",
+    "Fetch a document from a company's filing. jurisdiction \"GB\" (default) " +
+      "reads UK Companies House by transaction id (from CompanyFilings) or " +
+      "document id; jurisdiction \"US\" reads SEC EDGAR by accession number " +
+      "(the transaction_id, from CompanyFilings). Mode \"metadata\" (default) " +
+      "returns the filing's metadata and the documents/renditions available with " +
+      "their sizes. Mode \"xhtml\" returns the primary machine-readable document's " +
+      "extracted plain text (GB iXBRL/XHTML rendition; US inline HTML/XBRL primary " +
+      "document); filings with no machine-readable document (GB image-only/scanned " +
+      "accounts, pre-2001 US .txt-only submissions) are reported honestly. Mode " +
+      "\"pdf\" downloads a PDF and saves it to a local file, returning the path, " +
+      "byte size, and page count — it never inlines document bytes; US filings " +
+      "rarely have a PDF rendition. Downloads are capped at 25 MB.",
     {
       company: z
         .string()
         .min(1)
-        .describe("Company name or number (required to resolve a transaction id)"),
+        .describe("Company name/number (GB) or ticker/CIK (US)"),
+      jurisdiction: z
+        .enum(["US", "GB"])
+        .optional()
+        .describe("\"GB\" (Companies House, default) or \"US\" (SEC EDGAR)"),
       transaction_id: z
         .string()
         .min(1)
         .optional()
-        .describe("Filing-history transaction id (from CompanyFilings)"),
+        .describe(
+          "GB Companies House filing-history transaction id, or US SEC accession " +
+            "number (both come from CompanyFilings)",
+        ),
       document_id: z
         .string()
         .min(1)
         .optional()
-        .describe("Companies House document id (alternative to transaction_id)"),
+        .describe(
+          "GB Companies House document id (alternative to transaction_id), or US " +
+            "document filename within the filing (defaults to the primary document)",
+        ),
       mode: z
         .enum(["metadata", "xhtml", "pdf"])
         .optional()
@@ -1989,7 +2112,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .optional()
         .describe("Where to save the PDF (mode=pdf); defaults to a temp file"),
     },
-    async ({ company, transaction_id, document_id, mode, output_path }) => {
+    async ({ company, jurisdiction, transaction_id, document_id, mode, output_path }) => {
+      if (jurisdiction === "US") {
+        return companyDocumentUs(company, transaction_id, document_id, mode, output_path);
+      }
       try {
         let documentId = document_id;
         let sourceUrl: string | undefined;
