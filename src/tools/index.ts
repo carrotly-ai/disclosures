@@ -11,6 +11,8 @@ import {
   SEC_DOCUMENT_CONTENT_WARNING,
   SEC_DOCUMENT_IMAGE_ONLY_MESSAGE,
   SEC_FINANCIAL_CONCEPT_NAMES,
+  SEC_PERSON_CONTENT_WARNING,
+  SEC_SALI_DISCLAIMER,
   getLatestSecReport,
   getSecDocumentPdf,
   getSecDocumentText,
@@ -18,10 +20,14 @@ import {
   getSecFinancials,
   getSecInsiders,
   getSecOwners,
+  getSecPersonAppointments,
+  getSecPersonName,
   getSecPrivateRaises,
   hasSecConfiguration,
   searchSecCompanies,
   searchSecFilings,
+  searchSecPeople,
+  secSaliSearchUrl,
 } from "../adapters/secEdgar.js";
 import {
   getOwnershipChain,
@@ -2290,18 +2296,147 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     },
   );
 
+  async function personAppointmentsUs(
+    mode: "search" | "appointments" | "disqualifications" | undefined,
+    query: string | undefined,
+    personCik: string | undefined,
+    limit: number | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!hasSecConfiguration(options)) {
+      return failureResult(query ?? personCik ?? "US person", new Error(NO_SEC_CONFIG_MESSAGE));
+    }
+    const resolvedMode = mode ?? "search";
+    const label = query ?? personCik ?? resolvedMode;
+    try {
+      if (resolvedMode === "appointments") {
+        if (!personCik) {
+          return textResult(
+            "US mode \"appointments\" requires an officer_id (the person's SEC CIK, from mode=search).",
+          );
+        }
+        const record = await getSecPersonAppointments(personCik, options);
+        if (!record.roles.length) {
+          return notFoundResult(
+            personCik,
+            "No reported issuer relationships found for this CIK. It may not be a " +
+              "Section 16 reporting owner, or the CIK may be an issuer rather than a person.",
+          );
+        }
+        const cap = limit ?? 35;
+        const shownRoles = record.roles.slice(0, cap);
+        const roleTable = markdownTable(
+          ["Issuer", "CIK", "Latest transaction", "Roles"],
+          shownRoles.map((r) => [
+            r.issuerUrl ? link(r.issuerName, r.issuerUrl) : r.issuerName,
+            r.issuerCik ?? "—",
+            r.lastTransactionDate ?? "—",
+            r.roles ?? "—",
+          ]),
+        );
+        const trailer = record.roles.length > shownRoles.length
+          ? `_Showing ${shownRoles.length} of ${record.roles.length} issuer relationships._`
+          : undefined;
+        return textResult(joinSections(
+          `# US reporting-owner roles: ${record.name ?? personCik}`,
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["CIK", record.cik],
+              ["Name", record.name ?? "—"],
+              ["Entity type", record.entityType ?? "—"],
+              ["Total filings", record.totalFilings !== undefined ? String(record.totalFilings) : "—"],
+              ["Form summary", record.formSummary.length ? record.formSummary.join(", ") : "—"],
+              ["Issuer relationships", String(record.roles.length)],
+            ],
+          ),
+          "## Issuers this person has reported ownership to",
+          roleTable,
+          ...(trailer ? [trailer] : []),
+          `_Sources: ${link("EDGAR ownership", record.sourceUrl)}, ${link("all filings", record.browseUrl)}, ${link("SALI lookup", record.saliUrl)}. ${SEC_PERSON_CONTENT_WARNING}_`,
+        ));
+      }
+
+      if (resolvedMode === "disqualifications") {
+        // The US has no disqualified-directors register. SALI (SEC Action Lookup
+        // for Individuals) lists people named in SEC enforcement actions; there is
+        // no API, so we return a pre-filled public-search link only, never scrape.
+        const name = query ?? (personCik ? await getSecPersonName(personCik, options) : undefined);
+        if (!name) {
+          return textResult(
+            "US mode \"disqualifications\" requires a query (person name) or an officer_id " +
+              "(SEC CIK) to build the SALI lookup link.",
+          );
+        }
+        return textResult(joinSections(
+          `# US enforcement lookup: ${name}`,
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Name", name],
+              ["SALI search", link("open SEC Action Lookup", secSaliSearchUrl(name))],
+            ],
+          ),
+          `_${SEC_SALI_DISCLAIMER}_`,
+          `_${SEC_PERSON_CONTENT_WARNING}_`,
+        ));
+      }
+
+      // default: person search
+      if (!query) {
+        return textResult("US mode \"search\" requires a query (person name).");
+      }
+      const matches = await searchSecPeople(query, options);
+      if (!matches.length) {
+        return notFoundResult(query, "No SEC reporting owners matched this name.");
+      }
+      const cap = limit ?? 35;
+      const shown = matches.slice(0, cap);
+      const trailer = matches.length > shown.length
+        ? `_Showing ${shown.length} of ${matches.length} matches._`
+        : undefined;
+      return textResult(joinSections(
+        `# US reporting-owner search: ${query}`,
+        markdownTable(
+          ["Name", "CIK", "Last filing", "Address", "Link"],
+          shown.map((m) => [
+            m.name ?? "—",
+            m.cik,
+            m.lastFilingDate ?? "—",
+            m.addressSnippet ?? "—",
+            link("filings", m.browseUrl),
+          ]),
+        ),
+        "_Use mode=\"appointments\" with a CIK from this table to list the issuers a " +
+          "person has reported ownership to. Multiple matches carry no name (EDGAR " +
+          "omits it), so disambiguate by the address hint._",
+        `_${SEC_PERSON_CONTENT_WARNING}_`,
+      ));
+    } catch (error) {
+      return failureResult(label, error);
+    }
+  }
+
   const personAppointments = defineTool(
     "PersonAppointments",
-    "Look up a person's directorships and disqualifications at UK Companies " +
-      "House. Mode \"search\" (default) finds officers by name (query) and " +
-      "returns their officer ids and appointment counts. Mode \"appointments\" " +
-      "lists every appointment for one officer_id (company, role, dates). Mode " +
-      "\"disqualifications\" searches disqualified officers by name (query), or " +
-      "with officer_id (+officer_type) returns one disqualified officer's " +
-      "detail. Companies House assigns a person multiple officer ids, so match " +
-      "by name and date of birth, not a single id. Companies-House-specific " +
-      "(no jurisdiction parameter).",
+    "Look up a person's cross-company roles and disqualifications. Accepts a " +
+      "jurisdiction of \"GB\" (UK Companies House, default) or \"US\" (SEC EDGAR " +
+      "reporting owners). Mode \"search\" (default) finds people by name (query): " +
+      "GB returns officer ids + appointment counts; US returns reporting-owner " +
+      "CIKs + address hints. Mode \"appointments\" lists a person's roles for one " +
+      "officer_id: GB = every company appointment (role, dates); US = every issuer " +
+      "the person has reported Section 16 ownership to (role, latest transaction " +
+      "date), where officer_id is the person's SEC CIK — this surfaces private " +
+      "issuers (e.g. SpaceX) too. Mode \"disqualifications\": GB searches the " +
+      "disqualified-officers register (query, or officer_id +officer_type for " +
+      "detail); US has no register, so it returns a safe SALI (SEC Action Lookup " +
+      "for Individuals) public-search link for the name only — no scraping. One " +
+      "human holds several ids/CIKs and homonyms are common, so match by name and " +
+      "context, not a single id.",
     {
+      jurisdiction: z
+        .enum(["US", "GB"])
+        .optional()
+        .describe('"GB" (Companies House, default) or "US" (SEC EDGAR reporting owners)'),
       mode: z
         .enum(["search", "appointments", "disqualifications"])
         .optional()
@@ -2315,11 +2450,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .string()
         .min(1)
         .optional()
-        .describe("Officer id (for appointments, or a disqualification detail)"),
+        .describe("Person id for appointments: a GB officer id, or (US) the person's SEC CIK"),
       officer_type: z
         .enum(["natural", "corporate"])
         .optional()
-        .describe("Disqualified-officer type for officer_id detail (default natural)"),
+        .describe("GB only: disqualified-officer type for officer_id detail (default natural)"),
       limit: z
         .number()
         .int()
@@ -2328,7 +2463,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .optional()
         .describe("Max results (default 35, cap 100)"),
     },
-    async ({ mode, query, officer_id, officer_type, limit }) => {
+    async ({ jurisdiction, mode, query, officer_id, officer_type, limit }) => {
+      if (jurisdiction === "US") {
+        return personAppointmentsUs(mode, query, officer_id, limit);
+      }
       const resolvedMode = mode ?? "search";
       const label = query ?? officer_id ?? resolvedMode;
       try {

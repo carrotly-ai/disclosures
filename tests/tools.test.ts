@@ -390,11 +390,11 @@ describe("createTools", () => {
     expect(TOOL_NAMES).toHaveLength(10);
   });
 
-  // OwnershipChain (GLEIF-global) and CompanyCharges/PersonAppointments have no
-  // jurisdiction dispatch param on the full jurisdiction enum; CompanyDocument
-  // has one but restricted to the jurisdictions that support filed-document
-  // retrieval (US/GB), so it is excluded from the full-set assertion below and
-  // checked separately. Every other tool routes on the full jurisdiction enum.
+  // OwnershipChain (GLEIF-global) and CompanyCharges have no jurisdiction dispatch
+  // param. CompanyDocument and PersonAppointments each have one, but restricted to
+  // the jurisdictions that support that capability (US/GB), so they are excluded
+  // from the full-set assertion below and checked separately. Every other tool
+  // routes on the full jurisdiction enum.
   const JURISDICTION_AGNOSTIC = new Set([
     "OwnershipChain",
     "CompanyDocument",
@@ -408,6 +408,14 @@ describe("createTools", () => {
     expect(jurisdiction?.safeParse("US").success).toBe(true);
     expect(jurisdiction?.safeParse("GB").success).toBe(true);
     expect(jurisdiction?.safeParse("KR").success).toBe(false);
+  });
+
+  test("PersonAppointments jurisdiction is restricted to US and GB", () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
+    const jurisdiction = toolByName(tools, "PersonAppointments").inputSchema.jurisdiction;
+    expect(jurisdiction?.safeParse("US").success).toBe(true);
+    expect(jurisdiction?.safeParse("GB").success).toBe(true);
+    expect(jurisdiction?.safeParse("JP").success).toBe(false);
   });
 
   test("company jurisdiction accepts US/GB/KR/JP/CN/IN/TW and descriptions cover KR and JP", () => {
@@ -688,6 +696,149 @@ describe("CompanyDocument US (SEC EDGAR)", () => {
       company: "320193",
       jurisdiction: "US",
       transaction_id: US_ACCESSION,
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("DISCLOSURES_USER_AGENT");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("PersonAppointments US (SEC EDGAR)", () => {
+  const PERSON_CIK = "1494730";
+  const PERSON_NODASH = "0001494730";
+
+  const SEARCH_ATOM = `<?xml version="1.0" encoding="ISO-8859-1"?>
+<feed>
+  <entry><company-info>
+    <cik>0000320193</cik>
+    <conformed-name>COOK TIMOTHY D</conformed-name>
+    <last-date>2025-10-01</last-date>
+    <addresses><address type="mailing"><street1>ONE APPLE PARK WAY</street1><city>CUPERTINO</city><state>CA</state></address></addresses>
+  </company-info></entry>
+  <entry><company-info>
+    <cik>0001214128</cik>
+    <last-date>2019-05-01</last-date>
+    <addresses><address type="mailing"><street1>123 MAIN ST</street1><city>NEWARK</city><state>NJ</state></address></addresses>
+  </company-info></entry>
+</feed>`;
+
+  const OWN_DISP_HTML = `<html><body>
+  <b>MUSK ELON (<a href="/cgi-bin/browse-edgar?action=getcompany&CIK=0001494730">0001494730</a>)</b>
+  <table border="1">
+  <tr><th>Issuer</th><th>CIK</th><th>Date</th><th>Type</th></tr>
+  <tr>
+    <td><a href="/cgi-bin/browse-edgar?action=getissuer&CIK=0001318605">TESLA, INC.</a></td>
+    <td>1318605</td>
+    <td>2025-01-15</td>
+    <td>director, 10 percent owner, officer: CEO</td>
+  </tr>
+  <tr>
+    <td><a href="/cgi-bin/browse-edgar?action=getissuer&CIK=0001181412">SPACE EXPLORATION TECHNOLOGIES CORP</a></td>
+    <td>1181412</td>
+    <td>2024-08-01</td>
+    <td>director, officer: CEO</td>
+  </tr>
+  </table>
+  </body></html>`;
+
+  function personSubmissions(): unknown {
+    return {
+      cik: PERSON_CIK,
+      name: "Musk Elon",
+      entityType: "other",
+      filings: { recent: { form: ["4", "4", "4", "SC 13D/A"] } },
+    };
+  }
+
+  test("search mode lists reporting-owner CIKs with names and address hints", async () => {
+    const fetchFn = routedFetch([{ pattern: "output=atom", body: SEARCH_ATOM }]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "US",
+      mode: "search",
+      query: "cook timothy",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("US reporting-owner search: cook timothy");
+    expect(text).toContain("COOK TIMOTHY D");
+    expect(text).toContain("0000320193");
+    expect(text).toContain("CUPERTINO, CA");
+    expect(text).toContain("0001214128");
+    expect(text).toContain("filer-authored");
+  });
+
+  test("appointments mode lists issuers a person has reported ownership to", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "own-disp", body: OWN_DISP_HTML },
+      { pattern: `submissions/CIK${PERSON_NODASH}.json`, body: personSubmissions() },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "US",
+      mode: "appointments",
+      officer_id: PERSON_CIK,
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("US reporting-owner roles: Musk Elon");
+    expect(text).toContain("TESLA, INC.");
+    expect(text).toContain("0001318605");
+    expect(text).toContain("SPACE EXPLORATION TECHNOLOGIES CORP");
+    expect(text).toContain("director, 10 percent owner, officer: CEO");
+    expect(text).toContain("other");
+    expect(text).toContain("4 (3)");
+    expect(text).toContain("SALI lookup");
+  });
+
+  test("appointments mode still works when the submissions enrichment fails", async () => {
+    const fetchFn = routedFetch([{ pattern: "own-disp", body: OWN_DISP_HTML }]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "US",
+      mode: "appointments",
+      officer_id: PERSON_CIK,
+    } as never);
+    // The submissions route is absent, so enrichment throws internally and degrades
+    // to the own-disp header name; the roles table must still render.
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("MUSK ELON");
+    expect(text).toContain("TESLA, INC.");
+  });
+
+  test("appointments mode requires an officer_id", async () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "US",
+      mode: "appointments",
+    } as never);
+    expect(resultText(result)).toContain("person's SEC CIK");
+  });
+
+  test("disqualifications mode returns a safe SALI link without hitting the network", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "US",
+      mode: "disqualifications",
+      query: "Elon Musk",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("US enforcement lookup: Elon Musk");
+    expect(text).toContain("sec-action-look-up");
+    expect(text).toContain("no API");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("missing SEC configuration is reported without hitting the network", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: {} });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "US",
+      mode: "search",
+      query: "cook timothy",
     } as never);
     expect(result.isError).toBe(true);
     expect(resultText(result)).toContain("DISCLOSURES_USER_AGENT");
