@@ -7,10 +7,10 @@ intent, the tool returns an explicit **unsupported-jurisdiction explanation** ra
 an empty or fabricated result.
 
 Three further **filed-document / register tools** — `CompanyDocument`, `CompanyCharges`, and
-`PersonAppointments` — originated as Companies House features. `CompanyDocument` now also
-serves **US** (SEC EDGAR) via a `jurisdiction` parameter restricted to `US`/`GB` (default
-`GB`). `CompanyCharges` and `PersonAppointments` remain UK-only for now. See [GB.md](GB.md)
-and, for the US document path, [US.md](US.md).
+`PersonAppointments` — originated as Companies House features. `CompanyDocument` and
+`PersonAppointments` now also serve **US** (SEC EDGAR) via a `jurisdiction` parameter
+restricted to `US`/`GB` (default `GB`). `CompanyCharges` remains UK-only for now. See
+[GB.md](GB.md) and, for the US document / person paths, [US.md](US.md).
 
 This directory documents each jurisdiction in depth. For the quickstart, client
 configuration, and library API, see the top-level [README](../../README.md).
@@ -27,13 +27,13 @@ configuration, and library API, see the top-level [README](../../README.md).
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — |
 | `CompanyDocument` | ✅ | ✅ | — | — | — | — | — | — | — | — |
 | `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | — | ✅ | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · — returns an honest unsupported-jurisdiction explanation · 🌐 global
 
-`CompanyDocument` accepts only `US`/`GB` (default `GB`); `CompanyCharges` and
-`PersonAppointments` are UK-only and take no `jurisdiction` parameter.
+`CompanyDocument` and `PersonAppointments` each accept only `US`/`GB` (default `GB`);
+`CompanyCharges` is UK-only and takes no `jurisdiction` parameter.
 
 `OwnershipChain` takes no `jurisdiction` parameter: it is GLEIF Level-2 relationship data
 for any entity worldwide. It reports accounting-consolidation parents and children, which

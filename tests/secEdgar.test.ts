@@ -9,11 +9,16 @@ import {
   getSecFinancials,
   getSecInsiders,
   getSecOwners,
+  getSecPersonAppointments,
   getSecPrivateRaises,
   normalizeAccession,
+  parseSecOwnerRoles,
+  parseSecPersonMatches,
   resetSecTickerCache,
   resolveCompanyCik,
   searchSecFilings,
+  searchSecPeople,
+  secSaliSearchUrl,
 } from "../src/adapters/secEdgar.js";
 import { resetRateLimiters } from "../src/core/rateLimiter.js";
 import type { AdapterOptions, Env } from "../src/core/types.js";
@@ -765,5 +770,94 @@ describe("getSecDocumentPdf", () => {
     const pdf = await getSecDocumentPdf(manifest, options(fetchFn));
     expect(pdf).toBeNull();
     expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("SEC person lookup (PersonAppointments US)", () => {
+  const SEARCH_ATOM = `<?xml version="1.0" encoding="ISO-8859-1"?>
+<feed>
+  <entry><company-info>
+    <cik>0000320193</cik>
+    <conformed-name>COOK TIMOTHY D</conformed-name>
+    <last-date>2025-10-01</last-date>
+    <addresses><address type="mailing"><street1>ONE APPLE PARK WAY</street1><city>CUPERTINO</city><state>CA</state></address></addresses>
+  </company-info></entry>
+  <entry><company-info>
+    <cik>0001214128</cik>
+    <last-date>2019-05-01</last-date>
+    <addresses><address type="mailing"><street1>123 MAIN ST</street1><city>NEWARK</city><state>NJ</state></address></addresses>
+  </company-info></entry>
+</feed>`;
+
+  const OWN_DISP_HTML = `<html><body>
+  <b>MUSK ELON (<a href="/cgi-bin/browse-edgar?action=getcompany&CIK=0001494730">0001494730</a>)</b>
+  <table border="1">
+  <tr><th>Issuer</th><th>CIK</th><th>Date</th><th>Type</th></tr>
+  <tr>
+    <td><a href="/cgi-bin/browse-edgar?action=getissuer&CIK=0001318605">TESLA, INC.</a></td>
+    <td>1318605</td>
+    <td>2025-01-15</td>
+    <td>director, 10 percent owner, officer: CEO</td>
+  </tr>
+  </table>
+  </body></html>`;
+
+  test("parseSecPersonMatches reads every company-info block and dedupes by CIK", () => {
+    const matches = parseSecPersonMatches(SEARCH_ATOM);
+    expect(matches).toHaveLength(2);
+    expect(matches[0]?.cik).toBe("0000320193");
+    expect(matches[0]?.name).toBe("COOK TIMOTHY D");
+    expect(matches[0]?.addressSnippet).toBe("ONE APPLE PARK WAY, CUPERTINO, CA");
+    // Multi-match rows carry no conformed name.
+    expect(matches[1]?.cik).toBe("0001214128");
+    expect(matches[1]?.name).toBeUndefined();
+  });
+
+  test("parseSecOwnerRoles keeps only issuer rows and splits the cells", () => {
+    const roles = parseSecOwnerRoles(OWN_DISP_HTML);
+    expect(roles).toHaveLength(1);
+    expect(roles[0]?.issuerName).toBe("TESLA, INC.");
+    expect(roles[0]?.issuerCik).toBe("0001318605");
+    expect(roles[0]?.lastTransactionDate).toBe("2025-01-15");
+    expect(roles[0]?.roles).toBe("director, 10 percent owner, officer: CEO");
+    expect(roles[0]?.issuerUrl).toContain("CIK=0001318605");
+  });
+
+  test("searchSecPeople routes to the browse-EDGAR person Atom feed", async () => {
+    const fetchFn = routedFetch([{ pattern: "output=atom", body: SEARCH_ATOM }]);
+    const matches = await searchSecPeople("cook timothy", options(fetchFn));
+    expect(matches).toHaveLength(2);
+    const url = fetchFn.requests[0]?.url ?? "";
+    expect(url).toContain("type=4");
+    expect(url).toContain("owner=include");
+  });
+
+  test("getSecPersonAppointments enriches from submissions and stays resilient to a miss", async () => {
+    const enriched = await getSecPersonAppointments("1494730", options(routedFetch([
+      { pattern: "own-disp", body: OWN_DISP_HTML },
+      {
+        pattern: "submissions/CIK0001494730.json",
+        body: { name: "Musk Elon", entityType: "other", filings: { recent: { form: ["4", "4", "SC 13D/A"] } } },
+      },
+    ])));
+    expect(enriched.name).toBe("Musk Elon");
+    expect(enriched.entityType).toBe("other");
+    expect(enriched.totalFilings).toBe(3);
+    expect(enriched.formSummary).toContain("4 (2)");
+    expect(enriched.roles[0]?.issuerName).toBe("TESLA, INC.");
+    expect(enriched.saliUrl).toContain("last_name=Musk");
+
+    // Submissions route absent → enrichment throws internally, header name survives.
+    const degraded = await getSecPersonAppointments("1494730", options(routedFetch([
+      { pattern: "own-disp", body: OWN_DISP_HTML },
+    ])));
+    expect(degraded.name).toBe("MUSK ELON");
+    expect(degraded.roles).toHaveLength(1);
+    expect(degraded.formSummary).toEqual([]);
+  });
+
+  test("secSaliSearchUrl maps EDGAR LAST-FIRST tokens to the SALI query", () => {
+    expect(secSaliSearchUrl("MUSK ELON")).toContain("last_name=MUSK");
+    expect(secSaliSearchUrl("MUSK ELON")).toContain("first_name=ELON");
   });
 });
