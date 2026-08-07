@@ -67,6 +67,94 @@ export async function getBinary(
   );
 }
 
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+function sameOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
+function stripAuthorization(
+  headers: Record<string, string>,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).filter(
+      ([key]) => key.toLowerCase() !== "authorization",
+    ),
+  );
+}
+
+export interface RedirectResult {
+  response: Response;
+  finalUrl: string;
+}
+
+/**
+ * GET a URL while manually following redirects, so we control header
+ * forwarding across hops. Companies House document content endpoints 302 to a
+ * pre-signed S3 URL that REJECTS a forwarded `Authorization` header, so we
+ * strip credentials on any cross-origin hop. Returns the final (non-redirect)
+ * response together with the URL it came from. Throws `HttpError` on a non-2xx
+ * final response or if the redirect budget is exhausted.
+ */
+export async function getFollowingRedirects(
+  url: string,
+  headers: Record<string, string> = {},
+  timeoutMs = 15_000,
+  fetchFn: FetchFn = fetch,
+  maxRedirects = 5,
+): Promise<RedirectResult> {
+  let currentUrl = url;
+  let currentHeaders = headers;
+  for (let hop = 0; hop <= maxRedirects; hop += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetchFn(currentUrl, {
+        method: "GET",
+        headers: currentHeaders,
+        redirect: "manual",
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (REDIRECT_STATUSES.has(response.status)) {
+      const location = response.headers.get("location");
+      if (!location) {
+        throw new HttpError(
+          `HTTP ${response.status} redirect without Location`,
+          response.status,
+          currentUrl,
+        );
+      }
+      const nextUrl = new URL(location, currentUrl).toString();
+      if (!sameOrigin(currentUrl, nextUrl)) {
+        currentHeaders = stripAuthorization(currentHeaders);
+      }
+      currentUrl = nextUrl;
+      continue;
+    }
+    if (!response.ok) {
+      throw new HttpError(
+        `HTTP ${response.status} ${response.statusText}`.trim(),
+        response.status,
+        currentUrl,
+      );
+    }
+    return { response, finalUrl: currentUrl };
+  }
+  throw new HttpError(
+    `Too many redirects (>${maxRedirects})`,
+    undefined,
+    currentUrl,
+  );
+}
+
 /**
  * POST a form-url-encoded body and parse the JSON response. Some Asian
  * disclosure portals (e.g. cninfo) only expose POST form endpoints, so this

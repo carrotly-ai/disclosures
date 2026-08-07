@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { HttpError, getJson, getOptionalJson, getText } from "../src/core/http.js";
+import {
+  HttpError,
+  getFollowingRedirects,
+  getJson,
+  getOptionalJson,
+  getText,
+} from "../src/core/http.js";
 import { markdownTable } from "../src/core/markdown.js";
 import { SlidingWindowRateLimiter } from "../src/core/rateLimiter.js";
 import { decodeXmlEntities, plainXmlText } from "../src/core/parsing.js";
@@ -15,6 +21,67 @@ describe("HTTP helpers", () => {
     ]);
     expect(await getJson("https://example.test/json", {}, 1000, fetchFn)).toEqual({ ok: true });
     expect(await getText("https://example.test/text", {}, 1000, fetchFn)).toBe("hello");
+  });
+
+  test("follows a 302 but never forwards Authorization across origins", async () => {
+    // Companies House document content 302s to a pre-signed S3 URL that rejects
+    // a forwarded Authorization header — the client must drop it on the hop.
+    const s3Url = "https://s3.eu-west-2.amazonaws.com/chs-doc/signed.pdf?sig=abc";
+    const fetchFn = routedFetch([
+      { pattern: "amazonaws.com", body: "PDF-CONTENT" },
+      {
+        pattern: "document-api.company-information.service.gov.uk",
+        body: "",
+        status: 302,
+        headers: { location: s3Url },
+      },
+    ]);
+    const { response, finalUrl } = await getFollowingRedirects(
+      "https://document-api.company-information.service.gov.uk/document/doc-1/content",
+      { Authorization: "Basic secret", Accept: "application/pdf" },
+      1000,
+      fetchFn,
+    );
+    expect(finalUrl).toBe(s3Url);
+    expect(await response.text()).toBe("PDF-CONTENT");
+    const first = fetchFn.requests[0]?.init?.headers as Record<string, string>;
+    const second = fetchFn.requests[1]?.init?.headers as Record<string, string>;
+    expect(first?.Authorization).toBe("Basic secret");
+    expect(
+      Object.keys(second ?? {}).some((key) => key.toLowerCase() === "authorization"),
+    ).toBe(false);
+    // Non-credential headers still ride along to the redirect target.
+    expect(second?.Accept).toBe("application/pdf");
+  });
+
+  test("same-origin redirects keep Authorization", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "/final", body: { ok: true } },
+      {
+        pattern: "/start",
+        body: "",
+        status: 307,
+        headers: { location: "https://example.test/final" },
+      },
+    ]);
+    const { response } = await getFollowingRedirects(
+      "https://example.test/start",
+      { Authorization: "Basic keep" },
+      1000,
+      fetchFn,
+    );
+    expect(response.status).toBe(200);
+    const second = fetchFn.requests[1]?.init?.headers as Record<string, string>;
+    expect(second?.Authorization).toBe("Basic keep");
+  });
+
+  test("a redirect without a Location header is an error", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "/loop", body: "", status: 302 },
+    ]);
+    await expect(
+      getFollowingRedirects("https://example.test/loop", {}, 1000, fetchFn),
+    ).rejects.toBeInstanceOf(HttpError);
   });
 
   test("returns null only for optional 404 responses", async () => {

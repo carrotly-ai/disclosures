@@ -100,17 +100,22 @@ Restart the client after changing its configuration, then try:
 > *"Resolve Samsung Electronics in Korea and show its latest annual financials."*
 > *"What's the GLEIF ownership chain above Apple Operations India?"*
 
-## The seven tools
+## The ten tools
 
 | Tool | What it answers | Coverage |
 |---|---|---|
-| `CompanyResolve` | "Which company is this?" — canonical name plus CIK, ticker, LEI, ISIN, and local registry identifiers. | US, GB, KR, JP, CN, IN, TW, BR, DE + global LEI/ISIN |
-| `CompanyFilings` | "What has it filed?" — dates, types, descriptions, direct source links; a latest annual/quarterly report mode. | US, GB, KR, JP, CN, IN, TW, BR |
+| `CompanyResolve` | "Which company is this?" — canonical name plus CIK, ticker, LEI, ISIN, and local registry identifiers; GB adds previous names with date ranges and status/accounts detail. | US, GB, KR, JP, CN, IN, TW, BR, DE + global LEI/ISIN |
+| `CompanyFilings` | "What has it filed?" — dates, types, descriptions, direct source links; a latest annual/quarterly report mode, plus a GB insolvency-history mode. | US, GB, KR, JP, CN, IN, TW, BR |
 | `CompanyInsiders` | "Who runs it?" — directors, officers, titles, and 10%+ owners from insider registers. | US, GB (incl. ECCTA identity status), KR, TW, DE (MAR Art. 19) |
 | `CompanyOwners` | "Who owns it?" — major-shareholder filers with thresholds, dates, and filing links. | US (13D/13G), GB (PSC + TR-1), KR (5% rule), JP (5% rule / 大量保有報告書), TW (>10%), DE (§§33 ff. WpHG) |
 | `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, BR |
 | `OwnershipChain` | "Who consolidates it?" — GLEIF direct/ultimate accounting-consolidation parents and children. | 🌐 Global (any LEI or legal name) |
 | `PrivateRaises` | "Has it raised privately?" — Form D exempt offerings, amounts, investor counts, named related persons. | US only in v1 |
+| `CompanyDocument` | "What does the filing actually say?" — fetches a filed document's content: extracted iXBRL text or the source PDF saved to disk (image-only accounts are reported honestly, never faked). | GB (Companies House) |
+| `CompanyCharges` | "What's secured against it?" — registered charges/mortgages with status, dates, persons entitled, and fixed/floating/negative-pledge particulars. | GB (Companies House) |
+| `PersonAppointments` | "Where else does this person sit?" — officer search, cross-company appointment history, and disqualifications (linked to the safe public register). | GB (Companies House) |
+
+The first seven tools dispatch across jurisdictions via `jurisdiction`. The last three (`CompanyDocument`, `CompanyCharges`, `PersonAppointments`) are Companies House-specific and take no `jurisdiction` — they always query the UK register.
 
 Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR), BaFin-Id or ISIN (DE). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR" | "DE"` (default `US`).
 
@@ -217,7 +222,7 @@ const isins = await gleif.getIsinsForLei("HWUPKR0MPOU8FGXBT394"); // → every I
 ```ts
 import { createDisclosuresServer } from "disclosures";
 
-const server = createDisclosuresServer(); // McpServer with the seven tools registered
+const server = createDisclosuresServer(); // McpServer with all ten tools registered
 ```
 
 Importing the package never opens stdio; only the CLI entry point connects the transport.
@@ -268,7 +273,7 @@ DISCLOSURES_USER_AGENT="Your Organization your-email@example.com" bun run smoke:
 
 ### Roadmap
 
-The seven tool names and schemas stay stable; new sources and deeper data dispatch behind the same intents rather than adding jurisdiction-specific tools. **DE (Germany)** now resolves issuers and returns §§33 ff. WpHG major holdings and Art. 19 MAR directors' dealings over BaFin's free databases ([DE.md](docs/jurisdictions/DE.md)). Next up: GB/JP insider depth, and CN/IN ownership and financials currently locked inside report PDFs. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
+Existing tool names and schemas stay stable — the collection only ever grows additively. The seven cross-jurisdiction intents absorb new sources and deeper data behind the same shapes; where a register offers primitives with no cross-jurisdiction equivalent (filed-document retrieval, secured-charge registers, person-level appointment history), a focused tool is added rather than contorting an intent. **GB (Companies House)** now goes deep: `CompanyDocument`, `CompanyCharges`, and `PersonAppointments` join `CompanyResolve` previous-name history and a `CompanyFilings` insolvency mode ([GB.md](docs/jurisdictions/GB.md)). **DE (Germany)** resolves issuers and returns §§33 ff. WpHG major holdings and Art. 19 MAR directors' dealings over BaFin's free databases ([DE.md](docs/jurisdictions/DE.md)). Next up: JP insider depth, and CN/IN ownership and financials currently locked inside report PDFs. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
 
 ## License
 

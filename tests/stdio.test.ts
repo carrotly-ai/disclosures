@@ -21,7 +21,7 @@ function ensureBuild(): void {
 }
 
 describe("stdio MCP server", () => {
-  test("lists exactly the seven tools over a real stdio transport", async () => {
+  test("lists exactly the current tool set over a real stdio transport", async () => {
     ensureBuild();
     const client = new Client({ name: "disclosures-test-client", version: "0.0.0" });
     const transport = new StdioClientTransport({
@@ -30,15 +30,20 @@ describe("stdio MCP server", () => {
       cwd: repoRoot,
       env: { ...process.env, DISCLOSURES_USER_AGENT: "Test test@example.com" } as Record<string, string>,
     });
+    // PersonAppointments looks up a person, not a company, so it takes `query`/
+    // `officer_id` rather than `company`. Every other tool is company-scoped.
+    const nonCompanyTools = new Set(["PersonAppointments"]);
     try {
       await client.connect(transport);
       const { tools } = await client.listTools();
       expect(tools.map((tool) => tool.name).sort()).toEqual([...TOOL_NAMES].sort());
-      expect(tools).toHaveLength(7);
+      expect(tools).toHaveLength(TOOL_NAMES.length);
       for (const tool of tools) {
         expect(tool.inputSchema.type).toBe("object");
         expect(tool.description?.length ?? 0).toBeGreaterThan(0);
-        expect(tool.inputSchema.properties).toHaveProperty("company");
+        if (!nonCompanyTools.has(tool.name)) {
+          expect(tool.inputSchema.properties).toHaveProperty("company");
+        }
       }
     } finally {
       await client.close();
