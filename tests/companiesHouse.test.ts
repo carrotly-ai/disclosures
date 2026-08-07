@@ -818,7 +818,7 @@ describe("Companies House filed documents", () => {
     expect(pdf.pageCount).toBe(2);
     expect(pdf.suggestedFilename).toBe("doc-img.pdf");
     // The S3 hop is the last request and must not carry Basic auth.
-    const s3Request = fetchFn.requests.find((r) => r.url.includes("amazonaws.com"));
+    const s3Request = fetchFn.requests.find((r) => r.url === s3Url);
     const s3Headers = s3Request?.init?.headers as Record<string, string>;
     expect(
       Object.keys(s3Headers ?? {}).some((key) => key.toLowerCase() === "authorization"),
