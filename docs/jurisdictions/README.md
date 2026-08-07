@@ -16,7 +16,7 @@ configuration, and library API, see the top-level [README](../../README.md).
 | `CompanyResolve` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `CompanyFilings` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — |
 | `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |

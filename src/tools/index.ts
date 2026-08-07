@@ -42,6 +42,7 @@ import {
 } from "../adapters/openDart.js";
 import {
   EDINET_5_PERCENT_THRESHOLD_REGIME,
+  getEdinetLargeHolders,
   getLatestEdinetReport,
   searchEdinetCompanies,
   searchEdinetFilings,
@@ -212,6 +213,15 @@ const EDINET_NO_DEEP_LINK_CAVEAT =
   "EDINET provides no stable public per-document link; open the docID shown " +
   "above in the EDINET viewer, or fetch it via the authenticated API v2 " +
   "documents endpoint. This tool never returns document text.";
+
+const EDINET_OWNERS_CAVEAT =
+  "Reverse-mapped from EDINET's filer-indexed large-volume holding reports " +
+  "(大量保有報告書 / 変更報告書) by matching each report's subject issuer " +
+  "(issuerEdinetCode) to this company, over a bounded window (default ~1 year, " +
+  "one request per calendar day; narrow with start_date/end_date). EDINET's " +
+  "day index carries no holding ratio, so exact percentages require opening the " +
+  "linked report. Filing-based disclosure only — not a share register, not UBO " +
+  "tracing; absence here is not proof no ≥5% holder exists.";
 
 const CNINFO_FILINGS_CAVEAT =
   "cninfo announcements are Chinese-language PDFs on SSE/SZSE (and mirrored " +
@@ -1073,26 +1083,34 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "section is populated only when NSM access is supplied via an injected " +
       "fetchFn, and otherwise explains how to enable it. Each row states its " +
       "threshold/control regime. No source is guaranteed-complete UBO/KYC " +
-      "evidence. Explicit JP is unsupported: EDINET large-holding reports are " +
-      "indexed by the filer (the holder), not the subject issuer. Explicit TW " +
-      "returns the TWSE list of shareholders holding more than 10% (持股逾 10% " +
-      "大股東); a company with no such holder returns no rows.",
+      "evidence. Explicit JP returns EDINET large-volume holding reports " +
+      "(大量保有報告書, the 5% rule) reverse-mapped to the subject issuer — each " +
+      "row is a ≥5% holder — though EDINET's metadata carries no exact " +
+      "percentage; start_date/end_date bound the (default ~1 year) scan window " +
+      "and are ignored by other jurisdictions. Explicit TW returns the TWSE " +
+      "list of shareholders holding more than 10% (持股逾 10% 大股東); a company " +
+      "with no such holder returns no rows.",
     {
       ...companyInput,
+      start_date: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional()
+        .describe(
+          "Earliest date for the JP EDINET large-holding scan (YYYY-MM-DD); " +
+            "default ~1 year ago. Ignored by other jurisdictions.",
+        ),
+      end_date: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional()
+        .describe(
+          "Latest date for the JP EDINET large-holding scan (YYYY-MM-DD); " +
+            "default today. Ignored by other jurisdictions.",
+        ),
     },
-    async ({ company, jurisdiction }) => {
+    async ({ company, jurisdiction, start_date, end_date }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("CompanyOwners");
-      if (jurisdiction === "JP") {
-        return textResult(joinSections(
-          "CompanyOwners is unsupported for jurisdiction \"JP\". Japan's large-holding " +
-            "reports (大量保有報告書) are filed under the " +
-            `${EDINET_5_PERCENT_THRESHOLD_REGIME}, but EDINET's date-indexed metadata ` +
-            "identifies the filer (the large holder), not the subject company, so a " +
-            "reliable \"who owns >5% of company X\" query would require document-level " +
-            "parsing this release does not perform.",
-          "_Absence of a result here is not evidence that no large holder exists._",
-        ));
-      }
       if (jurisdiction === "CN") {
         return textResult(joinSections(
           "CompanyOwners is unsupported for jurisdiction \"CN\". " +
@@ -1114,6 +1132,40 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         ));
       }
       try {
+        if (jurisdiction === "JP") {
+          const owners = await getEdinetLargeHolders(
+            company,
+            {
+              ...(start_date ? { startDate: start_date } : {}),
+              ...(end_date ? { endDate: end_date } : {}),
+            },
+            options,
+          );
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No EDINET large-volume holding reports (大量保有報告書) naming ` +
+                `"${company}" as issuer found in the scanned window.`,
+              `_Threshold regime: ${EDINET_5_PERCENT_THRESHOLD_REGIME}._`,
+              `_${EDINET_OWNERS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Large-volume holders (≥5%, EDINET): ${company}`,
+            markdownTable(
+              ["Holder", "Report type", "Filed", "Reason", "docID", "Threshold regime"],
+              owners.map((owner) => [
+                owner.holderName,
+                owner.holderType,
+                owner.filedDate,
+                owner.naturesOfControl?.join("; "),
+                owner.accession,
+                owner.thresholdRegime,
+              ]),
+            ),
+            `_${EDINET_OWNERS_CAVEAT}_`,
+            `_${EDINET_NO_DEEP_LINK_CAVEAT}_`,
+          ));
+        }
         if (jurisdiction === "TW") {
           const owners = await getTwseMajorShareholders(company, options);
           if (!owners.length) {
