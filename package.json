@@ -47,7 +47,9 @@
     "test": "bun test",
     "build": "rm -rf dist && bun build src/server.ts --target=node --outfile=dist/server.mjs && chmod +x dist/server.mjs && bunx tsc --emitDeclarationOnly",
     "test:stdio": "bun test tests/stdio.test.ts",
-    "smoke:live": "bun scripts/live-smoke.ts",
+    "test:live": "bun run build && if [ -f .env.local ]; then bun --env-file=.env.local test ./tests/live/e2e.live.ts --timeout 300000; else bun test ./tests/live/e2e.live.ts --timeout 300000; fi",
+    "test:live:all": "LIVE_E2E_REQUIRE_ALL=1 bun run test:live",
+    "smoke:live": "bun run build && bun scripts/live-smoke.ts",
     "pack:dry": "npm pack --dry-run --json"
   },
   "devDependencies": {

@@ -46,11 +46,41 @@ behaviour under test, redact anything sensitive, and name it by source and scena
 computed, run-date-dependent values (e.g. "current fiscal year") derived in the test rather
 than frozen into the fixture, so the suite stays robust across run dates.
 
-## Live smoke tests
+## Live end-to-end tests
 
-`scripts/live-smoke.ts` (run via `bun run smoke:live`) exercises the real upstreams and is
-**not** part of `bun test`. It requires real credentials (e.g. `DISCLOSURES_USER_AGENT`) and
-is for manual pre-release verification only. CI never runs it.
+The live suite is deliberately separate from the offline suite:
+
+```bash
+bun run test:live       # build, then run every live case whose credential is present
+bun run test:live:all   # require all four configured credentials; missing any is a failure
+```
+
+[`tests/live/e2e.live.ts`](../tests/live/e2e.live.ts) spawns the built Node bundle over
+stdio, lists the registered MCP tools, then makes real calls through the same JSON-RPC
+boundary a client uses. The package script explicitly loads `.env.local` when it exists
+(`bun test` intentionally does not auto-load `.env.local` under `NODE_ENV=test`); CI can
+supply the same variables directly. The suite currently covers:
+
+- keyless GLEIF ownership-chain resolution;
+- SEC latest-annual metadata chained into `CompanyDocument`;
+- Companies House resolution and latest accounts chained into `CompanyDocument`, plus
+  the live charges register;
+- OpenDART resolution and a recent filing chained into `CompanyDocument`; and
+- a single bounded EDINET document-index day, avoiding a slow 90-day scan.
+
+Assertions intentionally target stable invariants (issuer identity, identifier formats,
+source hosts, headings, and response shape), never exact live counts, dates, or amounts.
+Transient network, 429, timeout, and 5xx failures are retried once. Per-call and per-test
+timeouts bound hangs, and error diagnostics redact configured API keys. Missing credentials
+skip only their jurisdiction in `test:live`; `test:live:all` is the strict pre-release mode.
+
+The file uses the non-discoverable `.live.ts` suffix. Do not rename it to `.test.ts` or
+`.spec.ts`: bare `bun test` discovers those names recursively and would violate the offline
+contract. Neither normal CI nor the npm release workflow runs live tests. The separate
+`Live E2E` GitHub Actions workflow is manual-only and requires the four repository secrets.
+
+The older `bun run smoke:live` command remains as a small SEC/GLEIF diagnostic and now
+builds first; use `test:live:all` for the full credentialed gate.
 
 ## Roadmap
 

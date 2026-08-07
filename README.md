@@ -247,7 +247,7 @@ Resolution misses come back as plain "Could not find…" text; configuration, up
 | Page | Contents |
 |---|---|
 | [`docs/jurisdictions/`](docs/jurisdictions/README.md) | Per-jurisdiction reference: sources, credentials, accepted identifiers, per-intent behavior, caveats, and the coverage matrix. |
-| [`docs/TESTING.md`](docs/TESTING.md) | The offline testing discipline — routed fetch stubs, recorded fixtures, live smoke. |
+| [`docs/TESTING.md`](docs/TESTING.md) | Offline test isolation plus the separate credential-aware live end-to-end suite. |
 | [`PUBLISHING.md`](https://github.com/carrotly-ai/disclosures/blob/main/PUBLISHING.md) | npm trusted publishing and MCP-registry release automation. |
 | [`CHANGELOG.md`](https://github.com/carrotly-ai/disclosures/blob/main/CHANGELOG.md) | Release history. |
 
@@ -263,11 +263,14 @@ bun run build         # bundles dist/server.mjs (zero runtime deps)
 bun run test:stdio    # stdio integration against the built artifact
 ```
 
-Tests never touch the network: routed fetch stubs throw on any unmatched request ([testing discipline](docs/TESTING.md)). An optional live smoke test exercises real upstreams:
+The default suite never touches the network: routed fetch stubs throw on any unmatched request. A separate live end-to-end suite builds the real Node artifact, drives it over MCP stdio, and uses whichever credentials are present in `.env.local`:
 
 ```bash
-DISCLOSURES_USER_AGENT="Your Organization your-email@example.com" bun run smoke:live
+bun run test:live       # missing jurisdiction keys are reported as skips
+bun run test:live:all   # strict: require User-Agent + GB/KR/JP keys
 ```
+
+Live assertions are drift-tolerant (identity, identifier shape, source host, and response structure rather than volatile counts or dates), transient failures retry once, calls are time-bounded, and diagnostics redact configured keys. The live files use a `.live.ts` suffix so bare `bun test` cannot discover them. See the full [testing discipline](docs/TESTING.md). The smaller `bun run smoke:live` SEC/GLEIF diagnostic remains available for quick checks.
 
 **stdio rule:** the server reserves stdout for JSON-RPC — contributor diagnostics must go to stderr, since `console.log` corrupts the MCP transport.
 

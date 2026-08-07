@@ -2,6 +2,7 @@
 // GLEIF endpoints. Requires DISCLOSURES_USER_AGENT (or SEC_EDGAR_USER_AGENT).
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { TOOL_NAMES } from "../src/tools/index.js";
 
 const APPLE_LEI = "HWUPKR0MPOU8FGXBT394";
 
@@ -37,8 +38,10 @@ async function main(): Promise<void> {
     const tools = await client.listTools();
     const names = tools.tools.map((tool) => tool.name).sort();
     console.error(`tools/list → ${names.join(", ")}`);
-    if (tools.tools.length !== 7) {
-      throw new Error(`Expected 7 tools, found ${tools.tools.length}`);
+    if (tools.tools.length !== TOOL_NAMES.length) {
+      throw new Error(
+        `Expected ${TOOL_NAMES.length} tools, found ${tools.tools.length}`,
+      );
     }
 
     const insiders = await client.callTool({

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Added
+
+- Separate credential-aware live end-to-end suite (`bun run test:live`) that builds the Node artifact and exercises real GLEIF, SEC EDGAR, Companies House, OpenDART, and EDINET calls through MCP stdio. The strict `test:live:all` mode requires every configured credential; the default mode skips only unavailable jurisdictions. Assertions target stable identities, identifier shapes, source hosts, and response structure; transient upstream failures retry once; timeouts bound hangs; and diagnostics redact keys. A manual-only GitHub Actions workflow keeps live calls out of deterministic PR and release gates.
+
+### Fixed
+
+- The legacy SEC/GLEIF live smoke test now compares against the current `TOOL_NAMES` collection instead of the obsolete seven-tool count, and builds the artifact before execution.
+
 ## 0.1.1 - 2026-08-07
 
 All additions are backward-compatible: the ten tool names and their schemas are unchanged. New coverage arrives behind existing parameters — a widened `jurisdiction` enum on `CompanyDocument`/`PersonAppointments`, deeper Companies House data, and a new German source — so existing calls behave exactly as before.
