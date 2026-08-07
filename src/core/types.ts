@@ -14,6 +14,7 @@ export const JURISDICTIONS = {
   IN: "IN",
   TW: "TW",
   BR: "BR",
+  DE: "DE",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -31,6 +32,7 @@ export const DATA_SOURCES = {
   XBRL_FILINGS: "filings.xbrl.org",
   TWSE: "TWSE",
   CVM: "CVM",
+  BAFIN: "BaFin",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -64,6 +66,8 @@ export interface IdentifierSet {
   isin?: string;
   /** Brazil CVM registration code (código CVM), e.g. 4170 (Vale). */
   cvmCode?: string;
+  /** BaFin issuer id (Emittenten-BaFin-Id) used by the German AnteileInfo database, e.g. 40001244 (SAP SE). */
+  bafinId?: string;
   jurisdiction?: string;
 }
 

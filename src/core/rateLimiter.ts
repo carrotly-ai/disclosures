@@ -159,6 +159,13 @@ export const twseRateLimiter = new SlidingWindowRateLimiter(90, 60_000);
 // that never self-trips on one bounded lookup while cross-call abuse still trips.
 export const cvmRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 
+// Germany BaFin portal (portal.mvp.bafin.de). The AnteileInfo (major-holding
+// voting rights) and DealingsInfo (directors' dealings) databases are HTML
+// search pages with no documented limit; one intent issues at most a search
+// plus one issuer-holdings fetch, so keep a modest budget that never self-trips
+// on one bounded lookup while cross-call abuse still trips it.
+export const bafinRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -171,4 +178,5 @@ export function resetRateLimiters(): void {
   xbrlFilingsRateLimiter.reset();
   twseRateLimiter.reset();
   cvmRateLimiter.reset();
+  bafinRateLimiter.reset();
 }

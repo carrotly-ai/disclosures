@@ -1,6 +1,6 @@
 # disclosures
 
-**Corporate-disclosure research for AI agents and TypeScript — filings, insiders, owners, financials, and ownership chains from 11 official sources across 9 jurisdictions.**
+**Corporate-disclosure research for AI agents and TypeScript — filings, insiders, owners, financials, and ownership chains from 12 official sources across 10 jurisdictions.**
 
 [![npm version](https://img.shields.io/npm/v/disclosures?logo=npm&color=cb3837)](https://www.npmjs.com/package/disclosures)
 [![CI](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml/badge.svg)](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml)
@@ -11,8 +11,8 @@
 
 `disclosures` is a free, open-source [Model Context Protocol](https://modelcontextprotocol.io/) server **and** a TypeScript library. It answers questions like *"who are NVIDIA's directors?"*, *"who owns 5% of Samsung Electronics?"*, or *"show me Vale's last three annual results"* — with every answer linked back to the official source document.
 
-- **7 stable tools, 9 jurisdictions** — one `jurisdiction` parameter routes each intent to the right national source. Tool names and schemas never change as coverage grows.
-- **Official sources only** — SEC EDGAR, GLEIF, UK Companies House, FCA NSM, filings.xbrl.org, Korea DART, Japan EDINET, China cninfo, India BSE, Taiwan TWSE, Brazil CVM.
+- **7 stable tools, 10 jurisdictions** — one `jurisdiction` parameter routes each intent to the right national source. Tool names and schemas never change as coverage grows.
+- **Official sources only** — SEC EDGAR, GLEIF, UK Companies House, FCA NSM, filings.xbrl.org, Korea DART, Japan EDINET, China cninfo, India BSE, Taiwan TWSE, Brazil CVM, Germany BaFin.
 - **Honest by design** — real source links only, explicit "unsupported here" answers instead of empty or fabricated results, and clear caveats ("absence of a filing is not proof").
 - **Zero runtime dependencies** — one bundled file, runs anywhere Node 18+ runs.
 
@@ -104,26 +104,26 @@ Restart the client after changing its configuration, then try:
 
 | Tool | What it answers | Coverage |
 |---|---|---|
-| `CompanyResolve` | "Which company is this?" — canonical name plus CIK, ticker, LEI, ISIN, and local registry identifiers. | US, GB, KR, JP, CN, IN, TW, BR + global LEI/ISIN |
+| `CompanyResolve` | "Which company is this?" — canonical name plus CIK, ticker, LEI, ISIN, and local registry identifiers. | US, GB, KR, JP, CN, IN, TW, BR, DE + global LEI/ISIN |
 | `CompanyFilings` | "What has it filed?" — dates, types, descriptions, direct source links; a latest annual/quarterly report mode. | US, GB, KR, JP, CN, IN, TW, BR |
-| `CompanyInsiders` | "Who runs it?" — directors, officers, titles, and 10%+ owners from insider registers. | US, GB (incl. ECCTA identity status), KR, TW |
-| `CompanyOwners` | "Who owns it?" — major-shareholder filers with thresholds, dates, and filing links. | US (13D/13G), GB (PSC + TR-1), KR (5% rule), JP (5% rule / 大量保有報告書), TW (>10%) |
+| `CompanyInsiders` | "Who runs it?" — directors, officers, titles, and 10%+ owners from insider registers. | US, GB (incl. ECCTA identity status), KR, TW, DE (MAR Art. 19) |
+| `CompanyOwners` | "Who owns it?" — major-shareholder filers with thresholds, dates, and filing links. | US (13D/13G), GB (PSC + TR-1), KR (5% rule), JP (5% rule / 大量保有報告書), TW (>10%), DE (§§33 ff. WpHG) |
 | `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, BR |
 | `OwnershipChain` | "Who consolidates it?" — GLEIF direct/ultimate accounting-consolidation parents and children. | 🌐 Global (any LEI or legal name) |
 | `PrivateRaises` | "Has it raised privately?" — Form D exempt offerings, amounts, investor counts, named related persons. | US only in v1 |
 
-Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR"` (default `US`).
+Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR), BaFin-Id or ISIN (DE). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR" | "DE"` (default `US`).
 
 ### Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 global via GLEIF — jurisdiction-independent |
 
 ✅ supported · — returns an honest unsupported-jurisdiction explanation, never an empty or fabricated result
@@ -147,6 +147,7 @@ US and global lookups work with just the User-Agent. Non-US sources are keyless 
 | [BSE India](https://www.bseindia.com/) | `IN` | None | Resolution and announcement PDFs; anti-bot host — inject a `fetchFn` if throttled. |
 | [TWSE OpenAPI](https://openapi.twse.com.tw/) | `TW` | None | Resolution, material information, directors/supervisors, >10% shareholders. |
 | [CVM open data](https://dados.cvm.gov.br/) | `BR` | None | Resolution, IPE disclosure index, DFP annual financials in BRL. |
+| [BaFin](https://www.bafin.de/) AnteileInfo + DealingsInfo | `DE` | None | Resolution, §§33 ff. WpHG major holdings, Art. 19 MAR directors' dealings. |
 
 ```bash
 # Required (SEC fair-access policy — your name/org and contact email)
@@ -267,7 +268,7 @@ DISCLOSURES_USER_AGENT="Your Organization your-email@example.com" bun run smoke:
 
 ### Roadmap
 
-The seven tool names and schemas stay stable; new sources and deeper data dispatch behind the same intents rather than adding jurisdiction-specific tools. Next up: GB/JP insider depth, CN/IN ownership and financials currently locked inside report PDFs, and a DE (Germany) adapter — [feasibility confirmed](docs/DE-FEASIBILITY.md) for `CompanyResolve`/`CompanyOwners`/`CompanyInsiders` over BaFin's free voting-rights and directors'-dealings databases. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
+The seven tool names and schemas stay stable; new sources and deeper data dispatch behind the same intents rather than adding jurisdiction-specific tools. **DE (Germany)** now resolves issuers and returns §§33 ff. WpHG major holdings and Art. 19 MAR directors' dealings over BaFin's free databases ([DE.md](docs/jurisdictions/DE.md)). Next up: GB/JP insider depth, and CN/IN ownership and financials currently locked inside report PDFs. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
 
 ## License
 

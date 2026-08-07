@@ -11,14 +11,14 @@ configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -40,6 +40,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | IN | BSE India | None (host is anti-bot; inject a `fetchFn` if throttled) | [IN.md](IN.md) |
 | TW | TWSE OpenAPI | None | [TW.md](TW.md) |
 | BR | CVM open data | None | [BR.md](BR.md) |
+| DE | BaFin AnteileInfo + DealingsInfo | None | [DE.md](DE.md) |
 
 ## Honesty invariants (all jurisdictions)
 

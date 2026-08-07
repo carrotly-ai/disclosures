@@ -401,6 +401,8 @@ describe("createTools", () => {
       expect(jurisdiction?.safeParse("CN").success).toBe(true);
       expect(jurisdiction?.safeParse("IN").success).toBe(true);
       expect(jurisdiction?.safeParse("TW").success).toBe(true);
+      expect(jurisdiction?.safeParse("BR").success).toBe(true);
+      expect(jurisdiction?.safeParse("DE").success).toBe(true);
       expect(jurisdiction?.safeParse("ZZ").success).toBe(false);
       expect(tool.description).toMatch(/KR|OpenDART/);
       expect(tool.description).toMatch(/JP|EDINET/);
@@ -1439,6 +1441,81 @@ describe("explicit BR routing", () => {
     } as never);
     expect(result.isError).toBeUndefined();
     expect(resultText(result)).toContain('unsupported for jurisdiction "BR"');
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit DE routing", () => {
+  const deSearchRoute: Route = {
+    pattern: "AnteileInfo/suche.do",
+    body: loadFixture("bafin", "anteile-search-sap.html"),
+  };
+  const deIssuerRoute: Route = {
+    pattern: "AnteileInfo/aktiengesellschaft.do",
+    body: loadFixture("bafin", "anteile-issuer-sap.html"),
+  };
+  const deDealingsRoute: Route = {
+    pattern: "DealingsInfo/sucheForm.do",
+    body: loadFixture("bafin", "dealings-sap.html"),
+  };
+
+  test("CompanyResolve uses BaFin only and shows the issuer BaFin-Id", async () => {
+    const fetchFn = routedFetch([deSearchRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "SAP SE",
+      jurisdiction: "DE",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Company resolution (BaFin)");
+    expect(text).toContain("SAP SE");
+    expect(text).toContain("40001244");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyOwners renders §§33 ff. WpHG holdings with percentages", async () => {
+    const fetchFn = routedFetch([deSearchRoute, deIssuerRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "SAP SE",
+      jurisdiction: "DE",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Major holdings (§§33 ff. WpHG, BaFin)");
+    expect(text).toContain("BlackRock, Inc.");
+    expect(text).toContain("5.0254%");
+    expect(text).toContain("§39 aggregate");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyInsiders renders BaFin directors' dealings", async () => {
+    const fetchFn = routedFetch([deDealingsRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "SAP SE",
+      jurisdiction: "DE",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Directors' dealings (BaFin)");
+    expect(text).toContain("Jürgen Müller");
+    expect(text).toContain("Buy (Kauf)");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyFilings, CompanyFinancials and PrivateRaises explain DE limits with no network hit", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    for (const name of ["CompanyFilings", "CompanyFinancials", "PrivateRaises"]) {
+      const result = await toolByName(tools, name).handler({
+        company: "SAP SE",
+        jurisdiction: "DE",
+      } as never);
+      expect(result.isError).toBeUndefined();
+      expect(resultText(result)).toContain('unsupported for jurisdiction "DE"');
+    }
     expect(fetchFn.requests).toHaveLength(0);
   });
 });
