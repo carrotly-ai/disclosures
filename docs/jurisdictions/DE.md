@@ -25,7 +25,37 @@ transactions / directors' dealings under Art. 19 MAR).
 | `CompanyOwners` | Major-holdings notifications (§§ 33 ff. WpHG) from AnteileInfo: holder, domicile, the §§ 33/34 voting-rights percentage, and the § 38 (instruments) / § 39 (aggregate) breakdown, with the § 40 publication date. |
 | `CompanyFinancials` | Unsupported — use `jurisdiction: "EU"` (filings.xbrl.org ESEF) for German issuers' annual accounts. |
 | `PrivateRaises` | Unsupported — no Form D-equivalent dataset. |
+| `PersonAppointments` | Person-name search over the DealingsInfo notifying-persons index (managers'-transactions filers, Art. 19 MAR). `search` returns candidate persons with a BaFin `meldepflichtigerId`; `appointments` (pass the id as `officer_id`) lists every issuer that person has reported managers' transactions to, one row per issuer with a transaction count and latest trade date; `disqualifications` is honestly unsupported. |
 | `OwnershipChain` | Global GLEIF — see the [index](README.md). |
+
+## `PersonAppointments` on DealingsInfo
+
+BaFin exposes no public appointments register keyed by individual. The closest queryable
+per-person dataset is the **DealingsInfo notifying-persons index** — the people who have
+filed an Art. 19 MAR managers'-transaction notification. The adapter treats that index as a
+person directory:
+
+- **`mode: "search"`** (`query` = a surname, e.g. `Klein`) runs the DealingsInfo person
+  search (`meldepflichtigerName`) and returns each match's surname, first name, title, board
+  position, latest trade date, and BaFin **`meldepflichtigerId`** — the id to feed back in.
+- **`mode: "appointments"`** (`officer_id` = a `meldepflichtigerId`) loads that person's
+  DealingsInfo detail page and **collapses the transaction list to one row per issuer**:
+  issuer name, BaFin-Id, ISIN, board position, number of reported transactions, and the
+  latest trade date, newest issuer first.
+- **`mode: "disqualifications"`** returns an honest not-available message — Germany publishes
+  no free per-individual disqualified-directors register (a management-board ban under
+  § 76 AktG / § 6 GmbHG follows automatically from a conviction and is not exposed as a
+  searchable dataset), unlike the UK Companies House disqualified-directors register.
+
+### `PersonAppointments` caveats
+
+- This is a **managers'-transactions filer index, not an appointments register**. A board
+  member who has never personally transacted will not appear, and the position shown is the
+  role stated on the notification — not a live directorship record.
+- German homonyms are common. Disambiguate a `search` result by **first name, title, and
+  issuer**, not by the id alone, before using it with `mode: "appointments"`.
+- "Issuers a person has reported transactions to" is an artefact of Art. 19 MAR filings; it
+  is neither an exhaustive career history nor proof of a current directorship.
 
 ## Implementation notes
 

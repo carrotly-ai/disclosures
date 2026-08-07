@@ -2,17 +2,21 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import {
   BAFIN_ANTEILE_ISSUER_URL,
   BAFIN_ANTEILE_SEARCH_URL,
+  BAFIN_DEALINGS_RESULT_URL,
   BAFIN_DEALINGS_SEARCH_URL,
   BafinRateLimitError,
   getBafinDirectorsDealings,
   getBafinOwners,
+  getBafinPersonAppointments,
   parseDealings,
   parseGermanDate,
   parseGermanNumber,
   parseIssuerHoldings,
+  parsePersonSearch,
   parseTableById,
   repairGermanText,
   searchBafinCompanies,
+  searchBafinPeople,
 } from "../src/adapters/bafin.js";
 import { bafinRateLimiter, resetRateLimiters } from "../src/core/rateLimiter.js";
 import type { AdapterOptions } from "../src/core/types.js";
@@ -27,6 +31,8 @@ const anteileSearch = loadFixture("bafin", "anteile-search-sap.html");
 const anteileIssuer = loadFixture("bafin", "anteile-issuer-sap.html");
 const dealings = loadFixture("bafin", "dealings-sap.html");
 const dealingsMojibake = loadFixture("bafin", "dealings-sap-mojibake.html");
+const personSearch = loadFixture("bafin", "dealings-person-search.html");
+const personAppointments = loadFixture("bafin", "dealings-person-appointments.html");
 
 const searchRoute: Route = { pattern: BAFIN_ANTEILE_SEARCH_URL, body: anteileSearch };
 const issuerRoute: Route = { pattern: BAFIN_ANTEILE_ISSUER_URL, body: anteileIssuer };
@@ -188,6 +194,60 @@ describe("parse helpers operate directly on fixture HTML", () => {
     expect(rows.length).toBe(2);
     expect(rows[0]?.person).toBe("Jürgen Müller");
     expect(rows[0]?.isin).toBe("DE0007164600");
+    expect(rows[0]?.bafinId).toBe("40001244");
+  });
+
+  test("parsePersonSearch reads the meldepflichtiger table", () => {
+    const matches = parsePersonSearch(personSearch);
+    expect(matches.length).toBe(2);
+    expect(matches[0]?.surname).toBe("Klein");
+    expect(matches[0]?.firstName).toBe("Christian Kurt");
+    expect(matches[0]?.meldepflichtigerId).toBe("34505");
+    expect(matches[0]?.position).toBe("Management board (Vorstand)");
+    expect(matches[0]?.latestTransactionDate).toBe("2026-07-24");
+    expect(matches[1]?.title).toBe("Dr.");
+    expect(matches[1]?.position).toBe("Supervisory board (Aufsichtsrat)");
+  });
+});
+
+describe("BaFin DealingsInfo person index", () => {
+  test("searchBafinPeople returns candidates with a meldepflichtigerId", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "meldepflichtigerName=", body: personSearch },
+    ]);
+    const matches = await searchBafinPeople("Klein", options(fetchFn));
+    expect(matches.length).toBe(2);
+    expect(matches[0]?.surname).toBe("Klein");
+    expect(matches[0]?.sourceUrl).toContain("meldepflichtigerId=34505");
+  });
+
+  test("getBafinPersonAppointments collapses transactions to one row per issuer", async () => {
+    const fetchFn = routedFetch([
+      { pattern: BAFIN_DEALINGS_RESULT_URL, body: personAppointments },
+    ]);
+    const record = await getBafinPersonAppointments("34505", options(fetchFn));
+    expect(record.meldepflichtigerId).toBe("34505");
+    expect(record.personName).toBe("Klein, Christian Kurt");
+    // Three transactions, two distinct issuers (SAP SE x2, SAP Fioneer x1).
+    expect(record.appointments.length).toBe(2);
+    const sap = record.appointments.find((a) => a.bafinId === "40001244");
+    expect(sap?.issuerName).toBe("SAP SE");
+    expect(sap?.transactionCount).toBe(2);
+    expect(sap?.position).toBe("Management board (Vorstand)");
+    // Latest of 2026-07-24 / 2025-03-15.
+    expect(sap?.latestTransactionDate).toBe("2026-07-24");
+    // Sorted newest-issuer first.
+    expect(record.appointments[0]?.bafinId).toBe("40001244");
+    expect(record.appointments[1]?.issuerName).toBe("SAP Fioneer GmbH");
+    expect(record.appointments[1]?.position).toBe("Supervisory board (Aufsichtsrat)");
+  });
+
+  test("getBafinPersonAppointments rejects a non-numeric id before any request", async () => {
+    const fetchFn = routedFetch([]);
+    await expect(getBafinPersonAppointments("abc", options(fetchFn))).rejects.toThrow(
+      /meldepflichtigerId/,
+    );
+    expect(fetchFn.requests.length).toBe(0);
   });
 });
 

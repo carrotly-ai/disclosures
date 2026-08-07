@@ -9,7 +9,8 @@ an empty or fabricated result.
 Three further **filed-document / register tools** — `CompanyDocument`, `CompanyCharges`, and
 `PersonAppointments` — originated as Companies House features. `CompanyDocument` now also
 serves **US** (SEC EDGAR), **JP** (EDINET), and **KR** (OpenDART); `PersonAppointments`
-also serves **US**, both via a `jurisdiction` parameter (default `GB`). `CompanyCharges`
+also serves **US** (SEC EDGAR reporting owners) and **DE** (BaFin DealingsInfo notifying
+persons), all via a `jurisdiction` parameter (default `GB`). `CompanyCharges`
 remains UK-only for now. See [GB.md](GB.md), [US.md](US.md), [JP.md](JP.md), and
 [KR.md](KR.md) for the per-jurisdiction document / person paths.
 
@@ -28,13 +29,13 @@ configuration, and library API, see the top-level [README](../../README.md).
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — |
 | `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — |
 | `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · — returns an honest unsupported-jurisdiction explanation · 🌐 global
 
 `CompanyDocument` accepts `GB` (default), `US`, `JP`, and `KR`; `PersonAppointments`
-accepts only `US`/`GB` (default `GB`); `CompanyCharges` is UK-only and takes no
+accepts `US`, `GB` (default), and `DE`; `CompanyCharges` is UK-only and takes no
 `jurisdiction` parameter.
 
 `OwnershipChain` takes no `jurisdiction` parameter: it is GLEIF Level-2 relationship data

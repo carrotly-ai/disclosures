@@ -655,6 +655,7 @@ function dealingsSearchUrl(query: { name?: string; isin?: string }): string {
 
 interface BafinDealing {
   issuerName?: string;
+  bafinId?: string;
   isin?: string;
   person: string;
   position?: string;
@@ -697,6 +698,7 @@ export function parseDealings(html: string, searchUrl: string): BafinDealing[] {
     parseFirstTableByClass(html, "displaytag");
   if (!table) return [];
   const issuerCol = columnIndex(table.headers, "emittent");
+  const bafinIdCol = columnIndex(table.headers, "bafinid", "bafin");
   const isinCol = columnIndex(table.headers, "isin");
   const personCol = columnIndex(table.headers, "meldepflichtige");
   const posCol = columnIndex(table.headers, "position", "status", "funktion");
@@ -710,6 +712,7 @@ export function parseDealings(html: string, searchUrl: string): BafinDealing[] {
     const person = cellAt(row, personCol)?.text?.trim();
     if (!person) continue;
     const issuerName = cellAt(row, issuerCol)?.text?.trim();
+    const bafinId = cellAt(row, bafinIdCol)?.text?.replace(/\D/g, "");
     const isin = cellAt(row, isinCol)?.text?.trim();
     const position = cellAt(row, posCol)?.text?.trim();
     const instrument = cellAt(row, instrCol)?.text?.trim();
@@ -723,6 +726,7 @@ export function parseDealings(html: string, searchUrl: string): BafinDealing[] {
     const href = cellAt(row, issuerCol)?.href ?? cellAt(row, personCol)?.href;
     dealings.push({
       ...(issuerName ? { issuerName } : {}),
+      ...(bafinId ? { bafinId } : {}),
       ...(isin ? { isin } : {}),
       person,
       ...(position ? { position } : {}),
@@ -786,11 +790,197 @@ export async function getBafinDirectorsDealings(
     .sort((left, right) => right.filedDate.localeCompare(left.filedDate));
 }
 
+// --- DealingsInfo person index (PersonAppointments DE analog) --------------
+//
+// DealingsInfo also indexes the *notifying persons* (Meldepflichtige), not just
+// issuers. A person-name search returns candidate PDMRs each carrying a
+// meldepflichtigerId; loading that id returns the same Art.19 MAR transaction
+// table (id="emittent") scoped to the person — i.e. every issuer they have
+// reported dealings to, with their board position. That is the closest German
+// open-data analog to a cross-company appointment history: it is a
+// transaction-filer index, not an officer register, and Germany publishes no
+// disqualified-directors register queryable by individual.
+
+export const BAFIN_DEALINGS_RESULT_URL =
+  "https://portal.mvp.bafin.de/database/DealingsInfo/ergebnisListe.do";
+
+export const BAFIN_PERSON_CAVEAT =
+  "Parsed from BaFin's DealingsInfo (Directors' Dealings, Art.19 MAR) person " +
+  "index. It lists people who have filed a managers'-transaction notification, " +
+  "not a company-appointments register: a board member who has never personally " +
+  "transacted will not appear, and the position shown is the role stated on the " +
+  "notification. German homonyms are common — match by first name, title, and " +
+  "issuer, not the id alone.";
+
+export const BAFIN_NO_DISQUALIFICATION_MESSAGE =
+  "Germany publishes no public disqualified-directors register queryable by " +
+  "individual (unlike the UK Companies House register). A management-board ban " +
+  "(Bestellungshindernis under §76 AktG / §6 GmbHG) follows automatically from a " +
+  "relevant criminal conviction and is not exposed as a free searchable dataset. " +
+  "There is no DE equivalent to surface here.";
+
+function personSearchUrl(name: string): string {
+  const params = new URLSearchParams({
+    meldepflichtigerName: name,
+    // Mirror the issuer form: the query only runs when the person submit button
+    // is posted, otherwise BaFin re-renders the empty search form.
+    meldepflichtigerButton: "Suche Meldepflichtiger",
+  });
+  return `${BAFIN_DEALINGS_SEARCH_URL}?${params.toString()}`;
+}
+
+function personAppointmentsUrl(meldepflichtigerId: string): string {
+  const params = new URLSearchParams({
+    cmd: "loadEmittentenAction",
+    meldepflichtigerId,
+  });
+  return `${BAFIN_DEALINGS_RESULT_URL}?${params.toString()}`;
+}
+
+export interface BafinPersonMatch {
+  meldepflichtigerId: string;
+  surname: string;
+  firstName?: string;
+  title?: string;
+  position?: string;
+  latestTransactionDate?: string;
+  sourceUrl: string;
+}
+
+function idFromMeldepflichtigerHref(href: string | undefined): string | undefined {
+  return href?.match(/[?&]meldepflichtigerId=(\d+)/)?.[1];
+}
+
+export function parsePersonSearch(html: string): BafinPersonMatch[] {
+  const table = parseTableById(html, "meldepflichtiger") ??
+    parseFirstTableByClass(html, "displaytag");
+  if (!table) return [];
+  const nameCol = columnIndex(table.headers, "name");
+  const firstCol = columnIndex(table.headers, "vorname");
+  const titleCol = columnIndex(table.headers, "titel");
+  const posCol = columnIndex(table.headers, "positionstatus", "position", "status");
+  const dateCol = columnIndex(table.headers, "datumdesgeschaft", "datum");
+  const matches: BafinPersonMatch[] = [];
+  for (const row of table.rows) {
+    const nameCell = cellAt(row, nameCol);
+    const surname = nameCell?.text?.trim();
+    const meldepflichtigerId = idFromMeldepflichtigerHref(nameCell?.href);
+    if (!surname || !meldepflichtigerId) continue;
+    const firstName = cellAt(row, firstCol)?.text?.trim();
+    const title = cellAt(row, titleCol)?.text?.trim();
+    const position = translatePosition(cellAt(row, posCol)?.text?.trim());
+    const latestTransactionDate = parseGermanDate(cellAt(row, dateCol)?.text);
+    matches.push({
+      meldepflichtigerId,
+      surname,
+      ...(firstName ? { firstName } : {}),
+      ...(title ? { title } : {}),
+      ...(position ? { position } : {}),
+      ...(latestTransactionDate ? { latestTransactionDate } : {}),
+      sourceUrl: personAppointmentsUrl(meldepflichtigerId),
+    });
+  }
+  return matches.slice(0, BAFIN_MAX_RESULTS);
+}
+
+/**
+ * Search BaFin DealingsInfo for notifying persons (PDMRs) by name. Each match
+ * carries the meldepflichtigerId used by `getBafinPersonAppointments`.
+ */
+export async function searchBafinPeople(
+  name: string,
+  options: AdapterOptions = {},
+): Promise<BafinPersonMatch[]> {
+  const query = name.trim();
+  if (!query) return [];
+  const html = await fetchText(personSearchUrl(query), options);
+  return parsePersonSearch(html);
+}
+
+export interface BafinPersonAppointment {
+  issuerName: string;
+  bafinId?: string;
+  isin?: string;
+  position?: string;
+  transactionCount: number;
+  latestTransactionDate?: string;
+  sourceUrl: string;
+}
+
+export interface BafinPersonAppointments {
+  meldepflichtigerId: string;
+  personName?: string;
+  appointments: BafinPersonAppointment[];
+  sourceUrl: string;
+}
+
+/**
+ * Resolve one person's cross-issuer directors'-dealings history by
+ * meldepflichtigerId: fetch their DealingsInfo detail table and collapse it to
+ * one row per issuer (position, transaction count, latest trade date).
+ */
+export async function getBafinPersonAppointments(
+  meldepflichtigerId: string,
+  options: AdapterOptions = {},
+): Promise<BafinPersonAppointments> {
+  const id = meldepflichtigerId.trim();
+  if (!/^\d+$/.test(id)) {
+    throw new BafinApiError(
+      "A numeric BaFin meldepflichtigerId (from PersonAppointments search) is required.",
+    );
+  }
+  const url = personAppointmentsUrl(id);
+  const html = await fetchText(url, options);
+  const dealings = parseDealings(html, url);
+  const byIssuer = new Map<string, BafinPersonAppointment>();
+  for (const dealing of dealings) {
+    const issuerName = dealing.issuerName;
+    if (!issuerName) continue;
+    const key = dealing.bafinId ?? issuerName;
+    const existing = byIssuer.get(key);
+    const position = translatePosition(dealing.position);
+    if (existing) {
+      existing.transactionCount += 1;
+      if (
+        dealing.tradeDate &&
+        (!existing.latestTransactionDate ||
+          dealing.tradeDate > existing.latestTransactionDate)
+      ) {
+        existing.latestTransactionDate = dealing.tradeDate;
+      }
+      if (!existing.position && position) existing.position = position;
+    } else {
+      byIssuer.set(key, {
+        issuerName,
+        ...(dealing.bafinId ? { bafinId: dealing.bafinId } : {}),
+        ...(dealing.isin ? { isin: dealing.isin } : {}),
+        ...(position ? { position } : {}),
+        transactionCount: 1,
+        ...(dealing.tradeDate ? { latestTransactionDate: dealing.tradeDate } : {}),
+        sourceUrl: dealing.sourceUrl,
+      });
+    }
+  }
+  const appointments = [...byIssuer.values()].sort((left, right) =>
+    (right.latestTransactionDate ?? "").localeCompare(left.latestTransactionDate ?? ""),
+  );
+  const personName = dealings.find((dealing) => dealing.person)?.person;
+  return {
+    meldepflichtigerId: id,
+    ...(personName ? { personName } : {}),
+    appointments,
+    sourceUrl: url,
+  };
+}
+
 export function createBafinAdapter(options: AdapterOptions = {}) {
   return {
     search: (company: string) => searchBafinCompanies(company, options),
     getOwners: (company: string) => getBafinOwners(company, options),
     getDirectorsDealings: (company: string) =>
       getBafinDirectorsDealings(company, options),
+    searchPeople: (name: string) => searchBafinPeople(name, options),
+    getPersonAppointments: (meldepflichtigerId: string) =>
+      getBafinPersonAppointments(meldepflichtigerId, options),
   };
 }

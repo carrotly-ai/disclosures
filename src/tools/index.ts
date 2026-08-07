@@ -130,11 +130,15 @@ import {
 import {
   BAFIN_INSIDERS_CAVEAT,
   BAFIN_MAR_REGIME,
+  BAFIN_NO_DISQUALIFICATION_MESSAGE,
   BAFIN_OWNERS_CAVEAT,
+  BAFIN_PERSON_CAVEAT,
   BAFIN_WPHG_THRESHOLD_REGIME,
   getBafinDirectorsDealings,
   getBafinOwners,
+  getBafinPersonAppointments,
   searchBafinCompanies,
+  searchBafinPeople,
 } from "../adapters/bafin.js";
 import {
   companyInput,
@@ -2596,27 +2600,139 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  async function personAppointmentsDe(
+    mode: "search" | "appointments" | "disqualifications" | undefined,
+    query: string | undefined,
+    meldepflichtigerId: string | undefined,
+    limit: number | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    const resolvedMode = mode ?? "search";
+    const label = query ?? meldepflichtigerId ?? resolvedMode;
+    try {
+      if (resolvedMode === "disqualifications") {
+        // Germany has no free per-individual disqualification register.
+        return textResult(joinSections(
+          `# DE disqualifications: ${query ?? meldepflichtigerId ?? "—"}`,
+          `_${BAFIN_NO_DISQUALIFICATION_MESSAGE}_`,
+        ));
+      }
+
+      if (resolvedMode === "appointments") {
+        if (!meldepflichtigerId) {
+          return textResult(
+            "DE mode \"appointments\" requires an officer_id (the BaFin " +
+              "meldepflichtigerId, from mode=search).",
+          );
+        }
+        const record = await getBafinPersonAppointments(meldepflichtigerId, options);
+        if (!record.appointments.length) {
+          return notFoundResult(
+            meldepflichtigerId,
+            "No reported directors'-dealings issuers found for this " +
+              "meldepflichtigerId. It may be invalid, or the person has no Art.19 " +
+              "MAR transactions on record.",
+          );
+        }
+        const cap = limit ?? 35;
+        const shown = record.appointments.slice(0, cap);
+        const trailer = record.appointments.length > shown.length
+          ? `_Showing ${shown.length} of ${record.appointments.length} issuers._`
+          : undefined;
+        return textResult(joinSections(
+          `# DE reporting-person issuers: ${record.personName ?? meldepflichtigerId}`,
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["meldepflichtigerId", record.meldepflichtigerId],
+              ["Name", record.personName ?? "—"],
+              ["Issuers", String(record.appointments.length)],
+            ],
+          ),
+          "## Issuers this person has reported managers' transactions to",
+          markdownTable(
+            ["Issuer", "BaFin-ID", "ISIN", "Position", "Transactions", "Latest trade", "Link"],
+            shown.map((appointment) => [
+              appointment.issuerName,
+              appointment.bafinId ?? "—",
+              appointment.isin ?? "—",
+              appointment.position ?? "—",
+              String(appointment.transactionCount),
+              appointment.latestTransactionDate ?? "—",
+              link("view", appointment.sourceUrl),
+            ]),
+          ),
+          ...(trailer ? [trailer] : []),
+          `_Regime: ${BAFIN_MAR_REGIME}._`,
+          `_${BAFIN_PERSON_CAVEAT}_`,
+        ));
+      }
+
+      // default: person search
+      if (!query) {
+        return textResult("DE mode \"search\" requires a query (person name).");
+      }
+      const matches = await searchBafinPeople(query, options);
+      if (!matches.length) {
+        return notFoundResult(query, "No BaFin DealingsInfo notifying persons matched this name.");
+      }
+      const cap = limit ?? 35;
+      const shown = matches.slice(0, cap);
+      const trailer = matches.length > shown.length
+        ? `_Showing ${shown.length} of ${matches.length} matches._`
+        : undefined;
+      return textResult(joinSections(
+        `# DE reporting-person search: ${query}`,
+        markdownTable(
+          ["Surname", "First name", "Title", "Position", "Latest trade", "id", "Link"],
+          shown.map((match) => [
+            match.surname,
+            match.firstName ?? "—",
+            match.title ?? "—",
+            match.position ?? "—",
+            match.latestTransactionDate ?? "—",
+            match.meldepflichtigerId,
+            link("dealings", match.sourceUrl),
+          ]),
+        ),
+        ...(trailer ? [trailer] : []),
+        "_Use mode=\"appointments\" with an id from this table to list every issuer " +
+          "the person has reported managers' transactions to. Homonyms are common — " +
+          "disambiguate by first name, title, and position._",
+        `_${BAFIN_PERSON_CAVEAT}_`,
+      ));
+    } catch (error) {
+      return failureResult(label, error);
+    }
+  }
+
   const personAppointments = defineTool(
     "PersonAppointments",
     "Look up a person's cross-company roles and disqualifications. Accepts a " +
-      "jurisdiction of \"GB\" (UK Companies House, default) or \"US\" (SEC EDGAR " +
-      "reporting owners). Mode \"search\" (default) finds people by name (query): " +
-      "GB returns officer ids + appointment counts; US returns reporting-owner " +
-      "CIKs + address hints. Mode \"appointments\" lists a person's roles for one " +
-      "officer_id: GB = every company appointment (role, dates); US = every issuer " +
-      "the person has reported Section 16 ownership to (role, latest transaction " +
-      "date), where officer_id is the person's SEC CIK — this surfaces private " +
-      "issuers (e.g. SpaceX) too. Mode \"disqualifications\": GB searches the " +
+      "jurisdiction of \"GB\" (UK Companies House, default), \"US\" (SEC EDGAR " +
+      "reporting owners), or \"DE\" (BaFin Directors' Dealings persons). Mode " +
+      "\"search\" (default) finds people by name (query): GB returns officer ids " +
+      "+ appointment counts; US returns reporting-owner CIKs + address hints; DE " +
+      "returns BaFin meldepflichtigerIds + board position. Mode \"appointments\" " +
+      "lists a person's roles for one officer_id: GB = every company appointment " +
+      "(role, dates); US = every issuer the person has reported Section 16 " +
+      "ownership to (officer_id is the person's SEC CIK — surfaces private issuers " +
+      "e.g. SpaceX too); DE = every issuer the person has reported Art.19 MAR " +
+      "managers' transactions to, with board position (officer_id is the BaFin " +
+      "meldepflichtigerId). Mode \"disqualifications\": GB searches the " +
       "disqualified-officers register (query, or officer_id +officer_type for " +
       "detail); US has no register, so it returns a safe SALI (SEC Action Lookup " +
-      "for Individuals) public-search link for the name only — no scraping. One " +
-      "human holds several ids/CIKs and homonyms are common, so match by name and " +
-      "context, not a single id.",
+      "for Individuals) public-search link for the name only — no scraping; DE has " +
+      "no free per-individual register, reported honestly. One human holds several " +
+      "ids/CIKs and homonyms are common, so match by name and context, not a " +
+      "single id.",
     {
       jurisdiction: z
-        .enum(["US", "GB"])
+        .enum(["US", "GB", "DE"])
         .optional()
-        .describe('"GB" (Companies House, default) or "US" (SEC EDGAR reporting owners)'),
+        .describe(
+          '"GB" (Companies House, default), "US" (SEC EDGAR reporting owners), ' +
+            'or "DE" (BaFin Directors\' Dealings persons)',
+        ),
       mode: z
         .enum(["search", "appointments", "disqualifications"])
         .optional()
@@ -2646,6 +2762,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     async ({ jurisdiction, mode, query, officer_id, officer_type, limit }) => {
       if (jurisdiction === "US") {
         return personAppointmentsUs(mode, query, officer_id, limit);
+      }
+      if (jurisdiction === "DE") {
+        return personAppointmentsDe(mode, query, officer_id, limit);
       }
       const resolvedMode = mode ?? "search";
       const label = query ?? officer_id ?? resolvedMode;
