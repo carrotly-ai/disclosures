@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, test } from "bun:test";
 import { TOOL_NAMES, createTools } from "../src/tools/index.js";
 import type { ToolDefinition } from "../src/core/toolDefs.js";
@@ -6,6 +5,7 @@ import { resetSecTickerCache } from "../src/adapters/secEdgar.js";
 import { resetOpenDartCorpCodeCache } from "../src/adapters/openDart.js";
 import { resetRateLimiters, secRateLimiter } from "../src/core/rateLimiter.js";
 import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
+import { loadFixture } from "./helpers/loadFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { latin1Bytes, makeStoredZip, makeStoredZipMulti } from "./helpers/zipFixture.js";
 import { edinetCodeListRoute, edinetDay } from "./helpers/edinetFixture.js";
@@ -719,10 +719,7 @@ describe("explicit GB routing", () => {
   });
 
   test("CompanyOwners GB renders TR-1 major holdings when NSM access is injected", async () => {
-    const tr1Html = readFileSync(
-      new URL("./fixtures/fca/tr1-rws.html", import.meta.url),
-      "utf8",
-    );
+    const tr1Html = loadFixture("fca", "tr1-rws.html");
     const fetchFn = routedFetch([
       {
         pattern: "persons-with-significant-control?",
