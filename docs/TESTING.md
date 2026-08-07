@@ -33,9 +33,13 @@ test author to declare the route — coverage cannot silently regress into a liv
   Prefer these for small, readable payloads — they keep the input and the assertion side by
   side.
 - **Recorded fixtures** live under [`tests/fixtures/<source>/`](../tests/fixtures/) and are
-  loaded from disk. Use these for large or verbatim upstream artefacts where fidelity to the
-  real response matters more than inline readability — for example the FCA NSM TR-1 HTML
-  artefact (`tests/fixtures/fca/tr1-rws.html`) the parser is exercised against.
+  loaded from disk via the [`loadFixture(source, name)`](../tests/helpers/loadFixture.ts)
+  helper. Use these for large or verbatim upstream artefacts where fidelity to the real
+  response matters more than inline readability — for example the FCA NSM TR-1 HTML
+  artefact (`tests/fixtures/fca/tr1-rws.html`) the parser is exercised against, or the
+  SEC Form D XML (`tests/fixtures/sec/form-d-stripe.xml`). Payloads that interpolate
+  test constants (e.g. `${CORP_CODE}`) must stay inline — a recorded fixture is verbatim
+  by definition.
 
 When recording a new fixture, capture the **minimal** upstream response that reproduces the
 behaviour under test, redact anything sensitive, and name it by source and scenario. Keep
@@ -50,8 +54,8 @@ is for manual pre-release verification only. CI never runs it.
 
 ## Roadmap
 
-The inline-fixture majority is deliberate and readable, but the largest verbatim payloads
-are candidates for migration into per-adapter recorded-fixtures directories under
-`tests/fixtures/<source>/`, with a small `loadFixture(source, name)` helper. This is tracked
-as follow-up work; it is a mechanical consolidation, not a change to the offline guarantee,
-which already holds for the entire suite today.
+The inline-fixture majority is deliberate and readable. The largest verbatim payloads have
+been consolidated into per-adapter recorded-fixtures directories under
+`tests/fixtures/<source>/`, loaded through `loadFixture(source, name)`. New large verbatim
+artefacts should follow the same pattern; small or interpolated payloads stay inline. None
+of this changes the offline guarantee, which holds for the entire suite.

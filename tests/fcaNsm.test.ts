@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   FCA_NSM_ARTEFACT_BASE_URL,
@@ -11,12 +10,10 @@ import {
 } from "../src/adapters/fcaNsm.js";
 import { fcaNsmRateLimiter, resetRateLimiters } from "../src/core/rateLimiter.js";
 import type { AdapterOptions } from "../src/core/types.js";
+import { loadFixture } from "./helpers/loadFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 
-const TR1_HTML = readFileSync(
-  new URL("./fixtures/fca/tr1-rws.html", import.meta.url),
-  "utf8",
-);
+const TR1_HTML = loadFixture("fca", "tr1-rws.html");
 
 function options(fetchFn: ReturnType<typeof routedFetch>): AdapterOptions {
   return { fetchFn };

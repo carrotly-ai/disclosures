@@ -13,6 +13,7 @@ import {
 } from "../src/adapters/secEdgar.js";
 import { resetRateLimiters } from "../src/core/rateLimiter.js";
 import type { AdapterOptions, Env } from "../src/core/types.js";
+import { loadFixture } from "./helpers/loadFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 
 const ENV: Env = { DISCLOSURES_USER_AGENT: "Test test@example.com" };
@@ -544,48 +545,7 @@ describe("getSecFinancials", () => {
 });
 
 describe("getSecPrivateRaises", () => {
-  const FORM_D_XML = `<?xml version="1.0"?>
-<edgarSubmission>
-  <primaryIssuer>
-    <entityName>Stripe, Inc.</entityName>
-    <entityType>Corporation</entityType>
-  </primaryIssuer>
-  <relatedPersonsList>
-    <relatedPersonInfo>
-      <relatedPersonName>
-        <firstName>Patrick</firstName>
-        <lastName>Collison</lastName>
-      </relatedPersonName>
-      <relatedPersonRelationshipList>
-        <relationship>Executive Officer</relationship>
-        <relationship>Director</relationship>
-        <relationship>Executive Officer</relationship>
-      </relatedPersonRelationshipList>
-    </relatedPersonInfo>
-    <relatedPersonInfo>
-      <relatedPersonName>
-        <firstName>N/A</firstName>
-        <lastName>Sequoia Capital Operations LLC</lastName>
-      </relatedPersonName>
-      <relatedPersonRelationshipList>
-        <relationship>Promoter</relationship>
-      </relatedPersonRelationshipList>
-    </relatedPersonInfo>
-  </relatedPersonsList>
-  <offeringData>
-    <industryGroup><industryGroupType>Other Technology</industryGroupType></industryGroup>
-    <typeOfFiling>
-      <dateOfFirstSale><value>2021-05-14</value></dateOfFirstSale>
-    </typeOfFiling>
-    <offeringSalesAmounts>
-      <totalOfferingAmount>Indefinite</totalOfferingAmount>
-      <totalAmountSold>600000000</totalAmountSold>
-    </offeringSalesAmounts>
-    <investors>
-      <totalNumberAlreadyInvested>58</totalNumberAlreadyInvested>
-    </investors>
-  </offeringData>
-</edgarSubmission>`;
+  const FORM_D_XML = loadFixture("sec", "form-d-stripe.xml");
 
   test("parses Form D offering data and related persons", async () => {
     const fetchFn = routedFetch([
