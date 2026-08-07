@@ -3,10 +3,14 @@ import {
   SecConfigurationError,
   SecRateLimitError,
   getLatestSecReport,
+  getSecDocumentPdf,
+  getSecDocumentText,
+  getSecFilingManifest,
   getSecFinancials,
   getSecInsiders,
   getSecOwners,
   getSecPrivateRaises,
+  normalizeAccession,
   resetSecTickerCache,
   resolveCompanyCik,
   searchSecFilings,
@@ -582,5 +586,181 @@ describe("getSecPrivateRaises", () => {
     expect(raise?.sourceUrl).toBe(
       "https://www.sec.gov/Archives/edgar/data/320193/000162828021000123/primary_doc.xml",
     );
+  });
+});
+
+const ACCESSION = "0000320193-25-000079";
+const ACCESSION_NODASH = "000032019325000079";
+
+function manifestFixture(
+  items: Array<{ name: string; size?: string; lastModified?: string }>,
+): unknown {
+  return {
+    directory: {
+      name: `/Archives/edgar/data/320193/${ACCESSION_NODASH}`,
+      item: items.map((item) => ({
+        name: item.name,
+        type: "text.gif",
+        size: item.size ?? "",
+        "last-modified": item.lastModified ?? "",
+      })),
+    },
+  };
+}
+
+function latin1(text: string): Uint8Array {
+  const bytes = new Uint8Array(text.length);
+  for (let index = 0; index < text.length; index += 1) {
+    bytes[index] = text.charCodeAt(index) & 0xff;
+  }
+  return bytes;
+}
+
+describe("normalizeAccession", () => {
+  test("accepts both dashed and run-together forms", () => {
+    expect(normalizeAccession("0000320193-25-000079")).toBe(ACCESSION);
+    expect(normalizeAccession("000032019325000079")).toBe(ACCESSION);
+  });
+
+  test("rejects anything that is not 18 digits", () => {
+    expect(() => normalizeAccession("123")).toThrow(/18 digits/);
+  });
+});
+
+describe("getSecFilingManifest", () => {
+  test("lists documents and takes the primary document from submissions", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "submissions/CIK0000320193.json",
+        body: submissionsFixture([
+          {
+            form: "10-K",
+            filed: "2025-10-31",
+            accession: ACCESSION,
+            primaryDocument: "aapl-20250927.htm",
+            reportDate: "2025-09-27",
+            description: "Form 10-K",
+          },
+        ]),
+      },
+      {
+        pattern: `${ACCESSION_NODASH}/index.json`,
+        body: manifestFixture([
+          { name: `${ACCESSION}-index.html` },
+          { name: "aapl-20250927.htm", size: "1520208", lastModified: "2025-10-31 06:01:26" },
+          { name: "exhibit21.htm", size: "11807" },
+        ]),
+      },
+    ]);
+    const manifest = await getSecFilingManifest("320193", ACCESSION_NODASH, options(fetchFn));
+    expect(manifest.accession).toBe(ACCESSION);
+    expect(manifest.cik).toBe("320193");
+    expect(manifest.form).toBe("10-K");
+    expect(manifest.reportDate).toBe("2025-09-27");
+    expect(manifest.primaryDocument).toBe("aapl-20250927.htm");
+    expect(manifest.documents.map((doc) => doc.name)).toContain("exhibit21.htm");
+    expect(manifest.documents.find((doc) => doc.name === "aapl-20250927.htm")?.sizeBytes).toBe(
+      1520208,
+    );
+    expect(manifest.indexUrl).toContain(`${ACCESSION}-index.html`);
+  });
+
+  test("falls back to the largest inline .htm when submissions lack the filing", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "submissions/CIK0000320193.json", body: submissionsFixture([]) },
+      {
+        pattern: `${ACCESSION_NODASH}/index.json`,
+        body: manifestFixture([
+          { name: `${ACCESSION}-index.html`, size: "5000" },
+          { name: "small.htm", size: "2000" },
+          { name: "primary-big.htm", size: "900000" },
+        ]),
+      },
+    ]);
+    const manifest = await getSecFilingManifest("320193", ACCESSION, options(fetchFn));
+    expect(manifest.primaryDocument).toBe("primary-big.htm");
+    expect(manifest.form).toBeUndefined();
+  });
+});
+
+describe("getSecDocumentText", () => {
+  test("fetches the primary document and strips markup, comments, style, and script", async () => {
+    const html =
+      "<?xml version='1.0'?><!--XBRL comment--><html><head><style>.x{color:red}</style>" +
+      "<script>var a=1;</script></head><body><span>Net sales 391,035</span></body></html>";
+    const manifest = await getSecFilingManifest("320193", ACCESSION, {
+      fetchFn: routedFetch([
+        {
+          pattern: "submissions/CIK0000320193.json",
+          body: submissionsFixture([
+            { form: "10-K", filed: "2025-10-31", accession: ACCESSION, primaryDocument: "aapl.htm" },
+          ]),
+        },
+        { pattern: `${ACCESSION_NODASH}/index.json`, body: manifestFixture([{ name: "aapl.htm" }]) },
+      ]),
+      env: ENV,
+    });
+    const fetchFn = routedFetch([{ pattern: "aapl.htm", body: html }]);
+    const text = await getSecDocumentText(manifest, options(fetchFn));
+    expect(text?.text).toBe("Net sales 391,035");
+    expect(text?.text).not.toContain("color:red");
+    expect(text?.text).not.toContain("var a=1");
+    expect(text?.documentName).toBe("aapl.htm");
+  });
+
+  test("returns null when the only primary document is a bare full-submission .txt", async () => {
+    const manifest = await getSecFilingManifest("320193", ACCESSION, {
+      fetchFn: routedFetch([
+        {
+          pattern: "submissions/CIK0000320193.json",
+          body: submissionsFixture([
+            { form: "10-K", filed: "1997-12-05", accession: ACCESSION, primaryDocument: `${ACCESSION}.txt` },
+          ]),
+        },
+        {
+          pattern: `${ACCESSION_NODASH}/index.json`,
+          body: manifestFixture([{ name: `${ACCESSION}.txt` }]),
+        },
+      ]),
+      env: ENV,
+    });
+    const fetchFn = routedFetch([]); // no content fetch should happen
+    const text = await getSecDocumentText(manifest, options(fetchFn));
+    expect(text).toBeNull();
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("getSecDocumentPdf", () => {
+  async function manifestWith(items: Array<{ name: string; size?: string }>) {
+    return getSecFilingManifest("320193", ACCESSION, {
+      fetchFn: routedFetch([
+        { pattern: "submissions/CIK0000320193.json", body: submissionsFixture([]) },
+        { pattern: `${ACCESSION_NODASH}/index.json`, body: manifestFixture(items) },
+      ]),
+      env: ENV,
+    });
+  }
+
+  test("downloads a PDF exhibit and counts its pages", async () => {
+    const manifest = await manifestWith([
+      { name: "primary.htm", size: "1000" },
+      { name: "exhibit99.pdf", size: "2048" },
+    ]);
+    const pdfBytes = latin1("%PDF-1.4\n/Type /Page\n/Type /Page\n%%EOF");
+    const fetchFn = routedFetch([{ pattern: "exhibit99.pdf", body: pdfBytes }]);
+    const pdf = await getSecDocumentPdf(manifest, options(fetchFn));
+    expect(pdf?.documentName).toBe("exhibit99.pdf");
+    expect(pdf?.pageCount).toBe(2);
+    expect(pdf?.byteLength).toBe(pdfBytes.byteLength);
+    expect(pdf?.suggestedFilename).toBe("exhibit99.pdf");
+  });
+
+  test("returns null when the filing has no PDF rendition", async () => {
+    const manifest = await manifestWith([{ name: "primary.htm", size: "1000" }]);
+    const fetchFn = routedFetch([]);
+    const pdf = await getSecDocumentPdf(manifest, options(fetchFn));
+    expect(pdf).toBeNull();
+    expect(fetchFn.requests).toHaveLength(0);
   });
 });

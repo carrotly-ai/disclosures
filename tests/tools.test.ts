@@ -390,15 +390,25 @@ describe("createTools", () => {
     expect(TOOL_NAMES).toHaveLength(10);
   });
 
-  // OwnershipChain (GLEIF-global) and the Companies-House-specific tools
-  // (CompanyDocument, CompanyCharges, PersonAppointments) have no jurisdiction
-  // dispatch param; every other tool routes by jurisdiction.
+  // OwnershipChain (GLEIF-global) and CompanyCharges/PersonAppointments have no
+  // jurisdiction dispatch param on the full jurisdiction enum; CompanyDocument
+  // has one but restricted to the jurisdictions that support filed-document
+  // retrieval (US/GB), so it is excluded from the full-set assertion below and
+  // checked separately. Every other tool routes on the full jurisdiction enum.
   const JURISDICTION_AGNOSTIC = new Set([
     "OwnershipChain",
     "CompanyDocument",
     "CompanyCharges",
     "PersonAppointments",
   ]);
+
+  test("CompanyDocument jurisdiction is restricted to US and GB", () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
+    const jurisdiction = toolByName(tools, "CompanyDocument").inputSchema.jurisdiction;
+    expect(jurisdiction?.safeParse("US").success).toBe(true);
+    expect(jurisdiction?.safeParse("GB").success).toBe(true);
+    expect(jurisdiction?.safeParse("KR").success).toBe(false);
+  });
 
   test("company jurisdiction accepts US/GB/KR/JP/CN/IN/TW and descriptions cover KR and JP", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
@@ -562,6 +572,126 @@ describe("CompanyResolve", () => {
     } as never);
     expect(result.isError).toBeUndefined();
     expect(resultText(result)).toContain('Could not find a company matching "Zzyzx Widgets"');
+  });
+});
+
+describe("CompanyDocument US (SEC EDGAR)", () => {
+  const US_ACCESSION = "0000320193-25-000079";
+  const US_NODASH = "000032019325000079";
+
+  function usSubmissions(primaryDocument: string): unknown {
+    return {
+      cik: "320193",
+      name: "Apple Inc.",
+      filings: {
+        recent: {
+          accessionNumber: [US_ACCESSION],
+          filingDate: ["2025-10-31"],
+          reportDate: ["2025-09-27"],
+          form: ["10-K"],
+          primaryDocument: [primaryDocument],
+          primaryDocDescription: ["Form 10-K"],
+        },
+      },
+    };
+  }
+
+  function usManifest(names: string[]): unknown {
+    return {
+      directory: {
+        name: `/Archives/edgar/data/320193/${US_NODASH}`,
+        item: names.map((name) => ({ name, type: "text.gif", size: "1000", "last-modified": "2025-10-31 06:01:26" })),
+      },
+    };
+  }
+
+  test("metadata mode lists documents with the primary highlighted", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "submissions/CIK0000320193.json", body: usSubmissions("aapl-20250927.htm") },
+      { pattern: `${US_NODASH}/index.json`, body: usManifest([`${US_ACCESSION}-index.html`, "aapl-20250927.htm", "exhibit99.pdf"]) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "320193",
+      jurisdiction: "US",
+      transaction_id: US_ACCESSION,
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("SEC filing: 10-K 0000320193-25-000079");
+    expect(text).toContain("**aapl-20250927.htm**");
+    expect(text).toContain("exhibit99.pdf");
+    expect(text).toContain("2025-09-27");
+  });
+
+  test("xhtml mode returns the primary document's extracted text with the content warning", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "submissions/CIK0000320193.json", body: usSubmissions("aapl-20250927.htm") },
+      { pattern: `${US_NODASH}/index.json`, body: usManifest(["aapl-20250927.htm"]) },
+      { pattern: "aapl-20250927.htm", body: "<html><body><p>Net sales 391,035</p></body></html>" },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "320193",
+      jurisdiction: "US",
+      transaction_id: US_ACCESSION,
+      mode: "xhtml",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Net sales 391,035");
+    expect(text).toContain("filer-authored");
+  });
+
+  test("xhtml mode reports the image-only analog for a .txt-only submission", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "submissions/CIK0000320193.json", body: usSubmissions(`${US_ACCESSION}.txt`) },
+      { pattern: `${US_NODASH}/index.json`, body: usManifest([`${US_ACCESSION}.txt`]) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "320193",
+      jurisdiction: "US",
+      transaction_id: US_ACCESSION,
+      mode: "xhtml",
+    } as never);
+    expect(resultText(result)).toContain("predates EDGAR's inline");
+  });
+
+  test("pdf mode reports honestly when the filing has no PDF rendition", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "submissions/CIK0000320193.json", body: usSubmissions("aapl-20250927.htm") },
+      { pattern: `${US_NODASH}/index.json`, body: usManifest(["aapl-20250927.htm"]) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "320193",
+      jurisdiction: "US",
+      transaction_id: US_ACCESSION,
+      mode: "pdf",
+    } as never);
+    expect(resultText(result)).toContain("no PDF rendition");
+  });
+
+  test("without an accession it asks for the transaction_id", async () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "320193",
+      jurisdiction: "US",
+    } as never);
+    expect(resultText(result)).toContain("SEC accession number");
+  });
+
+  test("missing SEC configuration is reported without hitting the network", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: {} });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "320193",
+      jurisdiction: "US",
+      transaction_id: US_ACCESSION,
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("DISCLOSURES_USER_AGENT");
+    expect(fetchFn.requests).toHaveLength(0);
   });
 });
 
