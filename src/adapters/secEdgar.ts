@@ -9,6 +9,7 @@ import {
   asRecord,
   asString,
   asStringArray,
+  countPdfPages,
   isRecord,
   plainXmlText,
   xmlBlocks,
@@ -1237,13 +1238,6 @@ export async function getSecDocumentText(
   const decoded = new TextDecoder().decode(bytes);
   const text = /\.txt$/i.test(target) ? plainXmlText(decoded) : secHtmlToText(decoded);
   return { documentName: target, contentType, text, byteLength: bytes.byteLength, sourceUrl: url };
-}
-
-/** Best-effort PDF page count by scanning page objects. */
-function countPdfPages(bytes: Uint8Array): number | undefined {
-  const text = new TextDecoder("latin1").decode(bytes);
-  const matches = text.match(/\/Type\s*\/Page(?![a-zA-Z])/g);
-  return matches && matches.length > 0 ? matches.length : undefined;
 }
 
 /**
