@@ -1206,8 +1206,8 @@ async function fetchSecArchive(
 function secHtmlToText(html: string): string {
   const withoutBlocks = html
     .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ");
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ");
   return plainXmlText(withoutBlocks);
 }
 

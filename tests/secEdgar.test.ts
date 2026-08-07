@@ -685,9 +685,11 @@ describe("getSecFilingManifest", () => {
 
 describe("getSecDocumentText", () => {
   test("fetches the primary document and strips markup, comments, style, and script", async () => {
+    // Note the whitespace before `>` in the end tags — the HTML spec permits it,
+    // and the strip regex must handle it or script/style text leaks through.
     const html =
-      "<?xml version='1.0'?><!--XBRL comment--><html><head><style>.x{color:red}</style>" +
-      "<script>var a=1;</script></head><body><span>Net sales 391,035</span></body></html>";
+      "<?xml version='1.0'?><!--XBRL comment--><html><head><style>.x{color:red}</style >" +
+      "<script>var a=1;</script ></head><body><span>Net sales 391,035</span></body></html>";
     const manifest = await getSecFilingManifest("320193", ACCESSION, {
       fetchFn: routedFetch([
         {
