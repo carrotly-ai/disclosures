@@ -384,15 +384,25 @@ beforeEach(() => {
 });
 
 describe("createTools", () => {
-  test("returns exactly the seven tools in TOOL_NAMES order", () => {
+  test("returns exactly the tools in TOOL_NAMES order", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: ENV });
     expect(tools.map((tool) => tool.name)).toEqual([...TOOL_NAMES]);
-    expect(TOOL_NAMES).toHaveLength(7);
+    expect(TOOL_NAMES).toHaveLength(10);
   });
+
+  // OwnershipChain (GLEIF-global) and the Companies-House-specific tools
+  // (CompanyDocument, CompanyCharges, PersonAppointments) have no jurisdiction
+  // dispatch param; every other tool routes by jurisdiction.
+  const JURISDICTION_AGNOSTIC = new Set([
+    "OwnershipChain",
+    "CompanyDocument",
+    "CompanyCharges",
+    "PersonAppointments",
+  ]);
 
   test("company jurisdiction accepts US/GB/KR/JP/CN/IN/TW and descriptions cover KR and JP", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
-    for (const tool of tools.filter((candidate) => candidate.name !== "OwnershipChain")) {
+    for (const tool of tools.filter((candidate) => !JURISDICTION_AGNOSTIC.has(candidate.name))) {
       const jurisdiction = tool.inputSchema.jurisdiction;
       expect(jurisdiction?.safeParse("US").success).toBe(true);
       expect(jurisdiction?.safeParse("GB").success).toBe(true);
@@ -570,6 +580,19 @@ describe("explicit GB routing", () => {
           ],
         },
       },
+      {
+        // Enrichment fetches the top match's full profile (previous names etc.).
+        pattern: "/company/01234567",
+        body: {
+          company_number: "01234567",
+          company_name: "EXAMPLE LIMITED",
+          company_status: "active",
+          date_of_creation: "2010-01-01",
+          previous_company_names: [
+            { name: "OLD EXAMPLE LIMITED", effective_from: "2010-01-01", ceased_on: "2015-06-30" },
+          ],
+        },
+      },
     ]);
     const tools = createTools({ fetchFn, env: GB_ENV });
     const result = await toolByName(tools, "CompanyResolve").handler({
@@ -581,8 +604,12 @@ describe("explicit GB routing", () => {
     expect(text).toContain("Companies House");
     expect(text).toContain("CH 01234567");
     expect(text).toContain("Exact normalized legal-name match");
-    expect(fetchFn.requests).toHaveLength(1);
-    expect(fetchFn.requests[0]?.url).toContain("api.company-information.service.gov.uk");
+    // Enriched profile surfaces the previous name with its date range.
+    expect(text).toContain("OLD EXAMPLE LIMITED");
+    expect(text).toContain("2015-06-30");
+    for (const request of fetchFn.requests) {
+      expect(request.url).toContain("api.company-information.service.gov.uk");
+    }
   });
 
   test("an explicit GB number is never sent to SEC", async () => {
@@ -603,8 +630,10 @@ describe("explicit GB routing", () => {
       jurisdiction: "GB",
     } as never);
     expect(result.isError).toBeUndefined();
-    expect(fetchFn.requests).toHaveLength(1);
-    expect(fetchFn.requests[0]?.url).not.toContain("sec.gov");
+    for (const request of fetchFn.requests) {
+      expect(request.url).not.toContain("sec.gov");
+      expect(request.url).toContain("api.company-information.service.gov.uk");
+    }
   });
 
   test("CompanyFilings renders type/category/description and states it returns links, not text", async () => {

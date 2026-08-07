@@ -3,4 +3,5 @@ declare const process: {
   env: Record<string, string | undefined>;
   exitCode?: number;
   stderr: { write(message: string): void };
+  cwd(): string;
 };

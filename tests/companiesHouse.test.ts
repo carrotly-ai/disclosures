@@ -1,20 +1,33 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
+  COMPANIES_HOUSE_IMAGE_ONLY_MESSAGE,
   COMPANIES_HOUSE_PSC_THRESHOLD_REGIME,
   CompaniesHouseConfigurationError,
   CompaniesHouseRateLimitError,
   deriveCompaniesHousePercentageBand,
   formatIdentityVerification,
+  getCompaniesHouseCharge,
+  getCompaniesHouseCharges,
+  getCompaniesHouseDisqualifiedOfficer,
+  getCompaniesHouseDocumentMetadata,
+  getCompaniesHouseDocumentPdf,
+  getCompaniesHouseDocumentText,
+  getCompaniesHouseInsolvency,
+  getCompaniesHouseOfficerAppointments,
   getCompaniesHouseOfficers,
   getCompaniesHouseOwners,
+  getCompaniesHouseProfileDetail,
   getCompaniesHousePscStatements,
   getCompaniesHousePscs,
   getLatestCompaniesHouseReport,
   normalizeCompanyNumber,
   parseCompaniesHouseProfile,
   resolveCompaniesHouseCompany,
+  resolveCompaniesHouseDocumentReference,
   searchCompaniesHouseCompanies,
+  searchCompaniesHouseDisqualifiedOfficers,
   searchCompaniesHouseFilings,
+  searchCompaniesHouseOfficers,
 } from "../src/adapters/companiesHouse.js";
 import {
   companiesHouseRateLimiter,
@@ -677,5 +690,450 @@ describe("malformed Companies House responses", () => {
   test("a malformed direct profile fails with a readable message", () => {
     expect(() => parseCompaniesHouseProfile({ company_number: COMPANY_NUMBER }))
       .toThrow(/missing company number or company name/);
+  });
+});
+
+const DOCUMENT_API = "https://document-api.company-information.service.gov.uk";
+
+function documentMetadataBody(
+  documentId: string,
+  { xhtml = true, pdf = true, pages }: {
+    xhtml?: boolean;
+    pdf?: boolean;
+    pages?: number;
+  } = {},
+): Record<string, unknown> {
+  const resources: Record<string, unknown> = {};
+  if (pdf) resources["application/pdf"] = { content_length: 40_000 };
+  if (xhtml) resources["application/xhtml+xml"] = { content_length: 8_000 };
+  return {
+    company_number: COMPANY_NUMBER,
+    filename: `${documentId}.pdf`,
+    category: "accounts",
+    created_at: "2024-09-30T00:00:00Z",
+    ...(pages !== undefined ? { pages } : {}),
+    resources,
+    links: {
+      self: `/document/${documentId}`,
+      document: `/document/${documentId}/content`,
+    },
+  };
+}
+
+describe("Companies House filed documents", () => {
+  test("resolves a filing-history transaction to its document id and public link", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: `/company/${COMPANY_NUMBER}/filing-history/txn-1`,
+        body: {
+          transaction_id: "txn-1",
+          links: {
+            self: `/company/${COMPANY_NUMBER}/filing-history/txn-1`,
+            document_metadata: `${DOCUMENT_API}/document/doc-xyz`,
+          },
+        },
+      },
+    ]);
+    const resolved = await resolveCompaniesHouseDocumentReference(
+      COMPANY_NUMBER,
+      "txn-1",
+      options(fetchFn),
+    );
+    expect(resolved.documentId).toBe("doc-xyz");
+    expect(resolved.sourceUrl).toBe(
+      `https://find-and-update.company-information.service.gov.uk/company/${COMPANY_NUMBER}/filing-history/txn-1/document?format=pdf&download=0`,
+    );
+  });
+
+  test("a transaction with no filed image reports a readable error", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: `/company/${COMPANY_NUMBER}/filing-history/txn-2`,
+        body: { transaction_id: "txn-2", links: {} },
+      },
+    ]);
+    await expect(
+      resolveCompaniesHouseDocumentReference(COMPANY_NUMBER, "txn-2", options(fetchFn)),
+    ).rejects.toThrow(/no downloadable filed document/);
+  });
+
+  test("metadata lists every available rendition", async () => {
+    const fetchFn = routedFetch([
+      { pattern: `${DOCUMENT_API}/document/doc-1`, body: documentMetadataBody("doc-1", { pages: 12 }) },
+    ]);
+    const metadata = await getCompaniesHouseDocumentMetadata("doc-1", options(fetchFn));
+    expect(metadata.pages).toBe(12);
+    expect(metadata.resources.map((resource) => resource.contentType).sort()).toEqual([
+      "application/pdf",
+      "application/xhtml+xml",
+    ]);
+  });
+
+  test("xhtml mode extracts iXBRL plain text and strips markup", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "/document/doc-1/content", body: "<html><body><span>Net assets 1,234</span></body></html>" },
+      { pattern: "/document/doc-1", body: documentMetadataBody("doc-1") },
+    ]);
+    const metadata = await getCompaniesHouseDocumentMetadata("doc-1", options(fetchFn));
+    const text = await getCompaniesHouseDocumentText(metadata, options(fetchFn));
+    expect(text?.text).toContain("Net assets 1,234");
+    expect(text?.text).not.toContain("<span>");
+  });
+
+  test("image-only accounts return null text rather than fetching content", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "/document/doc-img", body: documentMetadataBody("doc-img", { xhtml: false }) },
+    ]);
+    const metadata = await getCompaniesHouseDocumentMetadata("doc-img", options(fetchFn));
+    expect(metadata.resources.some((r) => r.contentType === "application/xhtml+xml")).toBe(false);
+    const text = await getCompaniesHouseDocumentText(metadata, options(fetchFn));
+    expect(text).toBeNull();
+    // Only the metadata call was made — no content was downloaded.
+    expect(fetchFn.requests).toHaveLength(1);
+    // The tool-facing message names the image-only condition explicitly.
+    expect(COMPANIES_HOUSE_IMAGE_ONLY_MESSAGE).toContain("Image-only accounts");
+  });
+
+  test("pdf mode follows the S3 redirect, strips auth, and counts pages", async () => {
+    const s3Url = "https://s3.eu-west-2.amazonaws.com/chs-doc/doc-img.pdf?sig=xyz";
+    const pdfBytes = new TextEncoder().encode(
+      "%PDF-1.4\n/Type /Page\n/Type /Page\n/Type /Pages\n%%EOF",
+    );
+    const fetchFn = routedFetch([
+      { pattern: "amazonaws.com", body: pdfBytes },
+      {
+        pattern: "/document/doc-img/content",
+        body: "",
+        status: 302,
+        headers: { location: s3Url },
+      },
+      { pattern: "/document/doc-img", body: documentMetadataBody("doc-img", { xhtml: false }) },
+    ]);
+    const metadata = await getCompaniesHouseDocumentMetadata("doc-img", options(fetchFn));
+    const pdf = await getCompaniesHouseDocumentPdf(metadata, options(fetchFn));
+    expect(pdf.byteLength).toBe(pdfBytes.byteLength);
+    expect(pdf.bytes).toEqual(pdfBytes);
+    // No metadata `pages`, so the count comes from scanning /Type /Page objects
+    // (the two /Type /Page entries; /Type /Pages must not be miscounted).
+    expect(pdf.pageCount).toBe(2);
+    expect(pdf.suggestedFilename).toBe("doc-img.pdf");
+    // The S3 hop is the last request and must not carry Basic auth.
+    const s3Request = fetchFn.requests.find((r) => r.url === s3Url);
+    const s3Headers = s3Request?.init?.headers as Record<string, string>;
+    expect(
+      Object.keys(s3Headers ?? {}).some((key) => key.toLowerCase() === "authorization"),
+    ).toBe(false);
+  });
+});
+
+describe("Companies House registered charges", () => {
+  function chargesBody(): Record<string, unknown> {
+    return {
+      total_count: 2,
+      unfiltered_count: 2,
+      satisfied_count: 1,
+      part_satisfied_count: 0,
+      items: [
+        {
+          charge_id: "chg-outstanding",
+          charge_code: "012345670001",
+          status: "outstanding",
+          created_on: "2019-08-14",
+          delivered_on: "2019-08-20",
+          classification: { description: "A registered charge" },
+          persons_entitled: [{ name: "Capital Values Group Limited" }],
+          particulars: {
+            contains_fixed_charge: true,
+            contains_negative_pledge: true,
+          },
+          transactions: [
+            {
+              filing_type: "create-charge-with-deed",
+              delivered_on: "2019-08-20",
+              links: { filing: `/company/${COMPANY_NUMBER}/filing-history/tx-charge` },
+            },
+          ],
+        },
+        {
+          charge_id: "chg-satisfied",
+          status: "satisfied",
+          created_on: "2015-01-01",
+          satisfied_on: "2018-01-01",
+          persons_entitled: [{ name: "Old Bank plc" }],
+          particulars: { contains_floating_charge: true, floating_charge_covers_all: true },
+        },
+      ],
+    };
+  }
+
+  test("lists charges with page-1 counts, persons entitled, and particulars flags", async () => {
+    const fetchFn = routedFetch([
+      { pattern: `/company/${COMPANY_NUMBER}/charges`, body: chargesBody() },
+    ]);
+    const result = await getCompaniesHouseCharges(COMPANY_NUMBER, options(fetchFn));
+    expect(result.totalCount).toBe(2);
+    expect(result.satisfiedCount).toBe(1);
+    expect(result.charges).toHaveLength(2);
+    const outstanding = result.charges.find((c) => c.chargeId === "chg-outstanding");
+    expect(outstanding?.status).toBe("Outstanding");
+    expect(outstanding?.personsEntitled).toEqual(["Capital Values Group Limited"]);
+    expect(outstanding?.classification).toBe("A registered charge");
+    expect(outstanding?.particulars).toEqual([
+      "Fixed charge",
+      "Negative pledge",
+    ]);
+    expect(outstanding?.transactions[0]?.sourceUrl).toBe(
+      `https://find-and-update.company-information.service.gov.uk/company/${COMPANY_NUMBER}/filing-history/tx-charge`,
+    );
+    expect(outstanding?.sourceUrl).toBe(
+      `https://find-and-update.company-information.service.gov.uk/company/${COMPANY_NUMBER}/charges/chg-outstanding`,
+    );
+  });
+
+  test("status filter narrows results client-side", async () => {
+    const fetchFn = routedFetch([
+      { pattern: `/company/${COMPANY_NUMBER}/charges`, body: chargesBody() },
+    ]);
+    const result = await getCompaniesHouseCharges(
+      COMPANY_NUMBER,
+      options(fetchFn),
+      "outstanding",
+    );
+    expect(result.charges.map((c) => c.chargeId)).toEqual(["chg-outstanding"]);
+    // The counts still reflect the full unfiltered register.
+    expect(result.totalCount).toBe(2);
+  });
+
+  test("a single charge is fetched by id", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: `/company/${COMPANY_NUMBER}/charges/chg-outstanding`,
+        body: {
+          charge_id: "chg-outstanding",
+          status: "outstanding",
+          persons_entitled: [{ name: "Capital Values Group Limited" }],
+          particulars: { contains_fixed_charge: true },
+        },
+      },
+    ]);
+    const charge = await getCompaniesHouseCharge(
+      COMPANY_NUMBER,
+      "chg-outstanding",
+      options(fetchFn),
+    );
+    expect(charge?.personsEntitled).toEqual(["Capital Values Group Limited"]);
+    expect(charge?.particulars).toEqual(["Fixed charge"]);
+  });
+
+  test("a missing charge register returns an empty list", async () => {
+    const fetchFn = routedFetch([
+      { pattern: `/company/${COMPANY_NUMBER}/charges`, body: { error: "not found" }, status: 404 },
+    ]);
+    const result = await getCompaniesHouseCharges(COMPANY_NUMBER, options(fetchFn));
+    expect(result.charges).toEqual([]);
+  });
+});
+
+describe("Companies House person appointments and disqualifications", () => {
+  test("officer search extracts the officer id and links to the safe public page", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/search/officers",
+        body: {
+          items_per_page: 35,
+          start_index: 0,
+          total_results: 2,
+          items: [
+            {
+              title: "Luke Alexander NOLAN",
+              appointment_count: 4,
+              date_of_birth: { month: 6, year: 1985 },
+              address_snippet: "London",
+              links: { self: "/officers/AbC123/appointments" },
+            },
+            {
+              title: "Luke NOLAN",
+              appointment_count: 1,
+              links: { self: "/officers/XyZ789/appointments" },
+            },
+          ],
+        },
+      },
+    ]);
+    const results = await searchCompaniesHouseOfficers("Luke Nolan", options(fetchFn));
+    expect(results.map((r) => r.officerId)).toEqual(["AbC123", "XyZ789"]);
+    expect(results[0]?.dateOfBirth).toBe("1985-06");
+    expect(results[0]?.sourceUrl).toBe(
+      "https://find-and-update.company-information.service.gov.uk/officers/AbC123/appointments",
+    );
+    expect(fetchFn.requests[0]?.url).toContain("q=Luke+Nolan");
+  });
+
+  test("appointments list normalizes each company appointment", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/officers/AbC123/appointments",
+        body: {
+          name: "Luke Alexander NOLAN",
+          date_of_birth: { month: 6, year: 1985 },
+          is_corporate_officer: false,
+          total_results: 2,
+          items: [
+            {
+              company_name: "STUDENT.COM (UK) LIMITED",
+              company_number: "09114114",
+              company_status: "active",
+              officer_role: "director",
+              appointed_on: "2014-07-08",
+            },
+            {
+              company_name: "OVERSEAS STUDENT LIVING LLP",
+              company_number: "OC401234",
+              officer_role: "member",
+              appointed_on: "2013-01-01",
+              resigned_on: "2018-05-05",
+            },
+          ],
+        },
+      },
+    ]);
+    const list = await getCompaniesHouseOfficerAppointments("AbC123", options(fetchFn));
+    expect(list.name).toBe("Luke Alexander NOLAN");
+    expect(list.appointments).toHaveLength(2);
+    expect(list.appointments[0]).toMatchObject({
+      companyName: "STUDENT.COM (UK) LIMITED",
+      companyNumber: "09114114",
+      officerRole: "Director",
+      sourceUrl:
+        "https://find-and-update.company-information.service.gov.uk/company/09114114",
+    });
+    expect(list.appointments[1]?.companyNumber).toBe("OC401234");
+  });
+
+  test("disqualification search links only to the safe public search page", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/search/disqualified-officers",
+        body: {
+          items: [
+            {
+              title: "Mark SMITH",
+              date_of_birth: { month: 3, year: 1970 },
+              links: { self: "/disqualified-officers/natural/Dq123" },
+            },
+          ],
+        },
+      },
+    ]);
+    const results = await searchCompaniesHouseDisqualifiedOfficers("Mark Smith", options(fetchFn));
+    expect(results[0]?.officerId).toBe("Dq123");
+    expect(results[0]?.officerType).toBe("natural");
+    // Never a fabricated deep link — always the safe public search page, keyed
+    // by the record's own name.
+    expect(results[0]?.sourceUrl).toBe(
+      "https://find-and-update.company-information.service.gov.uk/search/disqualified-officers?q=Mark%20SMITH",
+    );
+  });
+
+  test("a disqualified officer record surfaces reasons and dates", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/disqualified-officers/natural/Dq123",
+        body: {
+          forename: "Mark",
+          surname: "Smith",
+          date_of_birth: "1970-03-01",
+          disqualifications: [
+            {
+              disqualified_from: "2019-01-01",
+              disqualified_until: "2029-01-01",
+              reason: { description_identifier: "order-or-undertaking-and-reporting-provisions" },
+              company_names: ["FAILED VENTURES LTD"],
+            },
+          ],
+        },
+      },
+    ]);
+    const officer = await getCompaniesHouseDisqualifiedOfficer(
+      "Dq123",
+      "natural",
+      options(fetchFn),
+    );
+    expect(officer?.name).toBe("Mark Smith");
+    expect(officer?.disqualifications[0]?.disqualifiedUntil).toBe("2029-01-01");
+    expect(officer?.disqualifications[0]?.reason).toContain("Order or undertaking");
+    expect(officer?.sourceUrl).toBe(
+      "https://find-and-update.company-information.service.gov.uk/officers/Dq123/disqualified",
+    );
+  });
+});
+
+describe("Companies House enriched profile and insolvency", () => {
+  test("profile detail surfaces previous names with date ranges and flags", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: `/company/${COMPANY_NUMBER}`,
+        body: {
+          company_number: COMPANY_NUMBER,
+          company_name: "STUDENT.COM (UK) LIMITED",
+          company_status: "active",
+          type: "ltd",
+          date_of_creation: "2014-07-08",
+          has_charges: true,
+          has_insolvency_history: false,
+          sic_codes: ["63990"],
+          registered_office_address: { address_line_1: "1 Example St", locality: "London", postal_code: "EC1A 1AA" },
+          previous_company_names: [
+            { name: "OVERSEAS STUDENT LIVING LIMITED", effective_from: "2014-07-08", ceased_on: "2015-06-30" },
+          ],
+          accounts: {
+            next: { due_on: "2025-06-30", period_end_on: "2024-09-30" },
+            last_accounts: { made_up_to: "2023-09-30" },
+            accounting_reference_date: { day: "30", month: "09" },
+          },
+          confirmation_statement: { next_due: "2025-07-22", last_made_up_to: "2024-07-08" },
+        },
+      },
+    ]);
+    const detail = await getCompaniesHouseProfileDetail(COMPANY_NUMBER, options(fetchFn));
+    expect(detail?.legalName).toBe("STUDENT.COM (UK) LIMITED");
+    expect(detail?.hasCharges).toBe(true);
+    expect(detail?.sicCodes).toEqual(["63990"]);
+    expect(detail?.previousNames[0]).toEqual({
+      name: "OVERSEAS STUDENT LIVING LIMITED",
+      effectiveFrom: "2014-07-08",
+      ceasedOn: "2015-06-30",
+    });
+    expect(detail?.registeredOfficeAddress).toBe("1 Example St, London, EC1A 1AA");
+    expect(detail?.accounts?.accountingReferenceDate).toBe("30/09");
+    expect(detail?.confirmationStatement?.nextDue).toBe("2025-07-22");
+  });
+
+  test("insolvency cases are normalized, and a 404 register is absence not error", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: `/company/${COMPANY_NUMBER}/insolvency`,
+        body: {
+          cases: [
+            {
+              type: "creditors-voluntary-liquidation",
+              number: "1",
+              dates: [{ type: "wound-up-on", date: "2018-01-01" }],
+              practitioners: [{ name: "Jane Liquidator", role: "practitioner" }],
+            },
+          ],
+        },
+      },
+    ]);
+    const insolvency = await getCompaniesHouseInsolvency(COMPANY_NUMBER, options(fetchFn));
+    expect(insolvency?.cases).toHaveLength(1);
+    expect(insolvency?.cases[0]?.type).toBe("Creditors voluntary liquidation");
+    expect(insolvency?.cases[0]?.dates).toEqual(["Wound up on: 2018-01-01"]);
+    expect(insolvency?.cases[0]?.practitioners[0]?.name).toBe("Jane Liquidator");
+
+    const missing = routedFetch([
+      { pattern: `/company/${COMPANY_NUMBER}/insolvency`, body: { error: "not found" }, status: 404 },
+    ]);
+    expect(await getCompaniesHouseInsolvency(COMPANY_NUMBER, options(missing))).toBeNull();
   });
 });

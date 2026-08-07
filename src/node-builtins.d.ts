@@ -34,6 +34,10 @@ declare module "node:fs/promises" {
     data: string,
     encoding: "utf8",
   ): Promise<void>;
+  export function writeFile(
+    path: string,
+    data: Uint8Array,
+  ): Promise<void>;
   export function mkdir(
     path: string,
     options?: { recursive?: boolean },
@@ -46,4 +50,9 @@ declare module "node:fs/promises" {
 
 declare module "node:path" {
   export function join(...segments: string[]): string;
+  export function isAbsolute(path: string): boolean;
+}
+
+declare module "node:os" {
+  export function tmpdir(): string;
 }
