@@ -138,3 +138,14 @@ export function xmlBoolean(xml: string, ...tags: string[]): boolean {
   const value = xmlValue(xml, ...tags)?.toLowerCase();
   return value === "1" || value === "true" || value === "yes" || value === "y";
 }
+
+/**
+ * Best-effort PDF page count from the raw bytes — counts `/Type /Page` objects
+ * in the (latin1-decoded) file. Returns undefined when no page objects are found
+ * (e.g. object streams / linearized PDFs where the marker is compressed).
+ */
+export function countPdfPages(bytes: Uint8Array): number | undefined {
+  const text = new TextDecoder("latin1").decode(bytes);
+  const matches = text.match(/\/Type\s*\/Page(?![a-zA-Z])/g);
+  return matches && matches.length > 0 ? matches.length : undefined;
+}

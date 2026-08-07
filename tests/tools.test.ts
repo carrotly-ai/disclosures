@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { TOOL_NAMES, createTools } from "../src/tools/index.js";
 import type { ToolDefinition } from "../src/core/toolDefs.js";
 import { resetSecTickerCache } from "../src/adapters/secEdgar.js";
@@ -402,12 +405,14 @@ describe("createTools", () => {
     "PersonAppointments",
   ]);
 
-  test("CompanyDocument jurisdiction is restricted to US and GB", () => {
+  test("CompanyDocument jurisdiction is restricted to GB/US/JP/KR", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     const jurisdiction = toolByName(tools, "CompanyDocument").inputSchema.jurisdiction;
     expect(jurisdiction?.safeParse("US").success).toBe(true);
     expect(jurisdiction?.safeParse("GB").success).toBe(true);
-    expect(jurisdiction?.safeParse("KR").success).toBe(false);
+    expect(jurisdiction?.safeParse("JP").success).toBe(true);
+    expect(jurisdiction?.safeParse("KR").success).toBe(true);
+    expect(jurisdiction?.safeParse("CN").success).toBe(false);
   });
 
   test("PersonAppointments jurisdiction is restricted to US and GB", () => {
@@ -699,6 +704,204 @@ describe("CompanyDocument US (SEC EDGAR)", () => {
     } as never);
     expect(result.isError).toBe(true);
     expect(resultText(result)).toContain("DISCLOSURES_USER_AGENT");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("CompanyDocument JP (EDINET)", () => {
+  const DOC_ID = "S100YRS6";
+  const pdfBytes = latin1Bytes("%PDF-1.5\n/Type /Page\n/Type /Page\ntrailer\n%%EOF");
+  const archiveBytes = makeStoredZipMulti([
+    { name: "XBRL/PublicDoc/0000000_header_jpcrp.htm", content: "<html>header</html>" },
+    { name: "XBRL/PublicDoc/jpcrp030000-asr.xml", content: "<xbrl/>" },
+    { name: "XBRL/AuditDoc/jpaud-aai.xml", content: "<xbrl/>" },
+  ]);
+
+  test("metadata mode lists the XBRL archive members (type=1)", async () => {
+    const fetchFn = routedFetch([{ pattern: "type=1", body: archiveBytes }]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "7203",
+      jurisdiction: "JP",
+      transaction_id: DOC_ID,
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain(`EDINET document: ${DOC_ID}`);
+    expect(text).toContain("XBRL/PublicDoc/jpcrp030000-asr.xml");
+    expect(text).toContain("XBRL archive members");
+  });
+
+  test("pdf mode downloads the PDF and reports the page count", async () => {
+    const fetchFn = routedFetch([{ pattern: "type=2", body: pdfBytes }]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const outputPath = join(tmpdir(), `disclosures-jp-${DOC_ID}.pdf`);
+    try {
+      const result = await toolByName(tools, "CompanyDocument").handler({
+        company: "7203",
+        jurisdiction: "JP",
+        transaction_id: DOC_ID,
+        mode: "pdf",
+        output_path: outputPath,
+      } as never);
+      expect(result.isError).toBeUndefined();
+      const text = resultText(result);
+      expect(text).toContain("Downloaded PDF");
+      expect(text).toContain("| Pages | 2 |");
+      expect(existsSync(outputPath)).toBe(true);
+    } finally {
+      rmSync(outputPath, { force: true });
+    }
+  });
+
+  test("xhtml mode reports EDINET's XBRL-archive analog without a network call", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "7203",
+      jurisdiction: "JP",
+      transaction_id: DOC_ID,
+      mode: "xhtml",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("bundled XBRL archive");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("a JSON error envelope for a bad docID is surfaced as a readable error", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "type=2", body: { metadata: { status: "404", message: "No such document." } } },
+    ]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "7203",
+      jurisdiction: "JP",
+      transaction_id: "S100XXXX",
+      mode: "pdf",
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("No such document.");
+  });
+
+  test("without a docID it asks for the transaction_id", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "7203",
+      jurisdiction: "JP",
+    } as never);
+    expect(resultText(result)).toContain("EDINET docID");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("missing EDINET configuration is reported without hitting the network", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "7203",
+      jurisdiction: "JP",
+      transaction_id: DOC_ID,
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("EDINET_API_KEY");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("CompanyDocument KR (OpenDART)", () => {
+  const RCEPT = "20240312000736";
+  const docArchive = makeStoredZipMulti([
+    {
+      name: `${RCEPT}.xml`,
+      content:
+        "<DOCUMENT><DOCUMENT-NAME>사업보고서</DOCUMENT-NAME><BODY><P>매출액 100</P></BODY></DOCUMENT>",
+    },
+    { name: `${RCEPT}_00001.xml`, content: "<TABLE><TR><TD>주석</TD></TR></TABLE>" },
+  ]);
+
+  test("metadata mode lists the DART documents with the main document highlighted", async () => {
+    const fetchFn = routedFetch([{ pattern: "document.xml", body: docArchive }]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+      transaction_id: RCEPT,
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain(`DART document: ${RCEPT}`);
+    expect(text).toContain(`**${RCEPT}.xml**`);
+    expect(text).toContain(`${RCEPT}_00001.xml`);
+  });
+
+  test("xhtml mode extracts the main document text with the content warning", async () => {
+    const fetchFn = routedFetch([{ pattern: "document.xml", body: docArchive }]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+      transaction_id: RCEPT,
+      mode: "xhtml",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("매출액 100");
+    expect(text).toContain("filer-authored");
+  });
+
+  test("pdf mode reports honestly that DART serves XML, not PDF, without a network call", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+      transaction_id: RCEPT,
+      mode: "pdf",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("does not serve a PDF");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("a status envelope (file not yet available) is surfaced as a readable error", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "document.xml",
+        body: "<result><status>014</status><message>파일이 존재하지 않습니다.</message></result>",
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+      transaction_id: RCEPT,
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("파일이 존재하지 않습니다.");
+  });
+
+  test("a malformed receipt number is rejected before any network call", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+      transaction_id: "not-a-receipt",
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("14-digit");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("missing OpenDART configuration is reported without hitting the network", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+      transaction_id: RCEPT,
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("OPENDART_API_KEY");
     expect(fetchFn.requests).toHaveLength(0);
   });
 });

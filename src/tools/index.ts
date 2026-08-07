@@ -68,18 +68,29 @@ import type {
 } from "../adapters/companiesHouse.js";
 import {
   getLatestOpenDartReport,
+  getOpenDartDocument,
   getOpenDartFinancials,
   getOpenDartInsiders,
   getOpenDartOwners,
+  hasOpenDartConfiguration,
   OPEN_DART_5_PERCENT_THRESHOLD_REGIME,
   OPEN_DART_ACCOUNT_CONCEPTS,
+  OPEN_DART_DOCUMENT_CONTENT_WARNING,
+  OPEN_DART_DOCUMENT_PDF_MESSAGE,
+  OPEN_DART_NO_CONFIG_MESSAGE,
   searchOpenDartCompanies,
   searchOpenDartFilings,
 } from "../adapters/openDart.js";
 import {
   EDINET_5_PERCENT_THRESHOLD_REGIME,
+  EDINET_DOCUMENT_CONTENT_WARNING,
+  EDINET_DOCUMENT_XHTML_MESSAGE,
+  EDINET_NO_CONFIG_MESSAGE,
+  getEdinetDocumentArchive,
+  getEdinetDocumentPdf,
   getEdinetLargeHolders,
   getLatestEdinetReport,
+  hasEdinetConfiguration,
   searchEdinetCompanies,
   searchEdinetFilings,
 } from "../adapters/edinet.js";
@@ -2069,36 +2080,198 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  async function companyDocumentJp(
+    company: string,
+    docId: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!hasEdinetConfiguration(options)) {
+      return failureResult(company, new Error(EDINET_NO_CONFIG_MESSAGE));
+    }
+    if (!docId) {
+      return textResult(
+        "Provide a transaction_id (the EDINET docID, from CompanyFilings) to " +
+          "fetch a JP filing's document.",
+      );
+    }
+    try {
+      if (mode === "pdf") {
+        const pdf = await getEdinetDocumentPdf(docId, options);
+        const target = outputPath
+          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
+          : join(tmpdir(), pdf.suggestedFilename);
+        await writeFile(target, pdf.bytes);
+        return textResult(joinSections(
+          `# EDINET document: ${pdf.docId}`,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["docID", pdf.docId],
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
+              ["Filing", link("view", pdf.sourceUrl)],
+            ],
+          ),
+          `_${EDINET_DOCUMENT_CONTENT_WARNING} The file was written to disk; its bytes are not inlined here._`,
+        ));
+      }
+
+      if (mode === "xhtml") {
+        return textResult(joinSections(
+          `# EDINET document: ${docId}`,
+          `_${EDINET_DOCUMENT_XHTML_MESSAGE}_`,
+        ));
+      }
+
+      const archive = await getEdinetDocumentArchive(docId, options);
+      const memberTable = archive.members.length
+        ? markdownTable(
+            ["Member", "Size (bytes)"],
+            archive.members.map((m) => [m.name, String(m.byteLength)]),
+          )
+        : "_The XBRL archive is empty._";
+      return textResult(joinSections(
+        `# EDINET document: ${archive.docId}`,
+        markdownTable(
+          ["Field", "Value"],
+          [
+            ["docID", archive.docId],
+            ["Renditions", "PDF (mode=\"pdf\"), XBRL archive (below)"],
+            ["Archive bytes", String(archive.byteLength)],
+            ["Filing", link("view", archive.sourceUrl)],
+          ],
+        ),
+        "## XBRL archive members (type=1)",
+        memberTable,
+        "_Use mode=\"pdf\" to download the human-readable PDF. " +
+          EDINET_DOCUMENT_CONTENT_WARNING + "_",
+      ));
+    } catch (error) {
+      return failureResult(docId, error);
+    }
+  }
+
+  async function companyDocumentKr(
+    company: string,
+    rceptNo: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!hasOpenDartConfiguration(options)) {
+      return failureResult(company, new Error(OPEN_DART_NO_CONFIG_MESSAGE));
+    }
+    if (!rceptNo) {
+      return textResult(
+        "Provide a transaction_id (the OpenDART receipt number, rcept_no, from " +
+          "CompanyFilings) to fetch a KR filing's document.",
+      );
+    }
+    if (mode === "pdf") {
+      return textResult(joinSections(
+        `# DART document: ${rceptNo}`,
+        `_${OPEN_DART_DOCUMENT_PDF_MESSAGE}_`,
+        markdownTable(
+          ["Field", "Value"],
+          [["Viewer", link("view", `https://dart.fss.or.kr/dsaf001/main.do?rcpNo=${rceptNo}`)]],
+        ),
+      ));
+    }
+    try {
+      const document = await getOpenDartDocument(rceptNo, options);
+      const memberTable = document.members.length
+        ? markdownTable(
+            ["Member", "Size (bytes)"],
+            document.members.map((m) => [
+              m.name === document.mainName ? `**${m.name}**` : m.name,
+              String(m.byteLength),
+            ]),
+          )
+        : "_The document archive is empty._";
+      const metaSection = joinSections(
+        `# DART document: ${document.rceptNo}`,
+        markdownTable(
+          ["Field", "Value"],
+          [
+            ["Receipt no.", document.rceptNo],
+            ["Main document", document.mainName || "—"],
+            ["Archive bytes", String(document.byteLength)],
+            ["Filing", link("view", document.sourceUrl)],
+          ],
+        ),
+        "## Documents in this filing",
+        memberTable,
+      );
+
+      if (mode === "xhtml") {
+        const MAX_TEXT = 50_000;
+        const truncated = document.mainText.length > MAX_TEXT;
+        const body = truncated ? document.mainText.slice(0, MAX_TEXT) : document.mainText;
+        if (!body) {
+          return textResult(joinSections(
+            metaSection,
+            "_The main document had no extractable text._",
+          ));
+        }
+        return textResult(joinSections(
+          metaSection,
+          `## Extracted text (${document.mainName})`,
+          `_${OPEN_DART_DOCUMENT_CONTENT_WARNING}_`,
+          truncated
+            ? `_Text truncated to ${MAX_TEXT} characters (of ${document.mainText.length})._`
+            : "",
+          "```\n" + body + "\n```",
+        ));
+      }
+
+      return textResult(joinSections(
+        metaSection,
+        "_Use mode=\"xhtml\" for the main document's extracted text. " +
+          OPEN_DART_DOCUMENT_CONTENT_WARNING + "_",
+      ));
+    } catch (error) {
+      return failureResult(rceptNo, error);
+    }
+  }
+
   const companyDocument = defineTool(
     "CompanyDocument",
     "Fetch a document from a company's filing. jurisdiction \"GB\" (default) " +
       "reads UK Companies House by transaction id (from CompanyFilings) or " +
-      "document id; jurisdiction \"US\" reads SEC EDGAR by accession number " +
-      "(the transaction_id, from CompanyFilings). Mode \"metadata\" (default) " +
+      "document id; \"US\" reads SEC EDGAR by accession number; \"JP\" reads " +
+      "EDINET by docID; \"KR\" reads OpenDART by receipt number (rcept_no) — all " +
+      "as the transaction_id from CompanyFilings. Mode \"metadata\" (default) " +
       "returns the filing's metadata and the documents/renditions available with " +
       "their sizes. Mode \"xhtml\" returns the primary machine-readable document's " +
       "extracted plain text (GB iXBRL/XHTML rendition; US inline HTML/XBRL primary " +
-      "document); filings with no machine-readable document (GB image-only/scanned " +
-      "accounts, pre-2001 US .txt-only submissions) are reported honestly. Mode " +
+      "document; KR main DART XML); filings with no machine-readable document (GB " +
+      "image-only/scanned accounts, pre-2001 US .txt-only submissions, JP — whose " +
+      "machine-readable form is a bundled XBRL archive) are reported honestly. Mode " +
       "\"pdf\" downloads a PDF and saves it to a local file, returning the path, " +
-      "byte size, and page count — it never inlines document bytes; US filings " +
-      "rarely have a PDF rendition. Downloads are capped at 25 MB.",
+      "byte size, and page count — it never inlines document bytes (JP always has " +
+      "a PDF; US rarely does; KR has none — it serves DART XML). Downloads are " +
+      "capped at 25 MB.",
     {
       company: z
         .string()
         .min(1)
-        .describe("Company name/number (GB) or ticker/CIK (US)"),
+        .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR)"),
       jurisdiction: z
-        .enum(["US", "GB"])
+        .enum(["US", "GB", "JP", "KR"])
         .optional()
-        .describe("\"GB\" (Companies House, default) or \"US\" (SEC EDGAR)"),
+        .describe(
+          "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
+            "or \"KR\" (OpenDART)",
+        ),
       transaction_id: z
         .string()
         .min(1)
         .optional()
         .describe(
-          "GB Companies House filing-history transaction id, or US SEC accession " +
-            "number (both come from CompanyFilings)",
+          "GB Companies House filing-history transaction id, US SEC accession " +
+            "number, JP EDINET docID, or KR OpenDART receipt number (rcept_no) — " +
+            "all from CompanyFilings",
         ),
       document_id: z
         .string()
@@ -2106,7 +2279,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .optional()
         .describe(
           "GB Companies House document id (alternative to transaction_id), or US " +
-            "document filename within the filing (defaults to the primary document)",
+            "document filename within the filing (defaults to the primary document); " +
+            "unused for JP/KR",
         ),
       mode: z
         .enum(["metadata", "xhtml", "pdf"])
@@ -2121,6 +2295,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     async ({ company, jurisdiction, transaction_id, document_id, mode, output_path }) => {
       if (jurisdiction === "US") {
         return companyDocumentUs(company, transaction_id, document_id, mode, output_path);
+      }
+      if (jurisdiction === "JP") {
+        return companyDocumentJp(company, transaction_id, mode, output_path);
+      }
+      if (jurisdiction === "KR") {
+        return companyDocumentKr(company, transaction_id, mode);
       }
       try {
         let documentId = document_id;

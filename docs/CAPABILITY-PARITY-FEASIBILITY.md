@@ -171,14 +171,14 @@ unfinished.
 
 ## Recommendation and sequencing
 
-| Priority | Work | Why |
-|---|---|---|
-| 1 | **US `CompanyDocument` support** (EDGAR `index.json` manifest + primary-document fetch/save) | Biggest register, simplest mechanics (no auth, no redirects), chains off accessions `CompanyFilings` already returns |
-| 2 | **US `PersonAppointments` support** (person Atom search, own-disp role table, submissions JSON, SALI safe link) | Live-verified end-to-end; reuses existing Atom parsing; SpaceX-style private-issuer visibility is unique value |
-| 3 | **JP + KR `CompanyDocument` support** (EDINET type=1/2, DART document.xml) | Both live-verified, both key-gated paths already wired, both reuse the ZIP/PDF machinery |
-| 4 | **DE `PersonAppointments` (dealings-by-person)** | Verified, small, rides existing displaytag parser |
-| — | CN/IN document modes | Thin (CN) or fragile (IN); fold in opportunistically |
-| ✋ | `CompanyCharges` beyond GB | Not feasible on free open data anywhere; document as permanently GB-only |
+| Priority | Work | Why | Status |
+|---|---|---|---|
+| 1 | **US `CompanyDocument` support** (EDGAR `index.json` manifest + primary-document fetch/save) | Biggest register, simplest mechanics (no auth, no redirects), chains off accessions `CompanyFilings` already returns | ✅ Delivered |
+| 2 | **US `PersonAppointments` support** (person Atom search, own-disp role table, submissions JSON, SALI safe link) | Live-verified end-to-end; reuses existing Atom parsing; SpaceX-style private-issuer visibility is unique value | ✅ Delivered |
+| 3 | **JP + KR `CompanyDocument` support** (EDINET type=1/2, DART document.xml) | Both live-verified, both key-gated paths already wired, both reuse the ZIP/PDF machinery | ✅ Delivered |
+| 4 | **DE `PersonAppointments` (dealings-by-person)** | Verified, small, rides existing displaytag parser | Pending |
+| — | CN/IN document modes | Thin (CN) or fragile (IN); fold in opportunistically | Pending |
+| ✋ | `CompanyCharges` beyond GB | Not feasible on free open data anywhere; document as permanently GB-only | By design |
 
 If the extensions ship, the three tools stop being purely Companies-House-specific: the
 natural design is a `jurisdiction` parameter defaulting to `GB` on `CompanyDocument` and
