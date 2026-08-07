@@ -81,6 +81,15 @@ import {
   searchCvmFilings,
 } from "../adapters/cvmOpenData.js";
 import {
+  BAFIN_INSIDERS_CAVEAT,
+  BAFIN_MAR_REGIME,
+  BAFIN_OWNERS_CAVEAT,
+  BAFIN_WPHG_THRESHOLD_REGIME,
+  getBafinDirectorsDealings,
+  getBafinOwners,
+  searchBafinCompanies,
+} from "../adapters/bafin.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -295,6 +304,23 @@ const CVM_OWNER_UNSUPPORTED =
   "into a normalized ownership feed. Use CompanyFilings with jurisdiction \"BR\" " +
   "to reach the underlying documents.";
 
+const BAFIN_FILINGS_UNSUPPORTED =
+  "CompanyFilings is unsupported for jurisdiction \"DE\". This release reads only " +
+  "BaFin's two structured HTML databases — AnteileInfo (major-holding voting " +
+  "rights, via CompanyOwners) and DealingsInfo (directors' dealings, via " +
+  "CompanyInsiders). German prospectuses, ad-hoc disclosures and annual reports " +
+  "live in the Unternehmensregister and the issuers' own IR pages, which this " +
+  "release does not index. For a German issuer's annual financials use " +
+  "CompanyFinancials with jurisdiction \"EU\" (ESEF), where filings.xbrl.org " +
+  "covers it.";
+
+const BAFIN_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"DE\". BaFin does not " +
+  "publish normalized financial statements; German listed issuers file annual " +
+  "ESEF reports that are indexed pan-European by filings.xbrl.org. Use " +
+  "CompanyFinancials with jurisdiction \"EU\" for a German issuer's annual " +
+  "financial facts.";
+
 function describeParent(parent: OwnershipParent | undefined): string {
   if (!parent) return "No parent information reported";
   if (parent.entity) {
@@ -415,6 +441,20 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           }
           return textResult(joinSections(
             `# Company resolution (CVM): ${company}`,
+            entityRows(results.slice(0, 10)),
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "DE") {
+        try {
+          const results = await searchBafinCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, "Try a BaFin issuer id (Emittenten-BaFin-Id, e.g. 40001244), an ISIN (e.g. DE0007164600), or a company name.");
+          }
+          return textResult(joinSections(
+            `# Company resolution (BaFin): ${company}`,
             entityRows(results.slice(0, 10)),
           ));
         } catch (error) {
@@ -736,6 +776,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `_${CVM_FILINGS_CAVEAT}_`,
           ));
         }
+        if (jurisdiction === "DE") {
+          return textResult(BAFIN_FILINGS_UNSUPPORTED);
+        }
         if (jurisdiction === "KR") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
             const report = await getLatestOpenDartReport(
@@ -921,7 +964,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "has no Section 16-style insider-dealing feed; officer data lives inside " +
       "the annual securities report (有価証券報告書). Explicit TW returns the " +
       "TWSE monthly director/supervisor shareholding-balance register " +
-      "(董監事持股餘額): current holdings, holdings at election, and pledged shares.",
+      "(董監事持股餘額): current holdings, holdings at election, and pledged shares. " +
+      "Explicit DE returns BaFin directors'-dealings notifications (Art.19 MAR): " +
+      "each managers'-transaction filing with board role, instrument, transaction " +
+      "type, and trade date.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("CompanyInsiders");
@@ -950,6 +996,33 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         return textResult(CVM_INSIDER_UNSUPPORTED);
       }
       try {
+        if (jurisdiction === "DE") {
+          const dealings = await getBafinDirectorsDealings(company, options);
+          if (!dealings.length) {
+            return textResult(joinSections(
+              `No BaFin directors'-dealings notifications found for "${company}".`,
+              `_${BAFIN_INSIDERS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Directors' dealings (BaFin): ${company}`,
+            markdownTable(
+              ["Person", "Board role", "Instrument", "Transaction", "Trade date", "Published"],
+              dealings.map((insider) => [
+                insider.sourceUrl && insider.sourceUrl.startsWith("http")
+                  ? link(insider.name, insider.sourceUrl)
+                  : insider.name,
+                insider.roles.join(", ") || "—",
+                insider.occupation,
+                insider.form,
+                insider.notifiedDate,
+                insider.filedDate,
+              ]),
+            ),
+            `_Regime: ${BAFIN_MAR_REGIME}._`,
+            `_${BAFIN_INSIDERS_CAVEAT}_`,
+          ));
+        }
         if (jurisdiction === "TW") {
           const holdings = await getTwseDirectorHoldings(company, options);
           if (!holdings.length) {
@@ -1089,7 +1162,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "percentage; start_date/end_date bound the (default ~1 year) scan window " +
       "and are ignored by other jurisdictions. Explicit TW returns the TWSE " +
       "list of shareholders holding more than 10% (持股逾 10% 大股東); a company " +
-      "with no such holder returns no rows.",
+      "with no such holder returns no rows. Explicit DE returns BaFin major-" +
+      "holding voting-rights notifications (Stimmrechtsmitteilungen, §§33 ff. " +
+      "WpHG) with the disclosed percentage per WpHG limb (§§33/34, §38, §39).",
     {
       ...companyInput,
       start_date: z
@@ -1132,6 +1207,35 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         ));
       }
       try {
+        if (jurisdiction === "DE") {
+          const owners = await getBafinOwners(company, options);
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No BaFin major-holding voting-rights notifications (§§33 ff. WpHG) ` +
+                `found for "${company}".`,
+              `_Threshold regime: ${BAFIN_WPHG_THRESHOLD_REGIME}._`,
+              `_${BAFIN_OWNERS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Major holdings (§§33 ff. WpHG, BaFin): ${company}`,
+            markdownTable(
+              ["Holder", "Domicile", "§§33/34 %", "§38/§39 breakdown", "Published", "Link"],
+              owners.map((owner) => [
+                owner.holderName,
+                owner.holderType,
+                owner.pct !== undefined ? `${owner.pct}%` : undefined,
+                owner.naturesOfControl?.join("; "),
+                owner.notifiedDate ?? owner.filedDate,
+                owner.sourceUrl && owner.sourceUrl.startsWith("http")
+                  ? link("view", owner.sourceUrl)
+                  : undefined,
+              ]),
+            ),
+            `_Threshold regime: ${BAFIN_WPHG_THRESHOLD_REGIME}._`,
+            `_${BAFIN_OWNERS_CAVEAT}_`,
+          ));
+        }
         if (jurisdiction === "JP") {
           const owners = await getEdinetLargeHolders(
             company,
@@ -1342,6 +1446,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "TW") {
         return textResult(TWSE_FINANCIALS_UNSUPPORTED);
+      }
+      if (jurisdiction === "DE") {
+        return textResult(BAFIN_FINANCIALS_UNSUPPORTED);
       }
       if (jurisdiction === "BR") {
         try {
@@ -1596,7 +1703,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (
         jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
-        jurisdiction === "BR"
+        jurisdiction === "BR" || jurisdiction === "DE"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -1610,7 +1717,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                   ? "BSE India"
                   : jurisdiction === "TW"
                     ? "TWSE"
-                    : "CVM (Brazil)";
+                    : jurisdiction === "BR"
+                      ? "CVM (Brazil)"
+                      : "BaFin (Germany)";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +

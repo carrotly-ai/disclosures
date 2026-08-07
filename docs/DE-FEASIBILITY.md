@@ -1,5 +1,10 @@
 # DE (Germany) adapter — open-data feasibility finding
 
+> **Superseded (2026-08-07):** the DE adapter has since shipped. This page is retained as
+> the original feasibility record; for current behaviour, accepted identifiers, and caveats
+> see [`docs/jurisdictions/DE.md`](jurisdictions/DE.md).
+
+
 **Question (roadmap task #37):** can a `DE` jurisdiction adapter surface German
 major-holdings and directors'-dealings disclosures under the existing intent tools, using
 only free, open data and **zero runtime dependencies**?
