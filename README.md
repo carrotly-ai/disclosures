@@ -229,6 +229,18 @@ Importing the package never opens stdio; only the CLI entry point connects the t
 
 </details>
 
+## Built for AI clients
+
+Responses are designed for the way an MCP client actually consumes them:
+
+- **Markdown-first rendering.** Every result is one GitHub-flavored Markdown text block — headings, compact pipe tables (headers stated once, not repeated per row like JSON), real source links, and inline caveats. This is the token-efficient path for an LLM reader.
+- **Structured output for chaining.** Identifier-bearing tools (`CompanyResolve`, `CompanyFilings`, `PersonAppointments` search) additionally return MCP `structuredContent` — ranked candidates with full identifier sets, filings with a ready-to-use `transactionId`, people with their `officerId` — so a client chains calls without parsing prose.
+- **Next-step trailers.** Chainable outputs end with a one-line `_Next: …_` hint naming the tool and parameter to call next.
+- **Tool annotations.** All tools declare `openWorldHint` and `idempotentHint`; all but `CompanyDocument` (whose `pdf` mode writes a local file) declare `readOnlyHint`, so clients can parallelize and skip confirmation prompts.
+- **Paged document text.** `CompanyDocument` mode `xhtml` reads in 50,000-character windows via `text_offset` — long filings are fully readable, not head-truncated.
+- **Fenced untrusted content.** Extracted filer-authored text is wrapped between fixed `<<<BEGIN/END UNTRUSTED DOCUMENT TEXT>>>` sentinels (with lookalikes inside the document defanged), so clients can quarantine it programmatically.
+- **Jurisdiction resources.** The server exposes `disclosures://jurisdictions` and `disclosures://jurisdictions/{code}` MCP resources describing each jurisdiction's source, credential, accepted identifiers, and caveats — check requirements without a failed tool call.
+
 ## Honesty and scope
 
 These tools report **public disclosures**, faithfully — they are not KYC, UBO, or cap-table products:

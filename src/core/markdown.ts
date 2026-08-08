@@ -50,3 +50,21 @@ export function formatNumber(value: number, unit: string): string {
 export function joinSections(...sections: Array<string | undefined>): string {
   return sections.filter((section): section is string => Boolean(section)).join("\n\n");
 }
+
+export const UNTRUSTED_TEXT_BEGIN = "<<<BEGIN UNTRUSTED DOCUMENT TEXT>>>";
+export const UNTRUSTED_TEXT_END = "<<<END UNTRUSTED DOCUMENT TEXT>>>";
+
+/**
+ * Fence third-party-authored document text between fixed sentinel lines (plus
+ * a code fence) so a client can programmatically locate — and strip or
+ * quarantine — the untrusted span instead of relying on the prose warning
+ * alone. Any sentinel-lookalike inside the body is defanged first, so
+ * filer-authored content cannot fake an early END marker and smuggle text
+ * outside the fence.
+ */
+export function untrustedTextBlock(body: string): string {
+  const defanged = body
+    .replaceAll(UNTRUSTED_TEXT_BEGIN, "<<defanged BEGIN marker>>")
+    .replaceAll(UNTRUSTED_TEXT_END, "<<defanged END marker>>");
+  return `${UNTRUSTED_TEXT_BEGIN}\n\`\`\`\n${defanged}\n\`\`\`\n${UNTRUSTED_TEXT_END}`;
+}
