@@ -4,8 +4,14 @@ import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { defineTool, textResult } from "../core/toolDefs.js";
 import type { ToolDefinition } from "../core/toolDefs.js";
-import { formatNumber, joinSections, link, markdownTable } from "../core/markdown.js";
-import type { AdapterOptions, Entity, OwnershipParent } from "../core/types.js";
+import {
+  formatNumber,
+  joinSections,
+  link,
+  markdownTable,
+  untrustedTextBlock,
+} from "../core/markdown.js";
+import type { AdapterOptions, Entity, Filing, OwnershipParent } from "../core/types.js";
 import {
   NO_SEC_CONFIG_MESSAGE,
   SEC_DOCUMENT_CONTENT_WARNING,
@@ -302,6 +308,105 @@ function entityRows(entities: Entity[]): string {
   );
 }
 
+// --- structuredContent companions ------------------------------------------
+// These mirror what the Markdown tables show, as machine-readable objects, so
+// an MCP client can chain identifiers (CIK → CompanyFilings, accession →
+// CompanyDocument, officer id → PersonAppointments) without parsing prose.
+// Additive only: the text block stays the primary, self-contained rendering.
+
+function definedProps(
+  record: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => value !== undefined),
+  );
+}
+
+/**
+ * `rank` is 1-based candidate order — candidates arrive best-first from each
+ * adapter's ranking, so rank plus matchReason is the confidence signal a
+ * client uses to decide whether to trust the top match or disambiguate.
+ */
+function entitiesStructured(entities: Entity[]): Record<string, unknown> {
+  return {
+    candidates: entities.map((entity, index) => definedProps({
+      rank: index + 1,
+      legalName: entity.legalName,
+      matchReason: entity.matchReason,
+      source: entity.source,
+      jurisdiction: entity.jurisdiction,
+      status: entity.status,
+      cik: entity.cik,
+      ticker: entity.ticker,
+      lei: entity.lei,
+      isin: entity.isin,
+      companyNumber: entity.companyNumber,
+      corpCode: entity.corpCode,
+      stockCode: entity.stockCode,
+      edinetCode: entity.edinetCode,
+      secCode: entity.secCode,
+      orgId: entity.orgId,
+      scripCode: entity.scripCode,
+      cvmCode: entity.cvmCode,
+      bafinId: entity.bafinId,
+      sourceUrl: entity.sourceUrl,
+    })),
+  };
+}
+
+function filingsStructured(filings: Filing[]): Record<string, unknown> {
+  return {
+    filings: filings.map((filing) => definedProps({
+      filedDate: filing.filedDate,
+      form: filing.form,
+      category: filing.category,
+      description: filing.description,
+      // The id CompanyDocument accepts as transaction_id (accession number,
+      // GB transaction id, EDINET docID, or DART rcept_no).
+      transactionId: filing.accession,
+      sourceUrl: filing.sourceUrl,
+    })),
+  };
+}
+
+/**
+ * One-line "what to call next" trailer for chainable outputs. Kept to a single
+ * consistent sentence so agent clients learn the pattern once.
+ */
+function nextStep(text: string): string {
+  return `_Next: ${text}_`;
+}
+
+const FILINGS_NEXT_STEP = nextStep(
+  "pass a transaction id from this table to CompanyDocument (same " +
+    "jurisdiction) as transaction_id for the filing's documents and text.",
+);
+
+/** Window size for CompanyDocument mode="xhtml" extracted text. */
+const DOCUMENT_TEXT_WINDOW = 50_000;
+
+/**
+ * Render one window of a document's extracted text, fenced as untrusted, with
+ * paging instructions when more remains. `offset` (from the tool's
+ * text_offset input) starts the window mid-document so a caller can read past
+ * the first 50k characters instead of being stuck at the head.
+ */
+function documentTextSections(text: string, offset: number): string[] {
+  const start = Math.min(Math.max(0, Math.trunc(offset)), text.length);
+  const end = Math.min(start + DOCUMENT_TEXT_WINDOW, text.length);
+  const window = text.slice(start, end);
+  const sections = [
+    `_Characters ${start.toLocaleString("en-US")}–${end.toLocaleString("en-US")} of ${text.length.toLocaleString("en-US")}._`,
+    untrustedTextBlock(window),
+  ];
+  if (end < text.length) {
+    sections.push(nextStep(
+      `re-call with text_offset: ${end} for the next ${Math.min(DOCUMENT_TEXT_WINDOW, text.length - end).toLocaleString("en-US")} characters.`,
+    ));
+  }
+  return sections;
+}
+
 function profileFlags(detail: CompaniesHouseProfileDetail): string {
   const flags: string[] = [];
   if (detail.hasCharges) flags.push("has registered charges");
@@ -492,15 +597,12 @@ function describeParent(parent: OwnershipParent | undefined): string {
 export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
   const companyResolve = defineTool(
     "CompanyResolve",
-    "Resolve a company name or identifier to canonical candidates. US/default " +
-      "combines SEC ticker/CIK/title resolution with GLEIF legal-name search, " +
-      "and resolves a bare LEI or ISIN to its issuer's GLEIF record; " +
-      "explicit GB uses Companies House company numbers and legal-name search. " +
-      "Returns compact identifier sets and match reasons without silently " +
-      "merging ambiguous entities. Explicit KR uses OpenDART corp/stock codes " +
-      "and legal-name search; explicit JP uses the EDINET code list (EDINET " +
-      "code, securities code, 法人番号, and legal name); explicit TW uses the " +
-      "TWSE listed-company basic-data list (4-digit listing code and legal name).",
+    "Resolve a company name, ticker, or register identifier (CIK, LEI, ISIN, " +
+      "company number, corp code…) to canonical candidates with identifier " +
+      "sets and match reasons. US/default combines SEC EDGAR and GLEIF; other " +
+      "jurisdictions (GB, KR, JP, CN, IN, TW, BR, DE) search their national " +
+      "register. Ambiguous matches are listed, never silently merged. Start " +
+      "here to get the identifiers the other tools accept.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("CompanyResolve");
@@ -513,7 +615,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return textResult(joinSections(
             `# Company resolution (EDINET): ${company}`,
             entityRows(results.slice(0, 10)),
-          ));
+          ), entitiesStructured(results.slice(0, 10)));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -538,7 +640,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               // ignore — the resolution table above is unaffected
             }
           }
-          return textResult(joinSections(...sections));
+          return textResult(
+            joinSections(...sections),
+            entitiesStructured(results.slice(0, 10)),
+          );
         } catch (error) {
           return failureResult(company, error);
         }
@@ -552,7 +657,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return textResult(joinSections(
             `# Company resolution (OpenDART): ${company}`,
             entityRows(results.slice(0, 10)),
-          ));
+          ), entitiesStructured(results.slice(0, 10)));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -566,7 +671,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return textResult(joinSections(
             `# Company resolution (cninfo): ${company}`,
             entityRows(results.slice(0, 10)),
-          ));
+          ), entitiesStructured(results.slice(0, 10)));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -581,7 +686,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `# Company resolution (BSE India): ${company}`,
             entityRows(results.slice(0, 10)),
             `_${BSE_ANTIBOT_NOTE}_`,
-          ));
+          ), entitiesStructured(results.slice(0, 10)));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -595,7 +700,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return textResult(joinSections(
             `# Company resolution (TWSE): ${company}`,
             entityRows(results.slice(0, 10)),
-          ));
+          ), entitiesStructured(results.slice(0, 10)));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -609,7 +714,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return textResult(joinSections(
             `# Company resolution (CVM): ${company}`,
             entityRows(results.slice(0, 10)),
-          ));
+          ), entitiesStructured(results.slice(0, 10)));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -623,7 +728,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return textResult(joinSections(
             `# Company resolution (BaFin): ${company}`,
             entityRows(results.slice(0, 10)),
-          ));
+          ), entitiesStructured(results.slice(0, 10)));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -674,29 +779,24 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         `# Company resolution: ${company}`,
         entityRows(results),
         warnings.length ? warnings.map((warning) => `_${warning}_`).join("\n") : undefined,
-      ));
+        nextStep(
+          "use an identifier from this table with CompanyFilings, " +
+            "CompanyOwners, CompanyFinancials, or (for an LEI) OwnershipChain.",
+        ),
+      ), entitiesStructured(results));
     },
   );
 
   const companyFilings = defineTool(
     "CompanyFilings",
-    "Search regulatory filings from US SEC EDGAR (default/US), UK Companies " +
-      "House (explicit GB), or Korean DART (explicit KR). Filters match SEC form " +
-      "types, Companies House filing type/category/description, or DART report " +
-      "names. Latest annual mode returns the latest SEC annual report, UK " +
-      "accounts filing, or DART 사업보고서; latest quarterly returns the latest " +
-      "SEC 10-Q or DART 분기·반기보고서, and is unsupported for GB because " +
-      "Companies House has no equivalent normalized quarterly report mode. " +
-      "Explicit JP scans EDINET's date-indexed document index (docTypeCode " +
-      "120=annual, 140/160=quarterly/semi-annual). Explicit TW returns TWSE " +
-      "daily material-information announcements (重大訊息); latest annual/" +
-      "quarterly modes are unsupported for TW. GB mode \"insolvency\" returns " +
-      "the company's insolvency-case history. Note for GB dissolutions: a " +
-      "voluntary strike-off is gazetted as a first/final Gazette notice under " +
-      "the Companies Act (the company applied to be struck off), whereas a " +
-      "compulsory strike-off or winding-up is gazetted by the Registrar or a " +
-      "court/creditor — the filing history and Gazette notice type distinguish " +
-      "the two. Returns public filing/document links, never document text.",
+    "Search a company's regulatory filings in any supported jurisdiction " +
+      "(US SEC EDGAR default; GB Companies House, KR DART, JP EDINET, CN " +
+      "cninfo, IN BSE, TW TWSE, BR CVM). Filter by form type and date range. " +
+      "Mode \"latest_annual\"/\"latest_quarterly\" returns the newest periodic " +
+      "report's metadata where the register supports it; mode \"insolvency\" " +
+      "(GB only) returns insolvency-case history. Returns filing metadata, " +
+      "ids, and public document links, never document text — pass a returned " +
+      "accession/transaction id to CompanyDocument for content.",
     {
       ...companyInput,
       forms: z
@@ -755,7 +855,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 ]),
               ),
               `_${EDINET_NO_DEEP_LINK_CAVEAT}_`,
-            ));
+              FILINGS_NEXT_STEP,
+            ), filingsStructured([report]));
           }
           const filings = await searchEdinetFilings({
             company,
@@ -784,7 +885,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             `_${EDINET_DATE_INDEX_CAVEAT}_`,
             `_${EDINET_NO_DEEP_LINK_CAVEAT}_`,
-          ));
+            FILINGS_NEXT_STEP,
+          ), filingsStructured(filings));
         }
         if (jurisdiction === "CN") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
@@ -835,7 +937,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               ]),
             ),
             `_${CNINFO_FILINGS_CAVEAT}_`,
-          ));
+          ), filingsStructured(filings));
         }
         if (jurisdiction === "IN") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
@@ -873,7 +975,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             "_Attachment links open the public BSE corporate-filing PDF; this tool never returns document text._",
             `_${BSE_ANTIBOT_NOTE}_`,
-          ));
+          ), filingsStructured(filings));
         }
         if (jurisdiction === "TW") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
@@ -910,7 +1012,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               ]),
             ),
             `_${TWSE_FILINGS_CAVEAT}_`,
-          ));
+          ), filingsStructured(filings));
         }
         if (jurisdiction === "BR") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
@@ -949,7 +1051,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             "_Document links open the official CVM RAD download; this tool never returns document text._",
             `_${CVM_FILINGS_CAVEAT}_`,
-          ));
+          ), filingsStructured(filings));
         }
         if (jurisdiction === "DE") {
           return textResult(BAFIN_FILINGS_UNSUPPORTED);
@@ -982,7 +1084,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 ]),
               ),
               "_Links open the DART disclosure viewer. This tool does not return document text._",
-            ));
+              FILINGS_NEXT_STEP,
+            ), filingsStructured([report]));
           }
           const filings = await searchOpenDartFilings({
             company,
@@ -1006,7 +1109,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               ]),
             ),
             "_Links open the DART disclosure viewer. This tool does not return document text._",
-          ));
+            FILINGS_NEXT_STEP,
+          ), filingsStructured(filings));
         }
 
         if (mode === "insolvency" && jurisdiction !== "GB") {
@@ -1075,7 +1179,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 ]),
               ),
               "_Links open the public Companies House filing or document. This tool does not return document text._",
-            ));
+              FILINGS_NEXT_STEP,
+            ), filingsStructured([report]));
           }
           const filings = await searchCompaniesHouseFilings({
             company,
@@ -1100,7 +1205,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               ]),
             ),
             "_Links open the public Companies House filing or document. This tool does not return document text._",
-          ));
+            FILINGS_NEXT_STEP,
+          ), filingsStructured(filings));
         }
 
         if (mode === "latest_annual" || mode === "latest_quarterly") {
@@ -1129,7 +1235,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               ]),
             ),
             "_Links point to the filed documents on sec.gov; this tool does not return the document text._",
-          ));
+            FILINGS_NEXT_STEP,
+          ), filingsStructured([report]));
         }
 
         const filings = (await searchSecFilings({
@@ -1154,7 +1261,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ]),
           ),
           "_Links point to the filed documents on sec.gov; this tool does not return the document text._",
-        ));
+          FILINGS_NEXT_STEP,
+        ), filingsStructured(filings));
       } catch (error) {
         return failureResult(company, error);
       }
@@ -1163,19 +1271,13 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyInsiders = defineTool(
     "CompanyInsiders",
-    "Return recent US SEC Section 16 filing insiders (default/US), the UK " +
-      "Companies House officer register (explicit GB), or Korean executive/" +
-      "major-shareholder ownership reports from DART (explicit KR). GB output " +
-      "includes role, occupation, appointment/resignation dates, and active/" +
-      "former status, but does not surface correspondence addresses, " +
-      "nationality, or partial birth dates. Explicit JP is unsupported: EDINET " +
-      "has no Section 16-style insider-dealing feed; officer data lives inside " +
-      "the annual securities report (有価証券報告書). Explicit TW returns the " +
-      "TWSE monthly director/supervisor shareholding-balance register " +
-      "(董監事持股餘額): current holdings, holdings at election, and pledged shares. " +
-      "Explicit DE returns BaFin directors'-dealings notifications (Art.19 MAR): " +
-      "each managers'-transaction filing with board role, instrument, transaction " +
-      "type, and trade date.",
+    "List a company's insiders/officers from the jurisdiction's register: US " +
+      "Section 16 filers (default), GB Companies House officers (KR, TW, and " +
+      "DE variants: DART executive ownership, TWSE director/supervisor " +
+      "holdings, BaFin Art.19 MAR directors' dealings). Unsupported " +
+      "jurisdictions (e.g. JP — EDINET has no insider-dealing feed) explain " +
+      "why honestly. Recency and completeness caveats are stated in each " +
+      "response.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("CompanyInsiders");
@@ -1353,26 +1455,13 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyOwners = defineTool(
     "CompanyOwners",
-    "Return US Schedule 13D/13G beneficial-ownership filers (default/US), " +
-      "UK Companies House persons with significant control (explicit GB), or " +
-      "Korean 5% mass-holding reports from DART (explicit KR). GB rows include " +
-      "individual/corporate/legal/super-secure kinds, statutory natures of " +
-      "control, percentage bands where derivable, ceased entries, and PSC " +
-      "statements when no ordinary PSC record exists. The GB view also adds a " +
-      "UK equity/voting-rights (DTR5/TR-1 major-holdings) section from the FCA " +
-      "National Storage Mechanism; the NSM has no public read API, so that " +
-      "section is populated only when NSM access is supplied via an injected " +
-      "fetchFn, and otherwise explains how to enable it. Each row states its " +
-      "threshold/control regime. No source is guaranteed-complete UBO/KYC " +
-      "evidence. Explicit JP returns EDINET large-volume holding reports " +
-      "(大量保有報告書, the 5% rule) reverse-mapped to the subject issuer — each " +
-      "row is a ≥5% holder — though EDINET's metadata carries no exact " +
-      "percentage; start_date/end_date bound the (default ~1 year) scan window " +
-      "and are ignored by other jurisdictions. Explicit TW returns the TWSE " +
-      "list of shareholders holding more than 10% (持股逾 10% 大股東); a company " +
-      "with no such holder returns no rows. Explicit DE returns BaFin major-" +
-      "holding voting-rights notifications (Stimmrechtsmitteilungen, §§33 ff. " +
-      "WpHG) with the disclosed percentage per WpHG limb (§§33/34, §38, §39).",
+    "List a company's major/beneficial-ownership filers from the " +
+      "jurisdiction's disclosure regime: US Schedule 13D/13G (default), GB PSC " +
+      "register (+ FCA TR-1 when an NSM fetchFn is injected), KR 5% rule, JP " +
+      "large-volume holding reports (start_date/end_date bound the JP scan " +
+      "window only), TW >10% holders, DE §§33 ff. WpHG voting-rights " +
+      "notifications. Every row states its threshold regime. This reports " +
+      "filed disclosures — not a cap table and not UBO tracing.",
     {
       ...companyInput,
       start_date: z
@@ -1984,6 +2073,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     accession: string | undefined,
     documentName: string | undefined,
     mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
     outputPath: string | undefined,
   ): Promise<ReturnType<typeof textResult>> {
     if (!hasSecConfiguration(options)) {
@@ -2030,17 +2120,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         if (!text) {
           return textResult(joinSections(metaSection, `_${SEC_DOCUMENT_IMAGE_ONLY_MESSAGE}_`));
         }
-        const MAX_TEXT = 50_000;
-        const truncated = text.text.length > MAX_TEXT;
-        const body = truncated ? text.text.slice(0, MAX_TEXT) : text.text;
         return textResult(joinSections(
           metaSection,
           `## Extracted text (${text.documentName})`,
           `_${SEC_DOCUMENT_CONTENT_WARNING}_`,
-          truncated
-            ? `_Text truncated to ${MAX_TEXT} characters (of ${text.text.length})._`
-            : "",
-          "```\n" + body + "\n```",
+          ...documentTextSections(text.text, textOffset ?? 0),
         ));
       }
 
@@ -2162,6 +2246,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     company: string,
     rceptNo: string | undefined,
     mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
   ): Promise<ReturnType<typeof textResult>> {
     if (!hasOpenDartConfiguration(options)) {
       return failureResult(company, new Error(OPEN_DART_NO_CONFIG_MESSAGE));
@@ -2209,10 +2294,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       );
 
       if (mode === "xhtml") {
-        const MAX_TEXT = 50_000;
-        const truncated = document.mainText.length > MAX_TEXT;
-        const body = truncated ? document.mainText.slice(0, MAX_TEXT) : document.mainText;
-        if (!body) {
+        if (!document.mainText) {
           return textResult(joinSections(
             metaSection,
             "_The main document had no extractable text._",
@@ -2222,10 +2304,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           metaSection,
           `## Extracted text (${document.mainName})`,
           `_${OPEN_DART_DOCUMENT_CONTENT_WARNING}_`,
-          truncated
-            ? `_Text truncated to ${MAX_TEXT} characters (of ${document.mainText.length})._`
-            : "",
-          "```\n" + body + "\n```",
+          ...documentTextSections(document.mainText, textOffset ?? 0),
         ));
       }
 
@@ -2241,21 +2320,14 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyDocument = defineTool(
     "CompanyDocument",
-    "Fetch a document from a company's filing. jurisdiction \"GB\" (default) " +
-      "reads UK Companies House by transaction id (from CompanyFilings) or " +
-      "document id; \"US\" reads SEC EDGAR by accession number; \"JP\" reads " +
-      "EDINET by docID; \"KR\" reads OpenDART by receipt number (rcept_no) — all " +
-      "as the transaction_id from CompanyFilings. Mode \"metadata\" (default) " +
-      "returns the filing's metadata and the documents/renditions available with " +
-      "their sizes. Mode \"xhtml\" returns the primary machine-readable document's " +
-      "extracted plain text (GB iXBRL/XHTML rendition; US inline HTML/XBRL primary " +
-      "document; KR main DART XML); filings with no machine-readable document (GB " +
-      "image-only/scanned accounts, pre-2001 US .txt-only submissions, JP — whose " +
-      "machine-readable form is a bundled XBRL archive) are reported honestly. Mode " +
-      "\"pdf\" downloads a PDF and saves it to a local file, returning the path, " +
-      "byte size, and page count — it never inlines document bytes (JP always has " +
-      "a PDF; US rarely does; KR has none — it serves DART XML). Downloads are " +
-      "capped at 25 MB.",
+    "Fetch a filed document's content by the transaction_id CompanyFilings " +
+      "returned (GB transaction id — default; US accession number; JP EDINET " +
+      "docID; KR DART rcept_no). Mode \"metadata\" (default) lists the " +
+      "filing's documents/renditions with sizes; \"xhtml\" returns the primary " +
+      "machine-readable document's extracted plain text (paged via " +
+      "text_offset; filings with no machine-readable rendition are reported " +
+      "honestly); \"pdf\" saves the PDF to a local file and returns the path, " +
+      "never inline bytes. Downloads capped at 25 MB.",
     {
       company: z
         .string()
@@ -2290,21 +2362,31 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .enum(["metadata", "xhtml", "pdf"])
         .optional()
         .describe("\"metadata\" (default), \"xhtml\" text, or \"pdf\" download"),
+      text_offset: z
+        .number()
+        .int()
+        .min(0)
+        .optional()
+        .describe(
+          "mode=xhtml only: character offset to start the 50,000-character " +
+            "text window at (default 0); the response says what offset to " +
+            "pass next when more text remains",
+        ),
       output_path: z
         .string()
         .min(1)
         .optional()
         .describe("Where to save the PDF (mode=pdf); defaults to a temp file"),
     },
-    async ({ company, jurisdiction, transaction_id, document_id, mode, output_path }) => {
+    async ({ company, jurisdiction, transaction_id, document_id, mode, text_offset, output_path }) => {
       if (jurisdiction === "US") {
-        return companyDocumentUs(company, transaction_id, document_id, mode, output_path);
+        return companyDocumentUs(company, transaction_id, document_id, mode, text_offset, output_path);
       }
       if (jurisdiction === "JP") {
         return companyDocumentJp(company, transaction_id, mode, output_path);
       }
       if (jurisdiction === "KR") {
-        return companyDocumentKr(company, transaction_id, mode);
+        return companyDocumentKr(company, transaction_id, mode, text_offset);
       }
       try {
         let documentId = document_id;
@@ -2359,17 +2441,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               `_${COMPANIES_HOUSE_IMAGE_ONLY_MESSAGE}_`,
             ));
           }
-          const MAX_TEXT = 50_000;
-          const truncated = text.text.length > MAX_TEXT;
-          const body = truncated ? text.text.slice(0, MAX_TEXT) : text.text;
           return textResult(joinSections(
             metaSection,
             "## Extracted text (iXBRL/XHTML)",
             `_${COMPANIES_HOUSE_DOCUMENT_CONTENT_WARNING}_`,
-            truncated
-              ? `_Text truncated to ${MAX_TEXT} characters (of ${text.text.length})._`
-              : "",
-            "```\n" + body + "\n```",
+            ...documentTextSections(text.text, text_offset ?? 0),
           ));
         }
 
@@ -2590,11 +2666,22 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             link("filings", m.browseUrl),
           ]),
         ),
-        "_Use mode=\"appointments\" with a CIK from this table to list the issuers a " +
-          "person has reported ownership to. Multiple matches carry no name (EDGAR " +
-          "omits it), so disambiguate by the address hint._",
+        "_Multiple matches carry no name (EDGAR omits it), so disambiguate by " +
+          "the address hint._",
         `_${SEC_PERSON_CONTENT_WARNING}_`,
-      ));
+        nextStep(
+          "call PersonAppointments mode=\"appointments\" with a CIK from this " +
+            "table as officer_id to list the issuers the person reports to.",
+        ),
+      ), {
+        people: shown.map((m) => definedProps({
+          name: m.name,
+          officerId: m.cik,
+          lastFilingDate: m.lastFilingDate,
+          addressSnippet: m.addressSnippet,
+          sourceUrl: m.browseUrl,
+        })),
+      });
     } catch (error) {
       return failureResult(label, error);
     }
@@ -2695,11 +2782,21 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ]),
         ),
         ...(trailer ? [trailer] : []),
-        "_Use mode=\"appointments\" with an id from this table to list every issuer " +
-          "the person has reported managers' transactions to. Homonyms are common — " +
-          "disambiguate by first name, title, and position._",
+        "_Homonyms are common — disambiguate by first name, title, and position._",
         `_${BAFIN_PERSON_CAVEAT}_`,
-      ));
+        nextStep(
+          "call PersonAppointments mode=\"appointments\" with an id from this " +
+            "table as officer_id to list every issuer the person reports to.",
+        ),
+      ), {
+        people: shown.map((match) => definedProps({
+          name: [match.firstName, match.surname].filter(Boolean).join(" "),
+          officerId: match.meldepflichtigerId,
+          position: match.position,
+          latestTransactionDate: match.latestTransactionDate,
+          sourceUrl: match.sourceUrl,
+        })),
+      });
     } catch (error) {
       return failureResult(label, error);
     }
@@ -2707,24 +2804,17 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const personAppointments = defineTool(
     "PersonAppointments",
-    "Look up a person's cross-company roles and disqualifications. Accepts a " +
-      "jurisdiction of \"GB\" (UK Companies House, default), \"US\" (SEC EDGAR " +
-      "reporting owners), or \"DE\" (BaFin Directors' Dealings persons). Mode " +
-      "\"search\" (default) finds people by name (query): GB returns officer ids " +
-      "+ appointment counts; US returns reporting-owner CIKs + address hints; DE " +
-      "returns BaFin meldepflichtigerIds + board position. Mode \"appointments\" " +
-      "lists a person's roles for one officer_id: GB = every company appointment " +
-      "(role, dates); US = every issuer the person has reported Section 16 " +
-      "ownership to (officer_id is the person's SEC CIK — surfaces private issuers " +
-      "e.g. SpaceX too); DE = every issuer the person has reported Art.19 MAR " +
-      "managers' transactions to, with board position (officer_id is the BaFin " +
-      "meldepflichtigerId). Mode \"disqualifications\": GB searches the " +
-      "disqualified-officers register (query, or officer_id +officer_type for " +
-      "detail); US has no register, so it returns a safe SALI (SEC Action Lookup " +
-      "for Individuals) public-search link for the name only — no scraping; DE has " +
-      "no free per-individual register, reported honestly. One human holds several " +
-      "ids/CIKs and homonyms are common, so match by name and context, not a " +
-      "single id.",
+    "Look up a person (not a company): cross-company roles and " +
+      "disqualification/enforcement lookups. jurisdiction: GB (Companies " +
+      "House, default), US (SEC reporting owners — surfaces private issuers " +
+      "too), DE (BaFin dealings persons). Mode \"search\" finds people by name " +
+      "and returns their person ids; \"appointments\" takes one of those ids " +
+      "as officer_id (GB officer id, US person CIK, DE meldepflichtigerId) " +
+      "and lists every company/issuer the person is linked to; " +
+      "\"disqualifications\" searches the GB register, or returns a safe " +
+      "public-lookup link (US SALI) / an honest not-available note (DE). One " +
+      "person holds several ids and homonyms are common — match by name and " +
+      "context, not a single id.",
     {
       jurisdiction: z
         .enum(["US", "GB", "DE"])
@@ -2886,14 +2976,27 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ]),
           ),
           `_${COMPANIES_HOUSE_PERSON_CAVEAT}_`,
-        ));
+          nextStep(
+            "call PersonAppointments mode=\"appointments\" with an Officer ID " +
+              "from this table as officer_id for the person's full appointment history.",
+          ),
+        ), {
+          people: results.map((r) => definedProps({
+            name: r.name,
+            officerId: r.officerId,
+            appointmentCount: r.appointmentCount,
+            dateOfBirth: r.dateOfBirth,
+            addressSnippet: r.addressSnippet,
+            sourceUrl: r.sourceUrl,
+          })),
+        });
       } catch (error) {
         return failureResult(label, error);
       }
     },
   );
 
-  return [
+  const tools = [
     companyResolve,
     companyFilings,
     companyInsiders,
@@ -2905,6 +3008,18 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     companyCharges,
     personAppointments,
   ] as ToolDefinition[];
+  for (const tool of tools) {
+    // Every tool queries open-world public registers and mutates nothing —
+    // except CompanyDocument mode="pdf", which writes a downloaded file to
+    // local disk, so it alone cannot claim readOnlyHint.
+    tool.annotations = {
+      readOnlyHint: tool.name !== "CompanyDocument",
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    };
+  }
+  return tools;
 }
 
 export const TOOL_NAMES = [

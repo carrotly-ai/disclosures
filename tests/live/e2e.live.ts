@@ -322,9 +322,15 @@ describe("live end-to-end MCP suite", () => {
       expect(resolved).toContain("00126380");
       expect(resolved).toContain("005930");
 
+      // Without start_date OpenDART defaults to a very recent window, which
+      // is empty early in the Korean day — pin an explicit 30-day window.
+      const start = new Date();
+      start.setUTCDate(start.getUTCDate() - 30);
       const filings = await callLiveTool("CompanyFilings", {
         company: "005930",
         jurisdiction: "KR",
+        start_date: start.toISOString().slice(0, 10),
+        end_date: new Date().toISOString().slice(0, 10),
         limit: 5,
       });
       expect(filings).toMatch(/DART filings \(OpenDART\)/i);

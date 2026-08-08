@@ -4,6 +4,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { createTools, TOOL_NAMES } from "./tools/index.js";
+import {
+  JURISDICTION_REFERENCE,
+  renderJurisdictionIndex,
+  renderJurisdictionReference,
+} from "./core/jurisdictionReference.js";
 import type { AdapterOptions } from "./core/types.js";
 
 export const SERVER_NAME = "disclosures";
@@ -14,8 +19,48 @@ export function createDisclosuresServer(options: AdapterOptions = {}): McpServer
   for (const tool of createTools(options)) {
     server.registerTool(
       tool.name,
-      { description: tool.description, inputSchema: tool.inputSchema },
+      {
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+        ...(tool.annotations ? { annotations: tool.annotations } : {}),
+      },
       async (args: Record<string, unknown>) => tool.handler(args as never),
+    );
+  }
+  // Jurisdiction reference cards: what each jurisdiction accepts and requires,
+  // readable before the first tool call instead of learned from a failed one.
+  server.registerResource(
+    "jurisdictions-index",
+    "disclosures://jurisdictions",
+    {
+      title: "Supported jurisdictions",
+      description:
+        "Index of the jurisdictions this server covers, with one reference " +
+        "card per code at disclosures://jurisdictions/{code}.",
+      mimeType: "text/markdown",
+    },
+    async (uri) => ({
+      contents: [{ uri: uri.href, mimeType: "text/markdown", text: renderJurisdictionIndex() }],
+    }),
+  );
+  for (const reference of JURISDICTION_REFERENCE) {
+    server.registerResource(
+      `jurisdiction-${reference.code.toLowerCase()}`,
+      `disclosures://jurisdictions/${reference.code}`,
+      {
+        title: `${reference.code} — ${reference.name}`,
+        description:
+          `Data source, credential, accepted identifiers, supported intents, ` +
+          `and caveats for jurisdiction "${reference.code}".`,
+        mimeType: "text/markdown",
+      },
+      async (uri) => ({
+        contents: [{
+          uri: uri.href,
+          mimeType: "text/markdown",
+          text: renderJurisdictionReference(reference),
+        }],
+      }),
     );
   }
   return server;
@@ -33,6 +78,7 @@ export { createTools, TOOL_NAMES } from "./tools/index.js";
 export { defineTool, textResult, errorResult } from "./core/toolDefs.js";
 export type { ToolDefinition } from "./core/toolDefs.js";
 export * from "./core/cache.js";
+export * from "./core/jurisdictionReference.js";
 export * from "./core/types.js";
 export * from "./core/entityMatching.js";
 export * from "./core/errors.js";

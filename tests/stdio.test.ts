@@ -41,10 +41,25 @@ describe("stdio MCP server", () => {
       for (const tool of tools) {
         expect(tool.inputSchema.type).toBe("object");
         expect(tool.description?.length ?? 0).toBeGreaterThan(0);
+        expect(tool.annotations?.openWorldHint).toBe(true);
+        expect(tool.annotations?.readOnlyHint).toBe(tool.name !== "CompanyDocument");
         if (!nonCompanyTools.has(tool.name)) {
           expect(tool.inputSchema.properties).toHaveProperty("company");
         }
       }
+
+      // Jurisdiction reference cards ride the same server as resources.
+      const { resources } = await client.listResources();
+      const uris = resources.map((resource) => resource.uri);
+      expect(uris).toContain("disclosures://jurisdictions");
+      expect(uris).toContain("disclosures://jurisdictions/US");
+      expect(uris).toContain("disclosures://jurisdictions/DE");
+      const usCard = await client.readResource({ uri: "disclosures://jurisdictions/US" });
+      const usText = usCard.contents
+        .map((item) => ("text" in item ? String(item.text) : ""))
+        .join("\n");
+      expect(usText).toContain("DISCLOSURES_USER_AGENT");
+      expect(usText).toContain("SEC EDGAR");
     } finally {
       await client.close();
     }

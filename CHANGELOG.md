@@ -6,6 +6,15 @@ All notable changes to this project will be documented here.
 
 ### Added
 
+- MCP client ergonomics, all additive (tool names and existing parameters unchanged):
+  - **Tool annotations** on all ten tools (`openWorldHint`, `idempotentHint`, `destructiveHint: false`; `readOnlyHint` on every tool except `CompanyDocument`, whose `pdf` mode writes a local file) so clients can skip confirmations and parallelize safely.
+  - **Structured output** (`structuredContent`) alongside the Markdown text on the identifier-bearing paths: `CompanyResolve` returns ranked candidates with the full identifier set and match reason; `CompanyFilings` (all jurisdictions, including latest-report modes) returns filings with a `transactionId` ready for `CompanyDocument`; `PersonAppointments` search (GB/US/DE) returns people with their `officerId`. Clients chain identifiers without parsing prose; the text block remains complete on its own.
+  - **Consistent `_Next: …_` chaining trailers** on chainable outputs (resolution → intents, filings → `CompanyDocument`, person search → appointments).
+  - **`text_offset` parameter** on `CompanyDocument` mode `xhtml` (US/GB/KR): pages the extracted text in 50,000-character windows instead of truncating at the head, and each page states the exact offset to request next.
+  - **Untrusted-text fencing**: extracted document text is wrapped between fixed `<<<BEGIN/END UNTRUSTED DOCUMENT TEXT>>>` sentinels (lookalikes inside the document are defanged) so clients can programmatically locate and quarantine filer-authored content.
+  - **MCP resources**: per-jurisdiction reference cards at `disclosures://jurisdictions` and `disclosures://jurisdictions/{code}` (source, credential, accepted identifiers, supported intents, caveat) so a client can check requirements without spending a failed tool call.
+  - **Slimmer tool descriptions** — the fixed per-conversation token cost of `tools/list` dropped ~40% by moving per-jurisdiction behavioral detail into responses and the new resources.
+
 - Separate credential-aware live end-to-end suite (`bun run test:live`) that builds the Node artifact and exercises real GLEIF, SEC EDGAR, Companies House, OpenDART, and EDINET calls through MCP stdio. The strict `test:live:all` mode requires every configured credential; the default mode skips only unavailable jurisdictions. Assertions target stable identities, identifier shapes, source hosts, and response structure; transient upstream failures retry once; timeouts bound hangs; and diagnostics redact keys. A manual-only GitHub Actions workflow keeps live calls out of deterministic PR and release gates.
 
 ### Fixed

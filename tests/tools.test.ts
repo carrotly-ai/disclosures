@@ -2320,3 +2320,150 @@ describe("handler robustness", () => {
     expect(fetchFn.requests).toHaveLength(0);
   });
 });
+
+describe("MCP client ergonomics", () => {
+  test("every tool carries read-only open-world annotations except CompanyDocument", () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: ENV });
+    for (const tool of tools) {
+      expect(tool.annotations?.openWorldHint).toBe(true);
+      expect(tool.annotations?.destructiveHint).toBe(false);
+      expect(tool.annotations?.idempotentHint).toBe(true);
+      // CompanyDocument mode="pdf" writes a file to disk, so it alone must
+      // not claim to be read-only.
+      expect(tool.annotations?.readOnlyHint).toBe(tool.name !== "CompanyDocument");
+    }
+  });
+
+  test("CompanyResolve returns ranked structured candidates alongside the markdown", async () => {
+    const fetchFn = routedFetch([krCorpCodeRoute]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "005930",
+      jurisdiction: "KR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      candidates?: Array<Record<string, unknown>>;
+    };
+    expect(Array.isArray(structured?.candidates)).toBe(true);
+    const top = structured.candidates?.[0];
+    expect(top?.rank).toBe(1);
+    expect(top?.corpCode).toBe("00126380");
+    expect(top?.stockCode).toBe("005930");
+    expect(typeof top?.matchReason).toBe("string");
+  });
+
+  test("CompanyFilings returns structured transaction ids and a next-step trailer", async () => {
+    const fetchFn = routedFetch([
+      krCorpCodeRoute,
+      {
+        pattern: "list.json",
+        body: {
+          status: "000",
+          total_page: 1,
+          list: [
+            {
+              corp_code: "00126380",
+              report_nm: "사업보고서 (2022.12)",
+              rcept_no: "20230307000542",
+              flr_nm: "삼성전자",
+              rcept_dt: "20230307",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: KR_ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "삼성전자",
+      jurisdiction: "KR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("_Next: pass a transaction id");
+    const structured = result.structuredContent as {
+      filings?: Array<Record<string, unknown>>;
+    };
+    expect(structured?.filings?.[0]?.transactionId).toBe("20230307000542");
+  });
+
+  test("PersonAppointments search returns structured people with officer ids", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "/search/officers",
+        body: {
+          items: [
+            {
+              title: "John SMITH",
+              links: { self: "/officers/AbC123xYz/appointments" },
+              appointment_count: 4,
+              date_of_birth: { year: 1970, month: 5 },
+              address_snippet: "1 Example Street, London",
+            },
+          ],
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: GB_ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      query: "John Smith",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("_Next: call PersonAppointments mode=\"appointments\"");
+    const structured = result.structuredContent as {
+      people?: Array<Record<string, unknown>>;
+    };
+    expect(structured?.people?.[0]?.officerId).toBe("AbC123xYz");
+    expect(structured?.people?.[0]?.name).toBe("John SMITH");
+  });
+
+  test("CompanyDocument xhtml pages via text_offset with untrusted-text fencing", async () => {
+    const longBody = "A".repeat(60_000) + "TAIL-MARKER";
+    const fetchFn = routedFetch([
+      { pattern: "submissions/CIK0000320193.json", body: {
+        cik: "320193",
+        name: "Apple Inc.",
+        filings: {
+          recent: {
+            accessionNumber: ["0000320193-25-000079"],
+            filingDate: ["2025-10-31"],
+            reportDate: ["2025-09-27"],
+            form: ["10-K"],
+            primaryDocument: ["aapl-20250927.htm"],
+            primaryDocDescription: ["Form 10-K"],
+          },
+        },
+      } },
+      { pattern: "000032019325000079/index.json", body: {
+        directory: {
+          name: "/Archives/edgar/data/320193/000032019325000079",
+          item: [{ name: "aapl-20250927.htm", type: "text.gif", size: "1000", "last-modified": "2025-10-31 06:01:26" }],
+        },
+      } },
+      { pattern: "aapl-20250927.htm", body: `<html><body><p>${longBody}</p></body></html>` },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const first = await toolByName(tools, "CompanyDocument").handler({
+      company: "320193",
+      jurisdiction: "US",
+      transaction_id: "0000320193-25-000079",
+      mode: "xhtml",
+    } as never);
+    const firstText = resultText(first);
+    expect(firstText).toContain("<<<BEGIN UNTRUSTED DOCUMENT TEXT>>>");
+    expect(firstText).toContain("<<<END UNTRUSTED DOCUMENT TEXT>>>");
+    expect(firstText).toContain("Characters 0–50,000");
+    expect(firstText).toContain("re-call with text_offset: 50000");
+    expect(firstText).not.toContain("TAIL-MARKER");
+
+    const second = await toolByName(tools, "CompanyDocument").handler({
+      company: "320193",
+      jurisdiction: "US",
+      transaction_id: "0000320193-25-000079",
+      mode: "xhtml",
+      text_offset: 50_000,
+    } as never);
+    const secondText = resultText(second);
+    expect(secondText).toContain("TAIL-MARKER");
+    expect(secondText).not.toContain("re-call with text_offset");
+  });
+});
