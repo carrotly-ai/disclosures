@@ -56,3 +56,27 @@ declare module "node:path" {
 declare module "node:os" {
   export function tmpdir(): string;
 }
+
+declare module "node:http" {
+  export interface IncomingMessage {
+    url?: string;
+    method?: string;
+    on(event: string, listener: (...args: unknown[]) => void): this;
+  }
+  export interface ServerResponse {
+    headersSent: boolean;
+    writeHead(status: number, headers?: Record<string, string>): ServerResponse;
+    end(body?: string): void;
+    on(event: string, listener: (...args: unknown[]) => void): this;
+  }
+  export interface Server {
+    listen(port: number, host: string, listeningListener?: () => void): Server;
+    close(callback?: (err?: Error) => void): Server;
+    address(): { port: number } | string | null;
+    once(event: string, listener: (...args: unknown[]) => void): Server;
+    removeListener(event: string, listener: (...args: unknown[]) => void): Server;
+  }
+  export function createServer(
+    requestListener: (req: IncomingMessage, res: ServerResponse) => void,
+  ): Server;
+}
