@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Added
+
+- Australia open-data feasibility finding ([`AU-FEASIBILITY.md`](AU-FEASIBILITY.md)), live-verified against the ASX markitdigital JSON API, data.gov.au's ASIC datasets, and ABN Lookup: the decisive blocker is **legal, not technical** — ASX's keyless announcements API works but its Terms of Use grant only personal, non-commercial use and prohibit reproduction/redistribution, and the per-company feed is hard-capped at the 5 most-recent items, so `CompanyFilings`/`CompanyInsiders`/`CompanyOwners`/`CompanyDocument`/`CompanyFinancials` are honestly not feasible. The redistributable side is registry-only: `CompanyResolve` is feasible (ASIC Company Dataset bulk CSV + ABN Lookup free-GUID web service, both CC-BY) and `PersonAppointments` is partial (ASIC banned-and-disqualified dataset covers disqualifications; directorship extracts are paid). Recommendation: thin partial or defer — dual-listed Australian majors are already reachable via US EDGAR (20-F) and GLEIF. Finding only — no adapter or tool change ships with it.
+
 ## 0.3.0 - 2026-08-20
 
 All changes are backward-compatible and additive: the ten tool names and their input schemas are unchanged. The minor bump reflects the second transport (streamable HTTP), two new coverage cells (EU resolve/filings, JP financials), the completed `structuredContent` surface, and the first declared `outputSchema` (OwnershipChain).
