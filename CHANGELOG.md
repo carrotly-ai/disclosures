@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented here.
 
-## Unreleased
+## 0.3.0 - 2026-08-20
+
+All changes are backward-compatible and additive: the ten tool names and their input schemas are unchanged. The minor bump reflects the second transport (streamable HTTP), two new coverage cells (EU resolve/filings, JP financials), the completed `structuredContent` surface, and the first declared `outputSchema` (OwnershipChain).
 
 ### Added
 
