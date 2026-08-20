@@ -104,4 +104,37 @@ describe("HTTP MCP server", () => {
       await client.close();
     }
   }, 20_000);
+
+  test("OwnershipChain passes SDK output-schema validation on both success and miss", async () => {
+    // OwnershipChain is the one tool that declares an outputSchema, so the SDK's
+    // validateToolOutput runs on every non-error result. A resolved chain and a
+    // not-found miss must BOTH carry schema-valid structuredContent, or the SDK
+    // rejects the call — exercising it over the real transport proves it.
+    const fetchFn = routedFetch([
+      { pattern: "filter%5Blei%5D", body: gleifCollection([gleifRecord(APPLE_LEI, "APPLE INC.")]) },
+      { pattern: "filter%5Bentity.legalName%5D", body: gleifCollection([]) },
+    ]);
+    running = await runHttpServer({ port: 0, fetchFn, env: ENV });
+    const client = new Client({ name: "disclosures-http-test-client", version: "0.0.0" });
+    const transport = new StreamableHTTPClientTransport(
+      new URL(`http://${running.host}:${running.port}/mcp`),
+    );
+    try {
+      await client.connect(transport);
+
+      const ok = await client.callTool({ name: "OwnershipChain", arguments: { company: APPLE_LEI } });
+      expect(ok.isError).toBeFalsy();
+      expect((ok.structuredContent as { resolved?: boolean }).resolved).toBe(true);
+      expect((ok.structuredContent as { entity?: { lei?: string } }).entity?.lei).toBe(APPLE_LEI);
+
+      const miss = await client.callTool({
+        name: "OwnershipChain",
+        arguments: { company: "No Such Entity At All" },
+      });
+      expect(miss.isError).toBeFalsy();
+      expect((miss.structuredContent as { resolved?: boolean }).resolved).toBe(false);
+    } finally {
+      await client.close();
+    }
+  }, 20_000);
 });

@@ -22,6 +22,7 @@ export function createDisclosuresServer(options: AdapterOptions = {}): McpServer
       {
         description: tool.description,
         inputSchema: tool.inputSchema,
+        ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
         ...(tool.annotations ? { annotations: tool.annotations } : {}),
       },
       async (args: Record<string, unknown>) => tool.handler(args as never),

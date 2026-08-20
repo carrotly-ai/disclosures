@@ -18,6 +18,16 @@ export interface ToolDefinition<Shape extends z.ZodRawShape = z.ZodRawShape> {
   name: string;
   description: string;
   inputSchema: Shape;
+  /**
+   * Optional MCP outputSchema (a Zod raw shape). Declare it only on tools where
+   * EVERY non-error result carries structuredContent — the MCP SDK's
+   * validateToolOutput throws for a non-error CallToolResult that declares an
+   * outputSchema but omits structuredContent (isError results are exempt).
+   * Most tools here have honest-miss text-only paths (unsupported jurisdiction,
+   * not-found, empty result), so they emit structuredContent additively without
+   * declaring an outputSchema.
+   */
+  outputSchema?: z.ZodRawShape;
   annotations?: ToolAnnotations;
   handler(args: z.infer<z.ZodObject<Shape>>): Promise<ToolResult>;
 }
@@ -28,12 +38,14 @@ export function defineTool<Shape extends z.ZodRawShape>(
   inputSchema: Shape,
   handler: (args: z.infer<z.ZodObject<Shape>>) => Promise<ToolResult>,
   annotations?: ToolAnnotations,
+  outputSchema?: z.ZodRawShape,
 ): ToolDefinition<Shape> {
   return {
     name,
     description,
     inputSchema,
     ...(annotations ? { annotations } : {}),
+    ...(outputSchema ? { outputSchema } : {}),
     async handler(args) {
       try {
         return await handler(args);

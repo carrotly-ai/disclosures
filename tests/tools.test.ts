@@ -2664,4 +2664,203 @@ describe("MCP client ergonomics", () => {
     expect(secondText).toContain("TAIL-MARKER");
     expect(secondText).not.toContain("re-call with text_offset");
   });
+
+  test("CompanyInsiders returns structured insiders with roles and jurisdiction", async () => {
+    const form4 =
+      "<ownershipDocument><reportingOwner><reportingOwnerId>" +
+      "<rptOwnerCik>0001214156</rptOwnerCik><rptOwnerName>COOK TIMOTHY D</rptOwnerName>" +
+      "</reportingOwnerId><reportingOwnerRelationship>" +
+      "<isDirector>1</isDirector><isOfficer>1</isOfficer>" +
+      "<officerTitle>Chief Executive Officer</officerTitle>" +
+      "</reportingOwnerRelationship></reportingOwner></ownershipDocument>";
+    const fetchFn = routedFetch([
+      {
+        pattern: "data.sec.gov/submissions",
+        body: submissionsFixture([
+          {
+            form: "4",
+            filed: "2024-04-15",
+            accession: "0000320193-24-000040",
+            primaryDocument: "xslF345X06/wk-form4_1.xml",
+          },
+        ]),
+      },
+      { pattern: "wk-form4_1.xml", body: form4 },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({ company: "320193" } as never);
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      insiders?: Array<Record<string, unknown>>;
+      sourceJurisdiction?: string;
+    };
+    expect(structured?.sourceJurisdiction).toBe("US");
+    const top = structured.insiders?.[0];
+    expect(top?.name).toBe("COOK TIMOTHY D");
+    expect(Array.isArray(top?.roles)).toBe(true);
+    expect((top?.roles as string[]).includes("Director")).toBe(true);
+  });
+
+  test("CompanyOwners returns structured owners with the threshold regime", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "efts.sec.gov",
+        body: {
+          hits: {
+            hits: [
+              {
+                _id: "0000102909-24-000020:filing13ga.htm",
+                _source: {
+                  form: "SC 13G/A",
+                  file_date: "2024-02-12",
+                  adsh: "0000102909-24-000020",
+                  ciks: ["0000320193", "0000102909"],
+                  display_names: [
+                    "Apple Inc.  (AAPL)  (CIK 0000320193)",
+                    "VANGUARD GROUP INC  (CIK 0000102909)",
+                  ],
+                },
+              },
+            ],
+          },
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({ company: "320193" } as never);
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      owners?: Array<Record<string, unknown>>;
+      sourceJurisdiction?: string;
+    };
+    expect(structured?.sourceJurisdiction).toBe("US");
+    const top = structured.owners?.[0];
+    expect(top?.holderName).toBe("VANGUARD GROUP INC");
+    expect(top?.thresholdRegime).toContain("5% beneficial-ownership threshold");
+  });
+
+  test("CompanyFinancials returns structured concepts with period-end-labelled facts", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "us-gaap/NetIncomeLoss.json",
+        body: {
+          tag: "NetIncomeLoss",
+          label: "Net Income (Loss)",
+          units: {
+            USD: [
+              {
+                start: "2022-09-25",
+                end: "2023-09-30",
+                val: 96_995_000_000,
+                fy: 2023,
+                fp: "FY",
+                form: "10-K",
+                filed: "2023-11-03",
+                accn: "0000320193-23-000106",
+              },
+            ],
+          },
+        },
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "320193",
+      concepts: ["net_income"],
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      concepts?: Array<{ label?: string; unit?: string; facts?: Array<Record<string, unknown>> }>;
+      sourceJurisdiction?: string;
+    };
+    expect(structured?.sourceJurisdiction).toBe("US");
+    const concept = structured.concepts?.[0];
+    expect(concept?.label).toBe("Net income");
+    expect(concept?.unit).toBe("USD");
+    const fact = concept?.facts?.[0];
+    expect(fact?.periodEnd).toBe("2023-09-30");
+    expect(fact?.value).toBe(96_995_000_000);
+  });
+
+  test("OwnershipChain declares an outputSchema and returns a structured chain", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "filter%5Blei%5D",
+        body: gleifCollection([
+          {
+            ...gleifRecord(APPLE_LEI, "APPLE INC."),
+            relationships: {
+              "direct-parent": {
+                links: {
+                  "reporting-exception": `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/direct-parent-reporting-exception`,
+                },
+              },
+              "direct-children": {
+                links: {
+                  related: `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/direct-children`,
+                },
+              },
+            },
+          },
+        ]),
+      },
+      {
+        pattern: "direct-parent-reporting-exception",
+        body: {
+          data: {
+            type: "reporting-exceptions",
+            attributes: { category: "DIRECT_ACCOUNTING_CONSOLIDATION_PARENT", reason: "NATURAL_PERSONS" },
+          },
+        },
+      },
+      {
+        pattern: "direct-children",
+        body: gleifCollection([
+          gleifRecord("549300GT3HHPZ7TS8V70", "Apple Sales International", "IE"),
+        ]),
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: {} });
+    // OwnershipChain is the one tool in this batch that declares outputSchema:
+    // every non-error path (resolved chain + not-found miss) carries structure.
+    expect(toolByName(tools, "OwnershipChain").outputSchema).toBeDefined();
+    const result = await toolByName(tools, "OwnershipChain").handler({ company: APPLE_LEI } as never);
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      resolved?: boolean;
+      entity?: Record<string, unknown>;
+      directParent?: Record<string, unknown>;
+      children?: Array<Record<string, unknown>>;
+      sourceJurisdiction?: string;
+    };
+    expect(structured?.resolved).toBe(true);
+    expect(structured?.sourceJurisdiction).toBe("Global");
+    expect(structured?.entity?.lei).toBe(APPLE_LEI);
+    expect(structured?.entity?.legalName).toBe("APPLE INC.");
+    expect(structured?.directParent?.exceptionReason).toBe("NATURAL_PERSONS");
+    expect(structured?.children?.[0]?.lei).toBe("549300GT3HHPZ7TS8V70");
+  });
+
+  test("OwnershipChain attaches a structured miss object on a not-found resolution", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "filter%5Blei%5D", body: gleifCollection([]) },
+      { pattern: "filter%5Bentity.legalName%5D", body: gleifCollection([]) },
+    ]);
+    const tools = createTools({ fetchFn, env: {} });
+    const result = await toolByName(tools, "OwnershipChain").handler({
+      company: "No Such Entity At All",
+    } as never);
+    // Honest miss: a non-error text result that still carries structuredContent,
+    // so the declared outputSchema validates it (SDK requires structure on every
+    // non-error result).
+    expect(result.isError).toBeUndefined();
+    const structured = result.structuredContent as {
+      resolved?: boolean;
+      children?: unknown[];
+      sourceJurisdiction?: string;
+    };
+    expect(structured?.resolved).toBe(false);
+    expect(Array.isArray(structured?.children)).toBe(true);
+    expect(structured?.sourceJurisdiction).toBe("Global");
+  });
 });
