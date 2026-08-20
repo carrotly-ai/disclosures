@@ -91,7 +91,8 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
     intents:
       "CompanyResolve, CompanyFilings (date-indexed scan), CompanyOwners " +
       "(large-volume 5% reports; start_date/end_date bound the scan), " +
-      "CompanyDocument (docID; PDF or XBRL archive)",
+      "CompanyFinancials (annual XBRL headline totals from the 有価証券報告書, " +
+      "JPY, consolidated preferred), CompanyDocument (docID; PDF or XBRL archive)",
     caveat:
       "EDINET's index is by filing date, so searches scan day by day — " +
       "narrow date ranges are much faster. No insider-dealing feed.",

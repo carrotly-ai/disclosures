@@ -91,9 +91,12 @@ import {
   EDINET_5_PERCENT_THRESHOLD_REGIME,
   EDINET_DOCUMENT_CONTENT_WARNING,
   EDINET_DOCUMENT_XHTML_MESSAGE,
+  EDINET_FINANCIAL_CONCEPT_NAMES,
+  EDINET_FINANCIALS_CAVEAT,
   EDINET_NO_CONFIG_MESSAGE,
   getEdinetDocumentArchive,
   getEdinetDocumentPdf,
+  getEdinetFinancials,
   getEdinetLargeHolders,
   getLatestEdinetReport,
   hasEdinetConfiguration,
@@ -1703,8 +1706,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "consolidated and separate bases where both are filed. Explicit GB or EU " +
       "returns normalized annual IFRS figures parsed from ESEF/UKSEF reports " +
       "indexed by filings.xbrl.org (FY2020+, LEI-indexed; pass a legal name or " +
-      "LEI). Explicit JP directs callers to the EDINET annual securities report, " +
-      "and explicit TW to MOPS, because this release does not parse their XBRL.",
+      "LEI). Explicit JP returns headline totals parsed from the latest EDINET " +
+      "annual securities report's XBRL instance (in JPY, consolidated preferred). " +
+      "Explicit TW directs callers to MOPS, because this release does not parse " +
+      "its XBRL.",
     {
       ...companyInput,
       concepts: z
@@ -1716,12 +1721,57 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     },
     async ({ company, jurisdiction, concepts, periods }) => {
       if (jurisdiction === "JP") {
-        return textResult(
-          "EDINET publishes annual securities reports (有価証券報告書) with XBRL " +
-            "financial data, but this release does not parse them into normalized " +
-            'financial facts. Use CompanyFilings with jurisdiction "JP" and mode ' +
-            '"latest_annual" to locate the report and its docID.',
-        );
+        if (!hasEdinetConfiguration(options)) {
+          return failureResult(company, new Error(EDINET_NO_CONFIG_MESSAGE));
+        }
+        try {
+          const requested = concepts?.filter((concept) =>
+            EDINET_FINANCIAL_CONCEPT_NAMES.includes(concept)
+          );
+          const facts = await getEdinetFinancials({
+            company,
+            ...(requested && requested.length ? { concepts: requested } : {}),
+            ...(periods ? { periods } : {}),
+          }, options);
+          if (!facts.length) {
+            return textResult(joinSections(
+              `No annual XBRL financials found on EDINET for "${company}". ` +
+                `EDINET normalized concepts cover: ${EDINET_FINANCIAL_CONCEPT_NAMES.join(", ")}. ` +
+                "A company with no recent 有価証券報告書 (annual securities report), or one " +
+                "whose instance tags none of these headline totals, legitimately returns nothing.",
+              `_${EDINET_FINANCIALS_CAVEAT}_`,
+            ));
+          }
+          const byConcept = new Map<string, typeof facts>();
+          for (const fact of facts) {
+            const bucket = byConcept.get(fact.concept) ?? [];
+            bucket.push(fact);
+            byConcept.set(fact.concept, bucket);
+          }
+          const sections = [...byConcept.entries()].map(([concept, rows]) => {
+            const label = rows[0]?.label ?? concept;
+            const unit = rows[0]?.unit ?? "JPY";
+            return joinSections(
+              `## ${label} (${unit})`,
+              markdownTable(
+                ["Fiscal period end", "Basis", "Value", "Filed"],
+                rows.map((fact) => [
+                  fact.periodEnd,
+                  fact.basis ?? "—",
+                  formatNumber(fact.value, fact.unit),
+                  fact.filedDate,
+                ]),
+              ),
+            );
+          });
+          return textResult(joinSections(
+            `# Annual financials (EDINET XBRL): ${company}`,
+            ...sections,
+            `_${EDINET_FINANCIALS_CAVEAT}_`,
+          ));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "CN") {
         return textResult(
