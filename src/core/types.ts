@@ -16,6 +16,8 @@ export const JURISDICTIONS = {
   BR: "BR",
   DE: "DE",
   FR: "FR",
+  HK: "HK",
+  SG: "SG",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -36,6 +38,8 @@ export const DATA_SOURCES = {
   BAFIN: "BaFin",
   INFO_FINANCIERE: "info-financiere",
   RECHERCHE_ENTREPRISES: "recherche-entreprises",
+  HKEX: "HKEXnews",
+  ACRA: "ACRA",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -73,6 +77,10 @@ export interface IdentifierSet {
   bafinId?: string;
   /** French SIREN (9-digit legal-unit id) from recherche-entreprises, e.g. 542051180 (TotalEnergies SE). */
   siren?: string;
+  /** HKEXnews internal stock id (not the public 5-digit code), e.g. 7609 (Tencent). */
+  hkexStockId?: string;
+  /** Singapore ACRA Unique Entity Number (UEN), e.g. 197200078R (Singapore Airlines). */
+  uen?: string;
   jurisdiction?: string;
 }
 

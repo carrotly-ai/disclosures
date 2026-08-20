@@ -181,6 +181,35 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "CompanyOwners is a linked-notification list, not a structured cap table " +
       "(the crossing holder and % live inside the PDF). No managers'-transaction " +
       "feed; recherche-entreprises keys people by name, so homonyms are common.",
+    code: "HK",
+    name: "Hong Kong",
+    source: "HKEXnews",
+    credential: "None.",
+    identifiers: "4/5-digit HKEX stock code or listed issuer name",
+    intents:
+      "CompanyResolve (listed SEHK/GEM issuers), CompanyFilings (title-search " +
+      "servlet + latest_annual), CompanyDocument (HKEXnews FILE_LINK path; PDF " +
+      "or metadata)",
+    caveat:
+      "Listed issuers only (private cos are in the paid Companies Registry). " +
+      "Owners/insiders sit behind the captcha-walled Disclosure of Interests " +
+      "system, and financials live inside annual-report PDFs — all honest " +
+      "unsupported. HKEXnews content is copyrighted (link-first, on-demand fetch).",
+  },
+  {
+    code: "SG",
+    name: "Singapore",
+    source: "ACRA (data.gov.sg)",
+    credential: "None.",
+    identifiers: "Singapore UEN or company name",
+    intents:
+      "CompanyResolve only (UEN, status, type, incorporation date, former names, " +
+      "auditors, SSIC)",
+    caveat:
+      "Registry snapshot under the Singapore Open Data Licence — no officer " +
+      "names (a count only), shareholders, financials, or charges. SGX/SGXNet " +
+      "is Akamai + auth walled and BizFile extracts are paid, so every other SG " +
+      "intent is honest unsupported.",
   },
 ] as const;
 

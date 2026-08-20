@@ -1,6 +1,6 @@
 # disclosures
 
-**Corporate-disclosure research for AI agents and TypeScript — filings, insiders, owners, financials, and ownership chains from 14 official sources across 11 jurisdictions.**
+**Corporate-disclosure research for AI agents and TypeScript — filings, insiders, owners, financials, and ownership chains from 16 official sources across 13 jurisdictions.**
 
 [![npm version](https://img.shields.io/npm/v/disclosures?logo=npm&color=cb3837)](https://www.npmjs.com/package/disclosures)
 [![CI](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml/badge.svg)](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml)
@@ -11,8 +11,8 @@
 
 `disclosures` is a free, open-source [Model Context Protocol](https://modelcontextprotocol.io/) server **and** a TypeScript library. It answers questions like *"who are NVIDIA's directors?"*, *"who owns 5% of Samsung Electronics?"*, or *"show me Vale's last three annual results"* — with every answer linked back to the official source document.
 
-- **10 stable tools, 11 jurisdictions** — seven intent tools each route across national sources via one `jurisdiction` parameter; three register tools add filed-document, secured-charge, and person-appointment lookups. Tool names and schemas never change as coverage grows.
-- **Official sources only** — SEC EDGAR, GLEIF, UK Companies House, FCA NSM, filings.xbrl.org, Korea DART, Japan EDINET, China cninfo, India BSE, Taiwan TWSE, Brazil CVM, Germany BaFin, France info-financiere OAM + recherche-entreprises.
+- **10 stable tools, 13 jurisdictions** — seven intent tools each route across national sources via one `jurisdiction` parameter; three register tools add filed-document, secured-charge, and person-appointment lookups. Tool names and schemas never change as coverage grows.
+- **Official sources only** — SEC EDGAR, GLEIF, UK Companies House, FCA NSM, filings.xbrl.org, Korea DART, Japan EDINET, China cninfo, India BSE, Taiwan TWSE, Brazil CVM, Germany BaFin, France info-financiere OAM + recherche-entreprises, Hong Kong HKEXnews, Singapore ACRA.
 - **Honest by design** — real source links only, explicit "unsupported here" answers instead of empty or fabricated results, and clear caveats ("absence of a filing is not proof").
 - **Zero runtime dependencies** — one bundled file, runs anywhere Node 18+ runs.
 
@@ -130,20 +130,20 @@ Restart the client after changing its configuration, then try:
 | `CompanyCharges` | "What's secured against it?" — registered charges/mortgages with status, dates, persons entitled, and fixed/floating/negative-pledge particulars. | GB (Companies House) |
 | `PersonAppointments` | "Where else does this person sit?" — person search, cross-company role history, and disqualification / enforcement lookups (linked to the safe public register). | GB (Companies House), US (SEC EDGAR), DE (BaFin DealingsInfo), FR (recherche-entreprises dirigeants) |
 
-The first seven tools dispatch across jurisdictions via `jurisdiction`. Of the last three, `CompanyDocument` accepts a `jurisdiction` of `GB` (default), `US`, `JP`, `KR`, or `FR`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, or `FR`; `CompanyCharges` is Companies House-specific and takes no `jurisdiction` — it always queries the UK register.
+The first seven tools dispatch across jurisdictions via `jurisdiction`. Of the last three, `CompanyDocument` accepts a `jurisdiction` of `GB` (default), `US`, `JP`, `KR`, `FR`, or `HK`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, or `FR`; `CompanyCharges` is Companies House-specific and takes no `jurisdiction` — it always queries the UK register.
 
-Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR), BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR" | "DE" | "FR"` (default `US`).
+Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR), BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), 4/5-digit HKEX stock code (HK), Singapore UEN (SG). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR" | "DE" | "FR" | "HK" | "SG"` (default `US`).
 
 ### Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | — |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | — | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | — | — | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 global via GLEIF — jurisdiction-independent |
 
 ✅ supported · ⚠️ partial (FR `CompanyOwners`: threshold-crossing notifications as a linked-PDF list, holder/% inside the document) · — returns an honest unsupported-jurisdiction explanation, never an empty or fabricated result
@@ -170,6 +170,8 @@ US and global lookups work with just the User-Agent. Non-US sources are keyless 
 | [BaFin](https://www.bafin.de/) AnteileInfo + DealingsInfo | `DE` | None | Resolution, §§33 ff. WpHG major holdings, Art. 19 MAR directors' dealings. |
 | [info-financiere.gouv.fr](https://info-financiere.gouv.fr/) (OAM) | `FR` | None | Regulated-filing index with direct PDFs, threshold-crossing notifications, filed documents. |
 | [recherche-entreprises](https://recherche-entreprises.api.gouv.fr/) | `FR` | None | Resolution (SIREN), officers (dirigeants), person→companies. |
+| [HKEXnews](https://www.hkexnews.hk/) | `HK` | None | Resolution, title-search filings with keyless PDFs, `CompanyDocument` by `FILE_LINK` path. |
+| [ACRA](https://data.gov.sg/) (data.gov.sg) | `SG` | None | Resolution only — UEN, status, incorporation date, former names, auditors (Singapore Open Data Licence). |
 
 ```bash
 # Required (SEC fair-access policy — your name/org and contact email)

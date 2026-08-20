@@ -1,0 +1,65 @@
+# HK — HKEXnews
+
+**Data source:** [HKEXnews](https://www.hkexnews.hk/) (`www1.hkexnews.hk`) — the official
+electronic-disclosure portal for **every** Hong Kong listed issuer (SEHK Main Board + GEM).
+**Credentials:** none. Resolution, the title-search servlet, and the disclosure PDFs are all
+keyless.
+
+HKEXnews is driven by keyless JSON reference files and a keyless JSON search servlet whose
+`FILE_LINK` rows are directly fetchable PDFs. This is the HK analogue of the SEC EDGAR
+submissions feed and materially **extends** the existing CN `cninfo` HKEX mirror: `cninfo`
+only carries the China-cross-referenced subset (H-shares / dual-listed / Stock-Connect
+names), whereas HKEXnews covers the full SEHK/GEM universe (17,987 active securities), is the
+authoritative primary filer with native English titles and the official HKEX taxonomy, and
+serves PDFs from the native host. The `cninfo` `hke` path is unchanged — HK-native queries
+use this adapter.
+
+## Accepted `company` inputs
+
+A **4/5-digit HKEX stock code** (e.g. `700` or `00700`) or a **listed issuer's name**.
+Resolution fetches the keyless stock-list JSON (cached 24 h) and matches by code or name; it
+carries the public stock code plus the **internal HKEXnews `stockId`** the search servlet
+requires (for Tencent: code `00700` → `stockId` `7609`, which is *not* the public code and
+*not* the list's `s` sequence field).
+
+## Supported intents
+
+| Intent | Behaviour |
+|---|---|
+| `CompanyResolve` | Keyless resolution of listed SEHK/GEM issuers (code or name → stock code + internal `stockId`). |
+| `CompanyFilings` | Date-filterable title-search feed with direct PDF links; `mode "latest_annual"` filters the Annual Report category (t1code 40000 / t2code 40100). |
+| `CompanyDocument` | Fetches a filing's PDF by its `FILE_LINK` path (`metadata` for type + size via a HEAD request, `pdf` to download; `xhtml` is honestly unavailable — HKEXnews serves PDFs only). |
+| `CompanyInsiders` | Unsupported — no Section 16-equivalent feed; the DI directors'-interests register is captcha-walled and `dirsearch` is session/anti-CSRF-gated HTML. |
+| `CompanyOwners` | Unsupported — substantial-shareholder holdings sit behind the SFO Part XV Disclosure of Interests (DI) system (`di.hkex.com.hk` / `sdinotice.hkex.com.hk`), an ASP.NET WebForms + login-captcha wall with no keyless feed. |
+| `CompanyFinancials` | Unsupported — figures live only inside annual-report PDFs; there is no structured XBRL financial feed. |
+| `PrivateRaises` | Unsupported — no Form D-equivalent dataset. |
+| `OwnershipChain` | Global GLEIF — see the [index](README.md). |
+
+Private Hong Kong companies do **not** resolve here — the Companies Registry (ICRIS /
+e-Services) is a paid per-search/per-document portal, not a free keyless source, so private
+`CompanyResolve`, `CompanyDocument`, and `CompanyCharges` for HK are honestly unsupported.
+
+## `CompanyDocument` transaction-id scheme
+
+The `transaction_id` for HK is the filing's **`FILE_LINK` path**, with its leading slash
+preserved, exactly as returned by `CompanyFilings` (e.g.
+`/listedco/listconews/sehk/2026/0820/2026082000673.pdf`). A full
+`https://www1.hkexnews.hk/…` URL is also accepted. The reconstructed document URL is
+validated to stay on `hkexnews.hk` (no SSRF to arbitrary hosts). Downloads are capped at
+25 MB and written to disk (bytes are never inlined).
+
+## Licence / redistribution
+
+HKEXnews content is **copyrighted** (not an open-data licence) — the same posture as the
+already-shipped `cninfo`, `bseIndia`, and `twseOpenApi` adapters. This release does **not**
+redistribute documents in bulk: it returns the **official source link** and fetches document
+content **on demand** for the end user, citing the source. The stock-list and taxonomy JSONs
+are used as internal lookups only, never re-published.
+
+## Caveats
+
+- Listed SEHK/GEM issuers only; private companies are in the paid Companies Registry.
+- `CompanyFilings` returns real disclosure PDF links; the deeper insider/owner/financial
+  intents degrade honestly rather than scraping captcha- or session-walled sources.
+- Absence in a filings window is not proof a filing does not exist — adjust
+  `start_date`/`end_date`.
