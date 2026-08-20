@@ -6,6 +6,8 @@ All notable changes to this project will be documented here.
 
 ### Added
 
+- **Streamable-HTTP transport** as a second entry point, the foundation for a future hosted deployment. `dist/server.mjs --http [--port N] [--host H]` starts an HTTP server (Node's built-in `http` module, still zero runtime dependencies — the MCP SDK is bundled at build time); no flag keeps stdio behaviour exactly as before. It binds `127.0.0.1` by default (override with `--host`), takes its port from `--port`, the `PORT` env var, or `8080`, and runs the SDK's stateless streamable-HTTP mode (a fresh server instance per request, no session id). Endpoints: `POST /mcp` for the MCP protocol and `GET /healthz` returning `{name, version, tools}`. Diagnostics stay on stderr, matching stdio mode. Exposed to library consumers as `runHttpServer(options)`.
+
 - MCP client ergonomics, all additive (tool names and existing parameters unchanged):
   - **Tool annotations** on all ten tools (`openWorldHint`, `idempotentHint`, `destructiveHint: false`; `readOnlyHint` on every tool except `CompanyDocument`, whose `pdf` mode writes a local file) so clients can skip confirmations and parallelize safely.
   - **Structured output** (`structuredContent`) alongside the Markdown text on the identifier-bearing paths: `CompanyResolve` returns ranked candidates with the full identifier set and match reason; `CompanyFilings` (all jurisdictions, including latest-report modes) returns filings with a `transactionId` ready for `CompanyDocument`; `PersonAppointments` search (GB/US/DE) returns people with their `officerId`. Clients chain identifiers without parsing prose; the text block remains complete on its own.
