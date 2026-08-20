@@ -99,7 +99,7 @@ describe("HTTP MCP server", () => {
       expect(text).toContain(APPLE_LEI);
       expect(text).toContain("Exact LEI match");
       // Only the injected stub was hit — no request escaped to the live network.
-      expect(fetchFn.requests.every(({ url }) => url.includes("api.gleif.org"))).toBe(true);
+      expect(fetchFn.requests.every(({ url }) => new URL(url).host === "api.gleif.org")).toBe(true);
     } finally {
       await client.close();
     }
