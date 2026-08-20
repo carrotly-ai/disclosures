@@ -19,6 +19,8 @@ import type {
   AdapterOptions,
   Entity,
   Filing,
+  FinancialBasis,
+  FinancialFact,
   LatestReportMetadata,
   OwnerRecord,
 } from "../core/types.js";
@@ -939,6 +941,365 @@ export async function getEdinetDocumentArchive(
   };
 }
 
+// --- Annual XBRL financials (CompanyFinancials JP analog) ------------------
+//
+// A 有価証券報告書 (annual securities report, docType 120) bundles an XBRL
+// instance in its type=1 archive under XBRL/PublicDoc/*.xbrl. The instance
+// carries the primary financial statements (jppfs_cor / jpigp_cor taxonomies)
+// tagged against a small set of well-known relative-period contexts. This path
+// downloads that one archive for the latest annual report and extracts the
+// headline totals — no schema/label linkbase resolution, just the standardized
+// element names and context ids EDINET assigns every filer.
+
+interface EdinetConceptSpec {
+  concept: string;
+  label: string;
+  /**
+   * jppfs_cor / jpigp_cor element local names carrying this concept, most
+   * preferred first. Matching is by local name only, so both the Japanese-GAAP
+   * (jppfs_cor) and IFRS (jpigp_cor, `*IFRS` suffix) taggings resolve.
+   */
+  elements: readonly string[];
+}
+
+/**
+ * Standardized EDINET taxonomy elements for the shared canonical concept set.
+ * Kept to undimensioned headline statement totals: net sales / operating
+ * revenue, operating income, profit attributable to owners of the parent,
+ * total assets, and net assets (equity). The label surfaced on each fact is the
+ * canonical English one — EDINET's own labels live in a separate linkbase this
+ * zero-dependency path does not resolve.
+ */
+export const EDINET_FINANCIAL_CONCEPTS: readonly EdinetConceptSpec[] = [
+  {
+    concept: "revenue",
+    label: "Revenue (net sales / operating revenue)",
+    elements: [
+      "NetSales",
+      "OperatingRevenue1",
+      "OperatingRevenue2",
+      "NetSalesIFRS",
+      "RevenueIFRS",
+      "RevenueFromContractsWithCustomersIFRS",
+    ],
+  },
+  {
+    concept: "operating_income",
+    label: "Operating income",
+    elements: ["OperatingIncome", "OperatingProfitLossIFRS"],
+  },
+  {
+    concept: "net_income",
+    label: "Net income (attributable to owners of parent)",
+    elements: [
+      "ProfitLossAttributableToOwnersOfParent",
+      "ProfitLossAttributableToOwnersOfParentIFRS",
+      "ProfitLoss",
+      "ProfitLossIFRS",
+    ],
+  },
+  {
+    concept: "total_assets",
+    label: "Total assets",
+    elements: ["Assets", "AssetsIFRS"],
+  },
+  {
+    concept: "stockholders_equity",
+    label: "Net assets (equity)",
+    elements: [
+      "NetAssets",
+      "EquityAttributableToOwnersOfParentIFRS",
+      "EquityIFRS",
+    ],
+  },
+];
+
+export const EDINET_FINANCIAL_CONCEPT_NAMES = EDINET_FINANCIAL_CONCEPTS.map(
+  (spec) => spec.concept,
+);
+
+export const EDINET_DEFAULT_PERIOD_COUNT = 2;
+export const EDINET_MAX_PERIOD_COUNT = 5;
+
+export const EDINET_FINANCIALS_CAVEAT =
+  "As-filed annual figures parsed directly from the XBRL instance of the latest " +
+  "有価証券報告書 (annual securities report) on EDINET, in Japanese yen (¥). " +
+  "\"Basis\" states whether a figure is consolidated (連結) or non-consolidated " +
+  "(単体): consolidated is preferred per line and non-consolidated is used only " +
+  "where the filer reports no consolidated value. Only headline statement totals " +
+  "are extracted (net sales / operating revenue, operating income, profit " +
+  "attributable to owners of the parent, total assets, net assets) — no segment " +
+  "or note detail — and a single report carries the current fiscal year plus the " +
+  "prior year it restates.";
+
+type EdinetPeriodKey = "current" | "prior1" | "prior2" | "prior3" | "prior4";
+
+const EDINET_PERIOD_ORDER: readonly EdinetPeriodKey[] = [
+  "current",
+  "prior1",
+  "prior2",
+  "prior3",
+  "prior4",
+];
+
+interface EdinetContext {
+  periodKey: EdinetPeriodKey;
+  periodEnd: string;
+  basis: FinancialBasis;
+}
+
+export interface EdinetParsedFact {
+  concept: string;
+  label: string;
+  periodKey: EdinetPeriodKey;
+  periodEnd: string;
+  basis: FinancialBasis;
+  value: number;
+  unit: string;
+}
+
+// Only undimensioned annual contexts (and their non-consolidated companions)
+// qualify; segment/member-dimensioned contexts carry a different id suffix and
+// are ignored so we never surface a per-segment figure as a company total.
+const EDINET_CONTEXT_ID_RE =
+  /^(Current|Prior([1-4]))Year(Duration|Instant)(_NonConsolidatedMember)?$/;
+
+const EDINET_DATE_RE = /(\d{4}-\d{2}-\d{2})/;
+
+/** Parse an EDINET instance's contexts into period + consolidation metadata. */
+export function parseEdinetContexts(xbrl: string): Map<string, EdinetContext> {
+  const contexts = new Map<string, EdinetContext>();
+  const contextRe =
+    /<(?:\w+:)?context\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/(?:\w+:)?context>/g;
+  let match: RegExpExecArray | null;
+  while ((match = contextRe.exec(xbrl)) !== null) {
+    const id = match[1] ?? "";
+    const body = match[2] ?? "";
+    const idMatch = EDINET_CONTEXT_ID_RE.exec(id);
+    if (!idMatch) continue;
+    const periodKey: EdinetPeriodKey =
+      idMatch[1] === "Current" ? "current" : (`prior${idMatch[2]}` as EdinetPeriodKey);
+    const basis: FinancialBasis = idMatch[4] ? "separate" : "consolidated";
+    const endTag =
+      /<(?:\w+:)?endDate>([\s\S]*?)<\/(?:\w+:)?endDate>/.exec(body) ??
+      /<(?:\w+:)?instant>([\s\S]*?)<\/(?:\w+:)?instant>/.exec(body);
+    const periodEnd = endTag ? EDINET_DATE_RE.exec(endTag[1] ?? "")?.[1] : undefined;
+    if (!periodEnd) continue;
+    contexts.set(id, { periodKey, periodEnd, basis });
+  }
+  return contexts;
+}
+
+interface ElementBinding {
+  concept: string;
+  label: string;
+  priority: number;
+}
+
+function buildElementIndex(
+  concepts: ReadonlySet<string>,
+): Map<string, ElementBinding> {
+  const index = new Map<string, ElementBinding>();
+  for (const spec of EDINET_FINANCIAL_CONCEPTS) {
+    if (!concepts.has(spec.concept)) continue;
+    spec.elements.forEach((element, priority) => {
+      if (!index.has(element)) {
+        index.set(element, { concept: spec.concept, label: spec.label, priority });
+      }
+    });
+  }
+  return index;
+}
+
+interface FactCandidate extends ElementBinding {
+  periodKey: EdinetPeriodKey;
+  periodEnd: string;
+  basis: FinancialBasis;
+  value: number;
+}
+
+/** Prefer consolidated over separate, then the higher-priority element. */
+function preferCandidate(next: FactCandidate, current: FactCandidate): boolean {
+  const rank = (basis: FinancialBasis) => (basis === "consolidated" ? 0 : 1);
+  if (rank(next.basis) !== rank(current.basis)) {
+    return rank(next.basis) < rank(current.basis);
+  }
+  return next.priority < current.priority;
+}
+
+function parseEdinetFactValue(text: string): number | undefined {
+  const trimmed = text.trim().replace(/,/g, "");
+  if (!/^-?\d+(\.\d+)?$/.test(trimmed)) return undefined;
+  const value = Number.parseFloat(trimmed);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+/**
+ * Extract the normalized headline financial facts from one EDINET XBRL
+ * instance. Pure and offline: it takes the decoded instance text, so context
+ * selection and concept extraction are testable without a network fixture.
+ */
+export function parseEdinetXbrlFinancials(
+  xbrl: string,
+  params: { concepts?: readonly string[]; periods?: number } = {},
+): EdinetParsedFact[] {
+  const wanted = new Set(
+    params.concepts && params.concepts.length
+      ? params.concepts.filter((concept) =>
+          EDINET_FINANCIAL_CONCEPT_NAMES.includes(concept),
+        )
+      : EDINET_FINANCIAL_CONCEPT_NAMES,
+  );
+  if (!wanted.size) return [];
+  const contexts = parseEdinetContexts(xbrl);
+  if (!contexts.size) return [];
+  const elementIndex = buildElementIndex(wanted);
+
+  const chosen = new Map<string, FactCandidate>();
+  const factRe = /<(\w+):([A-Za-z0-9_]+)\b([^>]*)>([^<]*)<\/\1:\2>/g;
+  let match: RegExpExecArray | null;
+  while ((match = factRe.exec(xbrl)) !== null) {
+    const localName = match[2] ?? "";
+    const binding = elementIndex.get(localName);
+    if (!binding) continue;
+    const attrs = match[3] ?? "";
+    const contextRef = /\bcontextRef="([^"]+)"/.exec(attrs)?.[1];
+    if (!contextRef) continue;
+    const context = contexts.get(contextRef);
+    if (!context) continue;
+    const value = parseEdinetFactValue(match[4] ?? "");
+    if (value === undefined) continue;
+    const candidate: FactCandidate = {
+      ...binding,
+      periodKey: context.periodKey,
+      periodEnd: context.periodEnd,
+      basis: context.basis,
+      value,
+    };
+    const key = `${binding.concept}|${context.periodKey}`;
+    const current = chosen.get(key);
+    if (!current || preferCandidate(candidate, current)) chosen.set(key, candidate);
+  }
+
+  const periodLimit = Math.min(
+    EDINET_MAX_PERIOD_COUNT,
+    Math.max(1, params.periods ?? EDINET_DEFAULT_PERIOD_COUNT),
+  );
+  const allowedPeriods = new Set(
+    EDINET_PERIOD_ORDER.filter((key) =>
+      [...chosen.values()].some((candidate) => candidate.periodKey === key),
+    ).slice(0, periodLimit),
+  );
+
+  const conceptOrder = new Map(
+    EDINET_FINANCIAL_CONCEPTS.map((spec, index) => [spec.concept, index]),
+  );
+  return [...chosen.values()]
+    .filter((candidate) => allowedPeriods.has(candidate.periodKey))
+    .map((candidate) => ({
+      concept: candidate.concept,
+      label: candidate.label,
+      periodKey: candidate.periodKey,
+      periodEnd: candidate.periodEnd,
+      basis: candidate.basis,
+      value: candidate.value,
+      unit: "JPY",
+    }))
+    .sort((left, right) => {
+      if (left.periodEnd !== right.periodEnd) {
+        return right.periodEnd.localeCompare(left.periodEnd);
+      }
+      return (
+        (conceptOrder.get(left.concept) ?? 0) - (conceptOrder.get(right.concept) ?? 0)
+      );
+    });
+}
+
+/**
+ * Download the latest annual report's type=1 archive and decode its XBRL
+ * instance (XBRL/PublicDoc/*.xbrl). A bad docID / absent rendition answers a
+ * JSON error envelope, translated to a typed error rather than leaked as bytes.
+ */
+async function downloadEdinetXbrlInstance(
+  docId: string,
+  options: AdapterOptions,
+): Promise<string> {
+  const bytes = await fetchEdinetRendition(
+    docId,
+    "1",
+    "application/zip, application/octet-stream, */*",
+    options,
+  );
+  if (!isZipBytes(bytes)) {
+    const err = edinetErrorFromBody(bytes);
+    throw new EdinetApiError(
+      err?.status ?? "",
+      err?.message ?? `EDINET returned no XBRL archive for docID ${docId}.`,
+    );
+  }
+  const entries = readZipEntries(bytes, {
+    maxEntries: 4096,
+    maxEntrySize: EDINET_DOCUMENT_MAX_BYTES,
+    maxTotalSize: EDINET_DOCUMENT_MAX_BYTES,
+    // Inflate only the XBRL instance(s); PublicDoc/AuditDoc HTML is not needed.
+    filter: (name) => /\.xbrl$/i.test(name),
+  });
+  const instance =
+    entries.find((entry) => /publicdoc/i.test(entry.name)) ?? entries[0];
+  if (!instance) {
+    throw new EdinetApiError(
+      "",
+      `EDINET archive for docID ${docId} contains no XBRL instance.`,
+    );
+  }
+  return new TextDecoder("utf-8").decode(instance.data);
+}
+
+export interface EdinetFinancialsParams {
+  company: string;
+  concepts?: readonly string[];
+  periods?: number;
+}
+
+/**
+ * Normalized annual financial facts for a JP issuer: resolve the company, find
+ * its latest 有価証券報告書 (annual securities report), download that one type=1
+ * archive, and extract the headline totals from its XBRL instance. Bounded to a
+ * single document search plus a single archive download per call.
+ */
+export async function getEdinetFinancials(
+  input: string | EdinetFinancialsParams,
+  options: AdapterOptions = {},
+): Promise<FinancialFact[]> {
+  const params = typeof input === "string" ? { company: input } : input;
+  const report = await getLatestEdinetReport(params.company, "annual", options);
+  if (!report?.accession) return [];
+  const xbrl = await downloadEdinetXbrlInstance(report.accession, options);
+  const parsed = parseEdinetXbrlFinancials(xbrl, {
+    ...(params.concepts ? { concepts: params.concepts } : {}),
+    ...(params.periods !== undefined ? { periods: params.periods } : {}),
+  });
+  const edinetCode = report.sourceIdentifiers?.edinetCode;
+  const secCode = report.sourceIdentifiers?.secCode;
+  return parsed.map((fact) => ({
+    concept: fact.concept,
+    label: fact.label,
+    periodEnd: fact.periodEnd,
+    value: fact.value,
+    unit: fact.unit,
+    filedDate: report.filedDate,
+    form: report.form,
+    basis: fact.basis,
+    sourceUrl: report.sourceUrl,
+    source: "EDINET" as const,
+    sourceIdentifiers: {
+      ...(edinetCode ? { edinetCode } : {}),
+      ...(secCode ? { secCode } : {}),
+      jurisdiction: "JP",
+    },
+  }));
+}
+
 // --- Aliases and adapter factory -------------------------------------------
 
 export const resolveCompany = resolveEdinetCompany;
@@ -957,5 +1318,7 @@ export function createEdinetAdapter(options: AdapterOptions = {}) {
       getLatestEdinetReport(company, reportKind, options),
     getOwners: (company: string, params?: EdinetOwnersParams) =>
       getEdinetLargeHolders(company, params, options),
+    getFinancials: (input: string | EdinetFinancialsParams) =>
+      getEdinetFinancials(input, options),
   };
 }

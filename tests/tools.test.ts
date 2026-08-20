@@ -11,7 +11,11 @@ import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
 import { loadFixture } from "./helpers/loadFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { latin1Bytes, makeStoredZip, makeStoredZipMulti } from "./helpers/zipFixture.js";
-import { edinetCodeListRoute, edinetDay } from "./helpers/edinetFixture.js";
+import {
+  edinetArchiveRoute,
+  edinetCodeListRoute,
+  edinetDay,
+} from "./helpers/edinetFixture.js";
 import {
   EDINET_5_PERCENT_THRESHOLD_REGIME,
   resetEdinetCodeCache,
@@ -1814,16 +1818,37 @@ describe("explicit JP routing", () => {
     expect(text).toContain(EDINET_5_PERCENT_THRESHOLD_REGIME);
   });
 
-  test("CompanyFinancials directs JP callers to the EDINET annual report", async () => {
-    const fetchFn = routedFetch([]);
+  test("CompanyFinancials renders EDINET XBRL annual figures with a basis column", async () => {
+    const fetchFn = routedFetch([
+      edinetCodeListRoute,
+      jpDocumentsRoute,
+      edinetArchiveRoute("S100ANNUAL"),
+    ]);
     const tools = createTools({ fetchFn, env: JP_ENV });
     const result = await toolByName(tools, "CompanyFinancials").handler({
       company: "E02144",
       jurisdiction: "JP",
     } as never);
     expect(result.isError).toBeUndefined();
-    expect(resultText(result)).toContain("有価証券報告書");
-    expect(resultText(result)).toContain("latest_annual");
+    const text = resultText(result);
+    expect(text).toContain("Annual financials (EDINET XBRL)");
+    // Consolidated revenue is formatted in JPY (¥) with the basis surfaced.
+    expect(text).toContain("¥45,000,000,000,000");
+    expect(text).toContain("consolidated");
+    // Net income is filed only on the non-consolidated basis in the fixture.
+    expect(text).toContain("separate");
+    expect(text).toContain("2026-03-31");
+  });
+
+  test("CompanyFinancials for JP returns the friendly missing-key result", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "E02144",
+      jurisdiction: "JP",
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("EDINET_API_KEY");
     expect(fetchFn.requests).toHaveLength(0);
   });
 

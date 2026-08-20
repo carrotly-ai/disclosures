@@ -18,7 +18,7 @@ injectable `AdapterOptions.cache`.
 | `CompanyFilings` | Date-indexed disclosure-document search (requires `EDINET_API_KEY`). |
 | `CompanyInsiders` | Unsupported — EDINET has no Section 16-style insider feed. |
 | `CompanyOwners` | Large-volume holding reports (大量保有報告書, the 5% rule) and their change reports (変更報告書), reverse-mapped to the subject issuer — each row is a ≥5% holder (requires `EDINET_API_KEY`). |
-| `CompanyFinancials` | Unsupported in this release. |
+| `CompanyFinancials` | Headline annual figures parsed from the latest 有価証券報告書's XBRL instance — net sales / operating revenue, operating income, profit attributable to owners of the parent, total assets, net assets — in JPY, consolidated preferred (requires `EDINET_API_KEY`). |
 | `CompanyDocument` | Fetches a filing's renditions by **EDINET docID** (passed as `transaction_id`, from `CompanyFilings`). Mode `metadata` (default) lists the XBRL archive members (type=1); `pdf` downloads the human-readable PDF (type=2) to disk with a page count; `xhtml` reports honestly that EDINET's machine-readable form is a bundled XBRL archive, not inline XHTML. Requires `EDINET_API_KEY`. |
 | `PrivateRaises` | Unsupported — no Form D-equivalent dataset. |
 | `OwnershipChain` | Global GLEIF — see the [index](README.md). |
@@ -32,10 +32,39 @@ injectable `AdapterOptions.cache`.
 - **`xhtml`** is reported honestly as unsupported: EDINET has no single inline XHTML rendition — the machine-readable content is the bundled XBRL archive (`metadata` lists it), and the human-readable rendition is the PDF (`pdf` downloads it).
 - **Errors:** a bad docID or absent rendition answers a JSON envelope rather than bytes; it is detected by magic-byte inspection and surfaced as a readable error, never leaked as content.
 
+## `CompanyFinancials` (JP)
+
+- **Source:** the XBRL instance (`XBRL/PublicDoc/*.xbrl`) bundled inside the latest
+  **有価証券報告書** (annual securities report, docType 120) `type=1` archive. The call is
+  bounded: one date-indexed document search to find the report, then one archive download.
+  Requires `EDINET_API_KEY` (resolution is keyless; a missing key returns the friendly
+  configuration message).
+- **Concepts:** the shared canonical set — `revenue` (jppfs_cor `NetSales` /
+  `OperatingRevenue1` / `OperatingRevenue2`, or the IFRS `*IFRS` variants), `operating_income`
+  (`OperatingIncome` / `OperatingProfitLossIFRS`), `net_income`
+  (`ProfitLossAttributableToOwnersOfParent`, falling back to `ProfitLoss` and the IFRS
+  variants), `total_assets` (`Assets`), and `stockholders_equity` (`NetAssets` / IFRS
+  `Equity`). Matching is by element **local name**, so both Japanese-GAAP (jppfs_cor) and
+  IFRS (jpigp_cor) taggings resolve. Values are the raw yen amounts as tagged — no scaling.
+- **Contexts:** only the standardized undimensioned annual contexts qualify —
+  `CurrentYear{Duration,Instant}`, `Prior{1..4}Year{...}`, and their
+  `_NonConsolidatedMember` companions. Segment/member-dimensioned contexts are ignored, so a
+  per-segment figure is never surfaced as a company total.
+- **Basis:** consolidated (連結) is preferred **per line**; the non-consolidated (単体) value
+  is used only where the filer reports no consolidated figure for that line, and the `Basis`
+  column states which was used. One report carries the current fiscal year plus the prior
+  year it restates; `periods` bounds how many are shown (default 2).
+- **Errors:** a bad docID or absent rendition answers a JSON envelope rather than a ZIP; it is
+  detected by magic-byte inspection and surfaced as a readable error, never leaked as content.
+
 ## Caveats
 
 - EDINET search is date-indexed rather than company-indexed; resolution narrows to the
   issuer's EDINET code, then filings are queried within the date window.
+- `CompanyFinancials` reads figures **as filed** from the XBRL instance in JPY. It extracts
+  only headline statement totals (no segment or note detail); a company with no recent annual
+  securities report, or whose instance tags none of these elements, legitimately returns
+  nothing — absence is not proof it did not report.
 - `CompanyOwners` reverse-maps EDINET's **filer-indexed** large-holding reports onto the
   subject issuer by matching each report's `issuerEdinetCode` to the resolved company, so
   the filer of each returned row is a ≥5% holder of it. Because there is no server-side
