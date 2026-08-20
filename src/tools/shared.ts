@@ -17,10 +17,11 @@ export const companyInput = {
         "securities code, or 13-digit corporate number (JP), 6-digit A-share " +
         "or 5-digit HK stock code (CN, via cninfo), 6-digit BSE scrip code " +
         "(IN), 4-digit TWSE listing code (TW), numeric CVM code (BR), " +
-        "8-digit BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), or 20-character LEI",
+        "8-digit BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), 4/5-digit HKEX " +
+        "stock code (HK), Singapore UEN (SG), or 20-character LEI",
     ),
   jurisdiction: z
-    .enum(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE", "FR"])
+    .enum(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE", "FR", "HK", "SG"])
     .optional()
     .describe(
       "Jurisdiction to search: US (SEC EDGAR), GB (Companies House), " +
@@ -29,9 +30,11 @@ export const companyInput = {
         "CN (cninfo — SSE/SZSE), " +
         "IN (BSE India), TW (TWSE OpenAPI — Taiwan listed companies), " +
         "BR (CVM open data — Brazilian listed companies), " +
-        "DE (BaFin — German major-holding voting rights + directors' dealings), or " +
+        "DE (BaFin — German major-holding voting rights + directors' dealings), " +
         "FR (info-financiere.gouv.fr OAM + recherche-entreprises — French " +
-        "regulated filings, threshold crossings, and officers). " +
+        "regulated filings, threshold crossings, and officers), " +
+        "HK (HKEXnews — Hong Kong listed issuers: CompanyResolve, CompanyFilings, " +
+        "CompanyDocument), or SG (ACRA via data.gov.sg — CompanyResolve only). " +
         "Omit for the existing US default.",
     ),
 };
@@ -75,7 +78,7 @@ export function failureResult(company: string, error: unknown): ToolResult {
   }
   const message = error instanceof Error ? error.message : String(error);
   if (
-    /not found|no sec company found|no gleif entity|no companies house company found|no opendart company found|no edinet company found|no cninfo company found|no bse company found|no twse company found|no cvm company found|no bafin company found/i
+    /not found|no sec company found|no gleif entity|no companies house company found|no opendart company found|no edinet company found|no cninfo company found|no bse company found|no twse company found|no cvm company found|no bafin company found|no hkexnews company found|no acra company found/i
       .test(message)
   ) {
     return notFoundResult(company);
