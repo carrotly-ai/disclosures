@@ -166,6 +166,18 @@ export const cvmRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 // on one bounded lookup while cross-call abuse still trips it.
 export const bafinRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 
+// France info-financiere.gouv.fr (OpenDataSoft Explore v2 JSON). No documented
+// hard limit beyond ODS anonymous quotas; one intent issues at most a records
+// query plus a single document fetch, so keep a modest budget that never
+// self-trips on one bounded lookup while cross-call abuse still trips it.
+export const infoFinanciereRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+
+// France recherche-entreprises.api.gouv.fr (DINUM). The operator documents a
+// 7-requests-per-second ceiling; each intent issues a single search request, so
+// a 1-second sliding window at that ceiling never self-trips on one lookup while
+// bursty cross-call abuse still trips it.
+export const rechercheEntreprisesRateLimiter = new SlidingWindowRateLimiter(7, 1_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -179,4 +191,6 @@ export function resetRateLimiters(): void {
   twseRateLimiter.reset();
   cvmRateLimiter.reset();
   bafinRateLimiter.reset();
+  infoFinanciereRateLimiter.reset();
+  rechercheEntreprisesRateLimiter.reset();
 }

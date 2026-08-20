@@ -167,6 +167,26 @@ import {
   searchBafinPeople,
 } from "../adapters/bafin.js";
 import {
+  INFO_FINANCIERE_DOCUMENT_CONTENT_WARNING,
+  INFO_FINANCIERE_DOCUMENT_XHTML_MESSAGE,
+  INFO_FINANCIERE_FILINGS_CAVEAT,
+  INFO_FINANCIERE_OWNERS_CAVEAT,
+  INFO_FINANCIERE_OWNERS_THRESHOLD_REGIME,
+  getInfoFinanciereDocumentSize,
+  getInfoFinanciereOwners,
+  getInfoFinancierePdf,
+  resolveInfoFinanciereDocument,
+  searchInfoFinanciereCompanies,
+  searchInfoFinanciereFilings,
+} from "../adapters/infoFinanciere.js";
+import {
+  RECHERCHE_ENTREPRISES_NO_DISQUALIFICATION_MESSAGE,
+  RECHERCHE_ENTREPRISES_PERSON_CAVEAT,
+  getRecherchePersonAppointments,
+  searchRechercheEntreprises,
+  searchRecherchePeople,
+} from "../adapters/rechercheEntreprises.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -311,6 +331,7 @@ function identifierText(entity: Entity): string {
     entity.orgId ? `cninfo ${entity.orgId}` : undefined,
     entity.scripCode ? `BSE ${entity.scripCode}` : undefined,
     entity.isin ? `ISIN ${entity.isin}` : undefined,
+    entity.siren ? `SIREN ${entity.siren}` : undefined,
   ].filter((value): value is string => Boolean(value)).join("; ") || "—";
 }
 
@@ -369,6 +390,7 @@ function entitiesStructured(entities: Entity[]): Record<string, unknown> {
       scripCode: entity.scripCode,
       cvmCode: entity.cvmCode,
       bafinId: entity.bafinId,
+      siren: entity.siren,
       sourceUrl: entity.sourceUrl,
     })),
   };
@@ -865,6 +887,21 @@ const BAFIN_FINANCIALS_UNSUPPORTED =
   "CompanyFinancials with jurisdiction \"EU\" for a German issuer's annual " +
   "financial facts.";
 
+const INFO_FINANCIERE_INSIDERS_UNSUPPORTED =
+  "CompanyInsiders is unsupported for jurisdiction \"FR\". Managers' " +
+  "transactions (déclarations des dirigeants, Art.19 MAR) are not in the French " +
+  "OAM flux — they live only on the AMF's BDIF web UI, which exposes no free " +
+  "machine-readable feed. Officer/appointment data is available via " +
+  "PersonAppointments with jurisdiction \"FR\" (recherche-entreprises).";
+
+const INFO_FINANCIERE_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"FR\". A listed French " +
+  "issuer's annual financials are already served, structured, via " +
+  "CompanyFinancials with jurisdiction \"EU\" (ESEF, filings.xbrl.org) — the " +
+  "OAM only carries the same reports as PDFs. Non-listed companies' accounts sit " +
+  "behind the token-gated INPI RNE API, which fails the keyless bar. Use " +
+  "jurisdiction \"EU\" for a French listed issuer's annual financial facts.";
+
 const EU_ESEF_ONLY_HINT =
   "The EU route is ESEF filers only (pan-European annual reports indexed by " +
   "filings.xbrl.org, FY2020+, LEI-indexed), not a company register — pass a " +
@@ -1111,6 +1148,40 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `# Company resolution (BaFin): ${company}`,
             entityRows(results.slice(0, 10)),
           ), entitiesStructured(results.slice(0, 10)));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "FR") {
+        try {
+          // Listed issuers resolve via the OAM flux (carrying ISIN + LEI);
+          // non-listed companies resolve via recherche-entreprises (SIREN).
+          // A name query tries both and merges (OAM first); an ISIN/LEI stays
+          // on the OAM path, a bare SIREN on recherche-entreprises.
+          const isSiren = /^\d{9}$/.test(company.trim());
+          const listed = isSiren
+            ? []
+            : await searchInfoFinanciereCompanies(company, options);
+          let registry: Entity[] = [];
+          try {
+            registry = await searchRechercheEntreprises(company, options);
+          } catch {
+            // recherche-entreprises is supplementary here; an OAM hit still stands.
+          }
+          const merged = [...listed, ...registry].slice(0, 10);
+          if (!merged.length) {
+            return notFoundResult(company, "Try a company name, a 9-digit SIREN, an ISIN, or a 20-character LEI (listed issuers resolve via the info-financiere OAM; others via recherche-entreprises).");
+          }
+          return textResult(joinSections(
+            `# Company resolution (info-financiere OAM + recherche-entreprises): ${company}`,
+            entityRows(merged),
+            nextStep(
+              "use CompanyFilings (jurisdiction \"FR\") for OAM regulated " +
+                "filings, or PersonAppointments (jurisdiction \"FR\") for officers; " +
+                "a listed issuer's LEI also works with CompanyFinancials " +
+                "jurisdiction \"EU\" and OwnershipChain.",
+            ),
+          ), entitiesStructured(merged));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -1483,6 +1554,47 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         if (jurisdiction === "DE") {
           return textResult(BAFIN_FILINGS_UNSUPPORTED);
         }
+        if (jurisdiction === "FR") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            return textResult(
+              `Latest ${mode === "latest_annual" ? "annual" : "quarterly"} mode is unsupported for FR. ` +
+                "The info-financiere OAM flux is a flat regulated-filing index without a " +
+                "normalized periodic-report-metadata equivalent; for a listed French " +
+                "issuer's annual financials use CompanyFinancials with jurisdiction \"EU\" " +
+                "(ESEF), or mode \"search\" here to browse the OAM index.",
+            );
+          }
+          const filings = await searchInfoFinanciereFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No info-financiere OAM filings found for "${company}"` +
+                (start_date || end_date || forms ? " with the given filters." : "."),
+              `_${INFO_FINANCIERE_FILINGS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Regulated filings (info-financiere OAM): ${company}`,
+            markdownTable(
+              ["Filed", "Subtype (FR)", "Subtype (EN)", "Title", "PDF"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            "_PDF links open the official keyless OAM document; this tool never returns document text._",
+            `_${INFO_FINANCIERE_FILINGS_CAVEAT}_`,
+            FILINGS_NEXT_STEP,
+          ), filingsStructured(filings));
+        }
         if (jurisdiction === "KR") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
             const report = await getLatestOpenDartReport(
@@ -1732,6 +1844,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "BR") {
         return textResult(CVM_INSIDER_UNSUPPORTED);
       }
+      if (jurisdiction === "FR") {
+        return textResult(INFO_FINANCIERE_INSIDERS_UNSUPPORTED);
+      }
       try {
         if (jurisdiction === "DE") {
           const dealings = await getBafinDirectorsDealings(company, options);
@@ -1931,6 +2046,33 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         ));
       }
       try {
+        if (jurisdiction === "FR") {
+          const owners = await getInfoFinanciereOwners(company, options);
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No info-financiere threshold-crossing notifications (franchissement ` +
+                `de seuil) found for "${company}".`,
+              `_Threshold regime: ${INFO_FINANCIERE_OWNERS_THRESHOLD_REGIME}._`,
+              `_${INFO_FINANCIERE_OWNERS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Threshold-crossing notifications (franchissement de seuil, OAM): ${company}`,
+            markdownTable(
+              ["Notification", "Holder", "Filed", "Notification (PDF)"],
+              owners.map((owner) => [
+                owner.naturesOfControl?.[0] ?? owner.form,
+                owner.holderName,
+                owner.notifiedDate ?? owner.filedDate,
+                owner.sourceUrl && owner.sourceUrl.startsWith("http")
+                  ? link("open", owner.sourceUrl)
+                  : undefined,
+              ]),
+            ),
+            `_Threshold regime: ${INFO_FINANCIERE_OWNERS_THRESHOLD_REGIME}._`,
+            `_${INFO_FINANCIERE_OWNERS_CAVEAT}_`,
+          ), ownersStructured(owners, "FR"));
+        }
         if (jurisdiction === "DE") {
           const owners = await getBafinOwners(company, options);
           if (!owners.length) {
@@ -2226,6 +2368,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "DE") {
         return textResult(BAFIN_FINANCIALS_UNSUPPORTED);
       }
+      if (jurisdiction === "FR") {
+        return textResult(INFO_FINANCIERE_FINANCIALS_UNSUPPORTED);
+      }
       if (jurisdiction === "BR") {
         try {
           const requested = concepts?.filter((concept) =>
@@ -2490,16 +2635,17 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "US Form D (Regulation D) exempt-offering filings for a company: " +
       "amounts offered and sold, investor counts, industry, date of first sale, " +
       "and named related persons. This capability is US-only; explicit GB, KR, " +
-      "JP, CN, IN, TW, and BR return an unsupported-jurisdiction explanation " +
-      "because none of Companies House, DART, EDINET, cninfo, BSE, TWSE, or CVM " +
-      "provides an equivalent private-raise filing dataset.",
+      "JP, CN, IN, TW, BR, DE, and FR return an unsupported-jurisdiction " +
+      "explanation because none of Companies House, DART, EDINET, cninfo, BSE, " +
+      "TWSE, CVM, BaFin, or the French OAM provides an equivalent private-raise " +
+      "filing dataset.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("PrivateRaises");
       if (
         jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
-        jurisdiction === "BR" || jurisdiction === "DE"
+        jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -2515,7 +2661,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                     ? "TWSE"
                     : jurisdiction === "BR"
                       ? "CVM (Brazil)"
-                      : "BaFin (Germany)";
+                      : jurisdiction === "DE"
+                        ? "BaFin (Germany)"
+                        : "the French OAM / recherche-entreprises";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +
@@ -2817,11 +2965,91 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  async function companyDocumentFr(
+    company: string,
+    transactionId: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!transactionId) {
+      return textResult(
+        "Provide a transaction_id (the info-financiere OAM record id, e.g. " +
+          "169110_20260818, from CompanyFilings) — or the filing's PDF URL — to " +
+          "fetch an FR document.",
+      );
+    }
+    try {
+      const record = await resolveInfoFinanciereDocument(transactionId, options);
+      const pdfUrl = record.pdfUrl;
+      if (!pdfUrl) {
+        return textResult(
+          `The OAM record "${transactionId}" carries no document URL.`,
+        );
+      }
+
+      if (mode === "xhtml") {
+        return textResult(joinSections(
+          `# info-financiere document: ${record.id}`,
+          `_${INFO_FINANCIERE_DOCUMENT_XHTML_MESSAGE}_`,
+        ));
+      }
+
+      if (mode === "pdf") {
+        const pdf = await getInfoFinancierePdf(pdfUrl, options);
+        const target = outputPath
+          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
+          : join(tmpdir(), pdf.suggestedFilename);
+        await writeFile(target, pdf.bytes);
+        return textResult(joinSections(
+          `# info-financiere document: ${record.id}`,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Issuer", record.issuerName],
+              ["Title", record.title],
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
+              ["Filing", link("open", pdf.sourceUrl)],
+            ],
+          ),
+          `_${INFO_FINANCIERE_DOCUMENT_CONTENT_WARNING} The file was written to disk; its bytes are not inlined here._`,
+        ));
+      }
+
+      const size = await getInfoFinanciereDocumentSize(pdfUrl, options);
+      const metaRows: [string, string][] = [
+        ["Record id", record.id],
+        ["Issuer", record.issuerName],
+        ...(record.isin ? [["ISIN", record.isin] as [string, string]] : []),
+        ...(record.lei ? [["LEI", record.lei] as [string, string]] : []),
+        ["Title", record.title],
+        ...(record.subtypeFr ? [["Subtype (FR)", record.subtypeFr] as [string, string]] : []),
+        ...(record.subtypeEn ? [["Subtype (EN)", record.subtypeEn] as [string, string]] : []),
+        ...(record.filedDate ? [["Filed", record.filedDate] as [string, string]] : []),
+        ["Rendition", "PDF (mode=\"pdf\")"],
+        ...(size !== undefined ? [["Size (bytes)", String(size)] as [string, string]] : []),
+        ["Document", link("open", pdfUrl)],
+      ];
+      return textResult(joinSections(
+        `# info-financiere document: ${record.id}`,
+        markdownTable(["Field", "Value"], metaRows),
+        "_Use mode=\"pdf\" to download the PDF. " +
+          INFO_FINANCIERE_DOCUMENT_XHTML_MESSAGE + " " +
+          INFO_FINANCIERE_DOCUMENT_CONTENT_WARNING + "_",
+      ));
+    } catch (error) {
+      return failureResult(transactionId, error);
+    }
+  }
+
   const companyDocument = defineTool(
     "CompanyDocument",
     "Fetch a filed document's content by the transaction_id CompanyFilings " +
       "returned (GB transaction id — default; US accession number; JP EDINET " +
-      "docID; KR DART rcept_no). Mode \"metadata\" (default) lists the " +
+      "docID; KR DART rcept_no; FR info-financiere OAM record id). Mode " +
+      "\"metadata\" (default) lists the " +
       "filing's documents/renditions with sizes; \"xhtml\" returns the primary " +
       "machine-readable document's extracted plain text (paged via " +
       "text_offset; filings with no machine-readable rendition are reported " +
@@ -2833,11 +3061,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .min(1)
         .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR)"),
       jurisdiction: z
-        .enum(["US", "GB", "JP", "KR"])
+        .enum(["US", "GB", "JP", "KR", "FR"])
         .optional()
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
-            "or \"KR\" (OpenDART)",
+            "\"KR\" (OpenDART), or \"FR\" (info-financiere OAM)",
         ),
       transaction_id: z
         .string()
@@ -2845,8 +3073,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .optional()
         .describe(
           "GB Companies House filing-history transaction id, US SEC accession " +
-            "number, JP EDINET docID, or KR OpenDART receipt number (rcept_no) — " +
-            "all from CompanyFilings",
+            "number, JP EDINET docID, KR OpenDART receipt number (rcept_no), or " +
+            "FR info-financiere OAM record id — all from CompanyFilings",
         ),
       document_id: z
         .string()
@@ -2886,6 +3114,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "KR") {
         return companyDocumentKr(company, transaction_id, mode, text_offset);
+      }
+      if (jurisdiction === "FR") {
+        return companyDocumentFr(company, transaction_id, mode, output_path);
       }
       try {
         let documentId = document_id;
@@ -3301,26 +3532,140 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  async function personAppointmentsFr(
+    mode: "search" | "appointments" | "disqualifications" | undefined,
+    query: string | undefined,
+    officerId: string | undefined,
+    limit: number | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    const resolvedMode = mode ?? "search";
+    const label = query ?? officerId ?? resolvedMode;
+    try {
+      if (resolvedMode === "disqualifications") {
+        // France has no free per-individual disqualification register.
+        return textResult(joinSections(
+          `# FR disqualifications: ${query ?? officerId ?? "—"}`,
+          `_${RECHERCHE_ENTREPRISES_NO_DISQUALIFICATION_MESSAGE}_`,
+        ));
+      }
+
+      if (resolvedMode === "appointments") {
+        if (!officerId) {
+          return textResult(
+            "FR mode \"appointments\" requires an officer_id (the person id from " +
+              "mode=search: a surname, or \"surname|first names\").",
+          );
+        }
+        const record = await getRecherchePersonAppointments(officerId, options);
+        if (!record.appointments.length) {
+          return notFoundResult(
+            officerId,
+            "No companies found where this person is a current dirigeant. The " +
+              "name may be misspelled, or the person holds no registered mandate.",
+          );
+        }
+        const cap = limit ?? 35;
+        const shown = record.appointments.slice(0, cap);
+        const trailer = record.appointments.length > shown.length
+          ? `_Showing ${shown.length} of ${record.appointments.length} companies._`
+          : undefined;
+        return textResult(joinSections(
+          `# FR appointments: ${record.personName ?? officerId}`,
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Person id", record.officerId],
+              ["Name", record.personName ?? "—"],
+              ["Companies", String(record.appointments.length)],
+            ],
+          ),
+          "## Companies where this person is a dirigeant",
+          markdownTable(
+            ["Company", "SIREN", "Role", "Link"],
+            shown.map((appointment) => [
+              appointment.companyName,
+              appointment.siren ?? "—",
+              appointment.role ?? "—",
+              link("view", appointment.sourceUrl),
+            ]),
+          ),
+          ...(trailer ? [trailer] : []),
+          `_${RECHERCHE_ENTREPRISES_PERSON_CAVEAT}_`,
+        ));
+      }
+
+      // default: person search
+      if (!query) {
+        return textResult("FR mode \"search\" requires a query (person name).");
+      }
+      const matches = await searchRecherchePeople(query, options);
+      if (!matches.length) {
+        return notFoundResult(query, "No French dirigeants matched this name.");
+      }
+      const cap = limit ?? 35;
+      const shown = matches.slice(0, cap);
+      const trailer = matches.length > shown.length
+        ? `_Showing ${shown.length} of ${matches.length} matches._`
+        : undefined;
+      return textResult(joinSections(
+        `# FR dirigeant search: ${query}`,
+        markdownTable(
+          ["Surname", "First names", "Birth year", "Sample role", "Companies", "id", "Sample company"],
+          shown.map((match) => [
+            match.surname,
+            match.firstNames ?? "—",
+            match.birthYear ?? "—",
+            match.role ?? "—",
+            String(match.companyCount),
+            match.officerId,
+            match.sampleCompany ?? "—",
+          ]),
+        ),
+        ...(trailer ? [trailer] : []),
+        "_Homonyms are common — disambiguate by first names, birth year, and company._",
+        `_${RECHERCHE_ENTREPRISES_PERSON_CAVEAT}_`,
+        nextStep(
+          "call PersonAppointments mode=\"appointments\" with an id from this " +
+            "table as officer_id to list every company the person is linked to.",
+        ),
+      ), {
+        people: shown.map((match) => definedProps({
+          name: match.name,
+          officerId: match.officerId,
+          birthYear: match.birthYear,
+          role: match.role,
+          companyCount: match.companyCount,
+          sourceUrl: match.sourceUrl,
+        })),
+      });
+    } catch (error) {
+      return failureResult(label, error);
+    }
+  }
+
   const personAppointments = defineTool(
     "PersonAppointments",
     "Look up a person (not a company): cross-company roles and " +
       "disqualification/enforcement lookups. jurisdiction: GB (Companies " +
       "House, default), US (SEC reporting owners — surfaces private issuers " +
-      "too), DE (BaFin dealings persons). Mode \"search\" finds people by name " +
+      "too), DE (BaFin dealings persons), FR (recherche-entreprises " +
+      "dirigeants). Mode \"search\" finds people by name " +
       "and returns their person ids; \"appointments\" takes one of those ids " +
-      "as officer_id (GB officer id, US person CIK, DE meldepflichtigerId) " +
-      "and lists every company/issuer the person is linked to; " +
+      "as officer_id (GB officer id, US person CIK, DE meldepflichtigerId, FR " +
+      "surname/\"surname|first names\") and lists every company/issuer the " +
+      "person is linked to; " +
       "\"disqualifications\" searches the GB register, or returns a safe " +
-      "public-lookup link (US SALI) / an honest not-available note (DE). One " +
+      "public-lookup link (US SALI) / an honest not-available note (DE, FR). One " +
       "person holds several ids and homonyms are common — match by name and " +
       "context, not a single id.",
     {
       jurisdiction: z
-        .enum(["US", "GB", "DE"])
+        .enum(["US", "GB", "DE", "FR"])
         .optional()
         .describe(
           '"GB" (Companies House, default), "US" (SEC EDGAR reporting owners), ' +
-            'or "DE" (BaFin Directors\' Dealings persons)',
+            '"DE" (BaFin Directors\' Dealings persons), or "FR" ' +
+            "(recherche-entreprises dirigeants)",
         ),
       mode: z
         .enum(["search", "appointments", "disqualifications"])
@@ -3354,6 +3699,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "DE") {
         return personAppointmentsDe(mode, query, officer_id, limit);
+      }
+      if (jurisdiction === "FR") {
+        return personAppointmentsFr(mode, query, officer_id, limit);
       }
       const resolvedMode = mode ?? "search";
       const label = query ?? officer_id ?? resolvedMode;

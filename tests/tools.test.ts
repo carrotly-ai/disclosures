@@ -457,22 +457,24 @@ describe("createTools", () => {
     "PersonAppointments",
   ]);
 
-  test("CompanyDocument jurisdiction is restricted to GB/US/JP/KR", () => {
+  test("CompanyDocument jurisdiction is restricted to GB/US/JP/KR/FR", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     const jurisdiction = toolByName(tools, "CompanyDocument").inputSchema.jurisdiction;
     expect(jurisdiction?.safeParse("US").success).toBe(true);
     expect(jurisdiction?.safeParse("GB").success).toBe(true);
     expect(jurisdiction?.safeParse("JP").success).toBe(true);
     expect(jurisdiction?.safeParse("KR").success).toBe(true);
+    expect(jurisdiction?.safeParse("FR").success).toBe(true);
     expect(jurisdiction?.safeParse("CN").success).toBe(false);
   });
 
-  test("PersonAppointments jurisdiction is restricted to US, GB and DE", () => {
+  test("PersonAppointments jurisdiction is restricted to US, GB, DE and FR", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     const jurisdiction = toolByName(tools, "PersonAppointments").inputSchema.jurisdiction;
     expect(jurisdiction?.safeParse("US").success).toBe(true);
     expect(jurisdiction?.safeParse("GB").success).toBe(true);
     expect(jurisdiction?.safeParse("DE").success).toBe(true);
+    expect(jurisdiction?.safeParse("FR").success).toBe(true);
     expect(jurisdiction?.safeParse("JP").success).toBe(false);
   });
 
@@ -489,6 +491,7 @@ describe("createTools", () => {
       expect(jurisdiction?.safeParse("TW").success).toBe(true);
       expect(jurisdiction?.safeParse("BR").success).toBe(true);
       expect(jurisdiction?.safeParse("DE").success).toBe(true);
+      expect(jurisdiction?.safeParse("FR").success).toBe(true);
       expect(jurisdiction?.safeParse("ZZ").success).toBe(false);
       expect(tool.description).toMatch(/KR|OpenDART/);
       expect(tool.description).toMatch(/JP|EDINET/);
@@ -2862,5 +2865,197 @@ describe("MCP client ergonomics", () => {
     expect(structured?.resolved).toBe(false);
     expect(Array.isArray(structured?.children)).toBe(true);
     expect(structured?.sourceJurisdiction).toBe("Global");
+  });
+});
+
+describe("FR (info-financiere OAM + recherche-entreprises)", () => {
+  const FR_PDF_URL =
+    "https://fr.ftp.opendatasoft.com/datadila/INFOFI/BWR/2026/08/FCBWR169110_20260818.pdf";
+  const oamRecords = {
+    total_count: 1746,
+    results: [
+      {
+        uin_idt_uin: "169110_20260818",
+        identificationsociete_iso_nom_soc: "TOTALENERGIES SE",
+        identificationsociete_iso_cd_isi: "FR0000120271",
+        identificationsociete_iso_cd_lei: "529900S21EQ1BO4ESM68",
+        informationdeposee_inf_dat_emt: "2026-08-18T06:00:00+00:00",
+        informationdeposee_inf_tit_inf: "Transactions sur actions propres",
+        sous_type_d_information: "Acquisition ou cession des actions de l'émetteur",
+        subtype_of_information: "Acquisition or disposal of the issuer's own shares",
+        url_de_recuperation: FR_PDF_URL,
+      },
+    ],
+  };
+  const oamThreshold = {
+    total_count: 91,
+    results: [
+      {
+        uin_idt_uin: "642623_20260817",
+        identificationsociete_iso_nom_soc: "DBV TECHNOLOGIES",
+        informationdeposee_inf_dat_emt: "2026-08-17T06:00:00+00:00",
+        informationdeposee_inf_tit_inf: "Franchissements de seuils et déclaration d'intention",
+        sous_type_d_information: "Décision de franchissement de seuil",
+        url_de_recuperation:
+          "https://fr.ftp.opendatasoft.com/datadila/INFOFI/307/8888/01/FC307642623_20260817.pdf",
+      },
+    ],
+  };
+  const rechercheCompany = {
+    total_results: 632,
+    results: [
+      { nom_complet: "TOTALENERGIES MARKETING FRANCE", siren: "531680445", siege: { libelle_commune: "PUTEAUX" }, dirigeants: [] },
+    ],
+  };
+  const recherchePerson = {
+    total_results: 2,
+    results: [
+      {
+        nom_complet: "TOTALENERGIES SE",
+        siren: "542051180",
+        dirigeants: [
+          { nom: "POUYANNE", prenoms: "PATRICK", annee_de_naissance: "1963", qualite: "Président", type_dirigeant: "personne physique" },
+        ],
+      },
+    ],
+  };
+  const frPdf = new TextEncoder().encode("%PDF-1.4\n1 0 obj<</Type /Page>>endobj\n%%EOF");
+
+  beforeEach(() => resetRateLimiters());
+
+  test("CompanyFilings FR renders the OAM index with a chainable id", async () => {
+    const fetchFn = routedFetch([{ pattern: "flux-amf-new-prod/records", body: oamRecords }]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Regulated filings (info-financiere OAM)");
+    expect(text).toContain("Acquisition ou cession des actions de l'émetteur");
+    const structured = result.structuredContent as { filings?: Array<{ transactionId?: string }> };
+    expect(structured?.filings?.[0]?.transactionId).toBe("169110_20260818");
+  });
+
+  test("CompanyOwners FR lists threshold crossings with the PDF-holder caveat", async () => {
+    const fetchFn = routedFetch([{ pattern: "franchissement", body: oamThreshold }]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "DBV Technologies",
+      jurisdiction: "FR",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("franchissement de seuil");
+    expect(text).toContain("inside the linked document");
+    const structured = result.structuredContent as { owners?: unknown[]; sourceJurisdiction?: string };
+    expect(structured?.sourceJurisdiction).toBe("FR");
+    expect((structured?.owners ?? []).length).toBe(1);
+  });
+
+  test("CompanyInsiders FR is honestly unsupported (managers' transactions not in the OAM)", async () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+    } as never);
+    expect(resultText(result)).toContain("unsupported for jurisdiction \"FR\"");
+    expect(resultText(result)).toContain("PersonAppointments");
+  });
+
+  test("CompanyFinancials FR points listed issuers to jurisdiction EU", async () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+    } as never);
+    expect(resultText(result)).toContain("jurisdiction \"EU\"");
+  });
+
+  test("CompanyDocument FR metadata resolves a record id and reports the size via HEAD", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "uin_idt_uin%3D", body: oamRecords },
+      { pattern: ".pdf", body: "", headers: { "Content-Length": "179954" } },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+      transaction_id: "169110_20260818",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("info-financiere document: 169110_20260818");
+    expect(text).toContain("179954");
+  });
+
+  test("CompanyDocument FR xhtml honestly reports the OAM serves PDFs", async () => {
+    const fetchFn = routedFetch([{ pattern: "uin_idt_uin%3D", body: oamRecords }]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+      transaction_id: "169110_20260818",
+      mode: "xhtml",
+    } as never);
+    expect(resultText(result)).toContain("serves regulated filings only as");
+  });
+
+  test("CompanyDocument FR pdf saves the file and reports pages", async () => {
+    const target = join(tmpdir(), `fr-doc-${Date.now()}.pdf`);
+    const fetchFn = routedFetch([
+      { pattern: "uin_idt_uin%3D", body: oamRecords },
+      { pattern: ".pdf", body: frPdf, headers: { "Content-Type": "application/pdf" } },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+      transaction_id: "169110_20260818",
+      mode: "pdf",
+      output_path: target,
+    } as never);
+    expect(resultText(result)).toContain("Downloaded PDF");
+    expect(existsSync(target)).toBe(true);
+    rmSync(target, { force: true });
+  });
+
+  test("PersonAppointments FR search returns dirigeants with a homonym caveat", async () => {
+    const fetchFn = routedFetch([{ pattern: "nom_personne", body: recherchePerson }]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "FR",
+      query: "Pouyanne",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("FR dirigeant search");
+    expect(text).toContain("Homonyms are common");
+    const structured = result.structuredContent as { people?: Array<{ officerId?: string }> };
+    expect(structured?.people?.[0]?.officerId).toBe("POUYANNE|PATRICK");
+  });
+
+  test("PersonAppointments FR disqualifications is honestly not available", async () => {
+    const tools = createTools({ fetchFn: routedFetch([]), env: ENV });
+    const result = await toolByName(tools, "PersonAppointments").handler({
+      jurisdiction: "FR",
+      mode: "disqualifications",
+      query: "Pouyanne",
+    } as never);
+    expect(resultText(result)).toContain("no free per-individual disqualified-directors register");
+  });
+
+  test("CompanyResolve FR merges OAM (listed) and recherche-entreprises (SIREN)", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "flux-amf-new-prod/records", body: oamRecords },
+      { pattern: "q=", body: rechercheCompany },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("TOTALENERGIES SE");
+    expect(text).toContain("SIREN 531680445");
+    const structured = result.structuredContent as { candidates?: unknown[] };
+    expect((structured?.candidates ?? []).length).toBe(2);
   });
 });

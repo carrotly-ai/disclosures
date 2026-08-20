@@ -15,6 +15,7 @@ export const JURISDICTIONS = {
   TW: "TW",
   BR: "BR",
   DE: "DE",
+  FR: "FR",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -33,6 +34,8 @@ export const DATA_SOURCES = {
   TWSE: "TWSE",
   CVM: "CVM",
   BAFIN: "BaFin",
+  INFO_FINANCIERE: "info-financiere",
+  RECHERCHE_ENTREPRISES: "recherche-entreprises",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -68,6 +71,8 @@ export interface IdentifierSet {
   cvmCode?: string;
   /** BaFin issuer id (Emittenten-BaFin-Id) used by the German AnteileInfo database, e.g. 40001244 (SAP SE). */
   bafinId?: string;
+  /** French SIREN (9-digit legal-unit id) from recherche-entreprises, e.g. 542051180 (TotalEnergies SE). */
+  siren?: string;
   jurisdiction?: string;
 }
 

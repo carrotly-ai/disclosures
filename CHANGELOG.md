@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+All changes are backward-compatible and additive: the ten tool names and their input schemas are unchanged. This adds **France (FR)** as the eleventh jurisdiction, implemented from the live-verified [`FR-FEASIBILITY.md`](FR-FEASIBILITY.md) finding, over two keyless zero-dependency sources.
+
+### Added
+
+- **FR (France) jurisdiction** across five tools, keyless and zero-dependency, from two official open-data sources — **info-financiere.gouv.fr** (France's official OAM / *mécanisme officiel de stockage centralisé*, ex-BDIF, operated by DILA; the keyless OpenDataSoft Explore v2.1 JSON API over the `flux-amf-new-prod` dataset of ≈535k regulated-information filings with direct PDFs, etalab-2.0) and **recherche-entreprises.api.gouv.fr** (DINUM's keyless RNE/Sirene/RCS company + officer search, 7 req/s):
+  - **`CompanyResolve`** merges the OAM (listed issuers, carrying ISIN + LEI) and recherche-entreprises (SIREN-keyed, non-listed). A name tries both (OAM first); an ISIN/LEI stays on the OAM; a bare 9-digit SIREN uses recherche-entreprises. A new `siren` identifier field rides along in the entity output and `structuredContent`.
+  - **`CompanyFilings`** lists the OAM regulated-information index newest-first — filed date, FR + EN subtype, title, and direct PDF URL — with `forms`/date-window/`limit` filters and each row's OAM record id (`uin_idt_uin`) as `transactionId`. `latest_annual`/`latest_quarterly` are honestly unsupported (the flux is a flat index; use `jurisdiction: "EU"` for annual financials).
+  - **`CompanyOwners`** is **partial**: the *franchissement de seuil* (Art. L233-7 CoMoFi) threshold-crossing notifications from the OAM, newest-first, each linked to its PDF — a linked-notification list, **not** a structured cap table, because the crossing holder and the exact percentage live inside the PDF, not in any machine-readable field. Stated explicitly in the response caveat.
+  - **`CompanyDocument`** fetches an OAM filing by its record id (`transaction_id` from `CompanyFilings`, e.g. `169110_20260818`) — or a full OAM PDF URL, restricted to the `*.opendatasoft.com` host: `metadata` (record fields + best-effort size via HEAD), `pdf` (saves to disk, 25 MB cap, path + bytes + page count, reusing the shared document machinery), and an honest `xhtml` note (the OAM serves PDFs only, no iXBRL/XHTML rendition — the same honest-limitation pattern as JP). The transaction-id scheme is the stable OAM record id, not the long host-specific PDF URL.
+  - **`CompanyInsiders`** (managers' transactions are BDIF-UI-only, not in the OAM flux), **`CompanyFinancials`** (listed issuers are already covered via `jurisdiction: "EU"` ESEF; non-listed accounts are INPI token-gated), and **`PrivateRaises`** (no Form D analogue) return honest unsupported-jurisdiction explanations.
+  - **`PersonAppointments`** over recherche-entreprises *dirigeants*: `search` (a person name) returns distinct natural persons with a name-based id (a surname, or `"surname|first names"`) and a company count; `appointments` lists every company where that person is a *dirigeant*, narrowing by first names to separate homonyms; `disqualifications` is honestly not-available (France publishes no free per-individual disqualified-directors register).
+  - **ODSQL injection safety.** OAM `where` clauses use single-quoted ODSQL string literals; user input is escaped by backslash-escaping any `\` first, then any `'` (verified live: doubling the quote is rejected with HTTP 400, backslash-escaping is accepted), so a company name containing `'`, `\`, or an `… or 1=1 --` fragment can never break out of the literal. recherche-entreprises calls go through a 7 req/s rate limiter.
+  - New adapters `src/adapters/infoFinanciere.ts` and `src/adapters/rechercheEntreprises.ts`, two data sources (`info-financiere`, `recherche-entreprises`) and two rate limiters, the FR jurisdiction-reference card, and [`docs/jurisdictions/FR.md`](docs/jurisdictions/FR.md). No new runtime dependency; no tool-name or input-schema changes beyond additive `jurisdiction` enum widening.
+
 ## 0.3.0 - 2026-08-20
 
 All changes are backward-compatible and additive: the ten tool names and their input schemas are unchanged. The minor bump reflects the second transport (streamable HTTP), two new coverage cells (EU resolve/filings, JP financials), the completed `structuredContent` surface, and the first declared `outputSchema` (OwnershipChain).

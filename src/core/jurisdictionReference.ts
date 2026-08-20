@@ -161,6 +161,25 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "UI-only HTML sources; no filings search — use CompanyFinancials " +
       "jurisdiction EU for German issuer accounts.",
   },
+  {
+    code: "FR",
+    name: "France",
+    source: "info-financiere.gouv.fr (OAM) + recherche-entreprises",
+    credential: "None (both keyless).",
+    identifiers:
+      "Company name, 9-digit SIREN, ISIN, or LEI (listed issuers resolve via " +
+      "the OAM; others via recherche-entreprises)",
+    intents:
+      "CompanyResolve, CompanyFilings (OAM regulated-information index with " +
+      "direct PDFs), CompanyOwners (threshold-crossing notifications — linked " +
+      "PDFs only, holder/% inside the document), CompanyDocument (OAM record id; " +
+      "metadata/pdf, xhtml reports the OAM serves PDFs), PersonAppointments " +
+      "(dirigeants; person→companies). For financials use jurisdiction EU.",
+    caveat:
+      "CompanyOwners is a linked-notification list, not a structured cap table " +
+      "(the crossing holder and % live inside the PDF). No managers'-transaction " +
+      "feed; recherche-entreprises keys people by name, so homonyms are common.",
+  },
 ] as const;
 
 export function renderJurisdictionReference(

@@ -17,10 +17,10 @@ export const companyInput = {
         "securities code, or 13-digit corporate number (JP), 6-digit A-share " +
         "or 5-digit HK stock code (CN, via cninfo), 6-digit BSE scrip code " +
         "(IN), 4-digit TWSE listing code (TW), numeric CVM code (BR), " +
-        "8-digit BaFin-Id or ISIN (DE), or 20-character LEI",
+        "8-digit BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), or 20-character LEI",
     ),
   jurisdiction: z
-    .enum(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE"])
+    .enum(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE", "FR"])
     .optional()
     .describe(
       "Jurisdiction to search: US (SEC EDGAR), GB (Companies House), " +
@@ -28,8 +28,10 @@ export const companyInput = {
         "CompanyFilings, and CompanyFinancials), KR (OpenDART/DART), JP (EDINET), " +
         "CN (cninfo — SSE/SZSE), " +
         "IN (BSE India), TW (TWSE OpenAPI — Taiwan listed companies), " +
-        "BR (CVM open data — Brazilian listed companies), or " +
-        "DE (BaFin — German major-holding voting rights + directors' dealings). " +
+        "BR (CVM open data — Brazilian listed companies), " +
+        "DE (BaFin — German major-holding voting rights + directors' dealings), or " +
+        "FR (info-financiere.gouv.fr OAM + recherche-entreprises — French " +
+        "regulated filings, threshold crossings, and officers). " +
         "Omit for the existing US default.",
     ),
 };
