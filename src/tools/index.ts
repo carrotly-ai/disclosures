@@ -141,9 +141,11 @@ import {
 import type { EsefFiling } from "../adapters/xbrlFilings.js";
 import {
   getTwseDirectorHoldings,
+  getTwseFinancials,
   getTwseMajorShareholders,
   searchTwseCompanies,
   searchTwseFilings,
+  TWSE_FINANCIAL_CONCEPT_NAMES,
   TWSE_MAJOR_SHAREHOLDER_THRESHOLD_REGIME,
 } from "../adapters/twseOpenApi.js";
 import type { TwseDirectorHolding } from "../adapters/twseOpenApi.js";
@@ -814,11 +816,28 @@ const TWSE_OWNER_CAVEAT =
   "feed. A company with no >10% holder legitimately returns no rows. " +
   "Filing-based disclosure only — not a full share register, not UBO tracing.";
 
-const TWSE_FINANCIALS_UNSUPPORTED =
-  "CompanyFinancials is unsupported for jurisdiction \"TW\". TWSE publishes " +
-  "financial statements as XBRL and PDF filings on the Market Observation Post " +
-  "System (MOPS), but this release does not parse them into normalized financial " +
-  "facts. Read the statements on mops.twse.com.tw.";
+const TWSE_FINANCIALS_CAVEAT =
+  "Parsed from TWSE's general-industry (一般業) financial-statement open data — " +
+  "the comprehensive income statement (綜合損益表) and balance sheet " +
+  "(資產負債表). These are whole-market snapshots of the single most recent " +
+  "reported period only, in New Taiwan Dollars (NT$), converted from the feed's " +
+  "reported thousands. Revenue, operating income and net income are cumulative " +
+  "year-to-date through the labelled quarter end; total assets and total equity " +
+  "are as-of that date. TWSE open data does not serve a historical statement " +
+  "archive — for prior periods or the full statements (including per-line notes " +
+  "and XBRL) use the Market Observation Post System (mops.twse.com.tw).";
+
+const TWSE_FINANCIALS_SECTOR_VARIANT =
+  "CompanyFinancials for \"%s\" returned nothing because it is a " +
+  "finance/insurance-sector issuer (產業別 金融保險業: a bank, securities firm, " +
+  "insurer or financial-holding company). Those file a different statement " +
+  "format — the sector income statement reports net revenue (淨收益) with no " +
+  "營業收入/營業利益 lines at all — which this release does not yet parse. Read " +
+  "the sector statements on the Market Observation Post System (mops.twse.com.tw).";
+
+function twseFinancialSectorMessage(company: string): string {
+  return TWSE_FINANCIALS_SECTOR_VARIANT.replace("%s", company);
+}
 
 const CVM_FILINGS_CAVEAT =
   "CVM IPE disclosures (Informações Periódicas e Eventuais) are the Brazilian " +
@@ -2137,8 +2156,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "indexed by filings.xbrl.org (FY2020+, LEI-indexed; pass a legal name or " +
       "LEI). Explicit JP returns headline totals parsed from the latest EDINET " +
       "annual securities report's XBRL instance (in JPY, consolidated preferred). " +
-      "Explicit TW directs callers to MOPS, because this release does not parse " +
-      "its XBRL.",
+      "Explicit TW returns the latest-period headline totals (revenue, operating " +
+      "income, net income, total assets, total equity, in NT$) from TWSE's " +
+      "general-industry financial-statement open data; finance/insurance-sector " +
+      "issuers file a variant format and are explained honestly.",
     {
       ...companyInput,
       concepts: z
@@ -2221,7 +2242,56 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         );
       }
       if (jurisdiction === "TW") {
-        return textResult(TWSE_FINANCIALS_UNSUPPORTED);
+        try {
+          const requested = concepts?.filter((concept) =>
+            TWSE_FINANCIAL_CONCEPT_NAMES.includes(concept)
+          );
+          const { facts, financialSectorVariant } = await getTwseFinancials({
+            company,
+            ...(requested && requested.length ? { concepts: requested } : {}),
+          }, options);
+          if (!facts.length) {
+            if (financialSectorVariant) {
+              return textResult(twseFinancialSectorMessage(company));
+            }
+            return textResult(joinSections(
+              `No general-industry financial-statement snapshot found on TWSE open ` +
+                `data for "${company}". The comprehensive income (綜合損益表) and ` +
+                "balance-sheet (資產負債表) feeds are whole-market snapshots of the " +
+                "latest reported period; an issuer absent from them has not yet been " +
+                "included for that period.",
+              `_${TWSE_FINANCIALS_CAVEAT}_`,
+            ));
+          }
+          const byConcept = new Map<string, typeof facts>();
+          for (const fact of facts) {
+            const bucket = byConcept.get(fact.concept) ?? [];
+            bucket.push(fact);
+            byConcept.set(fact.concept, bucket);
+          }
+          const sections = [...byConcept.entries()].map(([, rows]) => {
+            const label = rows[0]?.label ?? "";
+            const unit = rows[0]?.unit ?? "TWD";
+            return joinSections(
+              `## ${label} (${unit})`,
+              markdownTable(
+                ["Fiscal period end", "Value", "Filed"],
+                rows.map((fact) => [
+                  fact.periodEnd,
+                  formatNumber(fact.value, fact.unit),
+                  fact.filedDate || "—",
+                ]),
+              ),
+            );
+          });
+          return textResult(joinSections(
+            `# Latest financial statements (TWSE open data): ${company}`,
+            ...sections,
+            `_${TWSE_FINANCIALS_CAVEAT}_`,
+          ), financialsStructured(byConcept, "TW"));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "DE") {
         return textResult(BAFIN_FINANCIALS_UNSUPPORTED);
