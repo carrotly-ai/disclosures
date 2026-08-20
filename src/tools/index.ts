@@ -11,7 +11,17 @@ import {
   markdownTable,
   untrustedTextBlock,
 } from "../core/markdown.js";
-import type { AdapterOptions, Entity, Filing, OwnershipParent } from "../core/types.js";
+import type {
+  AdapterOptions,
+  Entity,
+  Filing,
+  FinancialFact,
+  Insider,
+  OwnerRecord,
+  OwnershipChainResult,
+  OwnershipParent,
+  PrivateRaise,
+} from "../core/types.js";
 import {
   NO_SEC_CONFIG_MESSAGE,
   SEC_DOCUMENT_CONTENT_WARNING,
@@ -68,6 +78,7 @@ import {
 } from "../adapters/companiesHouse.js";
 import type {
   CompaniesHouseCharge,
+  CompaniesHouseChargeList,
   CompaniesHouseChargeStatusFilter,
   CompaniesHouseDocumentMetadata,
   CompaniesHouseProfileDetail,
@@ -135,6 +146,7 @@ import {
   searchTwseFilings,
   TWSE_MAJOR_SHAREHOLDER_THRESHOLD_REGIME,
 } from "../adapters/twseOpenApi.js";
+import type { TwseDirectorHolding } from "../adapters/twseOpenApi.js";
 import {
   CVM_FINANCIAL_CONCEPT_NAMES,
   getCvmFinancials,
@@ -376,6 +388,271 @@ function filingsStructured(filings: Filing[]): Record<string, unknown> {
     })),
   };
 }
+
+/**
+ * Machine-readable companions for the data-bearing intents. Each mirrors the
+ * facts already in the Markdown table (names, roles, percentages,
+ * period-end-labelled figures, chainable identifiers) and tags the source
+ * jurisdiction so a client can fan out without re-passing it. Additive only:
+ * the text block stays the primary, self-contained rendering, and these attach
+ * only on the success paths that have data to offer.
+ */
+function insidersStructured(
+  insiders: Insider[],
+  sourceJurisdiction: string,
+): Record<string, unknown> {
+  return {
+    insiders: insiders.map((insider) => definedProps({
+      name: insider.name,
+      roles: insider.roles.length ? insider.roles : undefined,
+      officerRole: insider.officerRole,
+      occupation: insider.occupation,
+      status: insider.status,
+      form: insider.form,
+      filedDate: insider.filedDate,
+      appointedDate: insider.appointedDate,
+      ceasedDate: insider.ceasedDate,
+      notifiedDate: insider.notifiedDate,
+      identityVerification: insider.identityVerification,
+      pct: insider.pct,
+      change: insider.change,
+      // The id CompanyDocument accepts as transaction_id, where the register
+      // carries a per-filing id for the insider record.
+      transactionId: insider.accession,
+      sourceUrl: insider.sourceUrl && insider.sourceUrl.startsWith("http")
+        ? insider.sourceUrl
+        : undefined,
+    })),
+    sourceJurisdiction,
+  };
+}
+
+/**
+ * TWSE director/supervisor holdings are a statutory shareholding register with
+ * a distinct shape (share balances, not Section 16-style transactions), so they
+ * get their own structured companion rather than reusing insidersStructured.
+ */
+function twDirectorHoldingsStructured(
+  holdings: TwseDirectorHolding[],
+): Record<string, unknown> {
+  return {
+    insiders: holdings.map((holding) => definedProps({
+      title: holding.title,
+      name: holding.name,
+      currentShares: holding.currentShares,
+      electedShares: holding.electedShares,
+      pledgedShares: holding.pledgedShares,
+      pledgeRatio: holding.pledgeRatio,
+      dataMonth: holding.dataMonth,
+      sourceUrl: holding.sourceUrl,
+    })),
+    sourceJurisdiction: "TW",
+  };
+}
+
+function ownersStructured(
+  owners: OwnerRecord[],
+  sourceJurisdiction: string,
+): Record<string, unknown> {
+  return {
+    owners: owners.map((owner) => definedProps({
+      holderName: owner.holderName,
+      holderType: owner.holderType,
+      pct: owner.pct,
+      percentageBand: owner.percentageBand,
+      change: owner.change,
+      thresholdRegime: owner.thresholdRegime,
+      form: owner.form,
+      filedDate: owner.filedDate || undefined,
+      notifiedDate: owner.notifiedDate,
+      ceasedDate: owner.ceasedDate,
+      identityVerification: owner.identityVerification,
+      naturesOfControl: owner.naturesOfControl?.length ? owner.naturesOfControl : undefined,
+      transactionId: owner.accession,
+      sourceUrl: owner.sourceUrl && owner.sourceUrl.startsWith("http")
+        ? owner.sourceUrl
+        : undefined,
+    })),
+    sourceJurisdiction,
+  };
+}
+
+/**
+ * Structured financials mirror the per-concept sections the text renders: one
+ * group per concept, each carrying its period-end-labelled facts. `byConcept`
+ * is the same map the handler slices into Markdown, so the two never diverge.
+ */
+function financialsStructured(
+  byConcept: Map<string, FinancialFact[]>,
+  sourceJurisdiction: string,
+): Record<string, unknown> {
+  return {
+    concepts: [...byConcept.entries()].map(([concept, rows]) => definedProps({
+      concept,
+      label: rows[0]?.label ?? concept,
+      unit: rows[0]?.unit || undefined,
+      facts: rows.map((fact) => definedProps({
+        periodEnd: fact.periodEnd,
+        value: fact.value,
+        unit: fact.unit || undefined,
+        basis: fact.basis,
+        form: fact.form,
+        filedDate: fact.filedDate || undefined,
+        sourceUrl: fact.sourceUrl,
+      })),
+    })),
+    sourceJurisdiction,
+  };
+}
+
+function privateRaisesStructured(raises: PrivateRaise[]): Record<string, unknown> {
+  return {
+    raises: raises.map((raise) => definedProps({
+      form: raise.form,
+      filedDate: raise.filedDate,
+      issuerName: raise.issuerName,
+      entityType: raise.entityType,
+      industry: raise.industry,
+      totalOfferingAmount: raise.totalOfferingAmount,
+      totalAmountSold: raise.totalAmountSold,
+      investorCount: raise.investorCount,
+      dateOfFirstSale: raise.dateOfFirstSale,
+      relatedPersons: raise.relatedPersons.length
+        ? raise.relatedPersons.map((person) => definedProps({
+            name: person.name,
+            roles: person.relationships.length ? person.relationships : undefined,
+          }))
+        : undefined,
+      sourceUrl: raise.sourceUrl,
+    })),
+    sourceJurisdiction: "US",
+  };
+}
+
+function chargeStructured(charge: CompaniesHouseCharge): Record<string, unknown> {
+  return definedProps({
+    chargeId: charge.chargeId,
+    chargeCode: charge.chargeCode,
+    chargeNumber: charge.chargeNumber,
+    status: charge.status,
+    classification: charge.classification,
+    createdOn: charge.createdOn,
+    deliveredOn: charge.deliveredOn,
+    satisfiedOn: charge.satisfiedOn,
+    personsEntitled: charge.personsEntitled.length ? charge.personsEntitled : undefined,
+    particulars: charge.particulars.length ? charge.particulars : undefined,
+    transactions: charge.transactions.length
+      ? charge.transactions.map((tx) => definedProps({
+          filingType: tx.filingType,
+          deliveredOn: tx.deliveredOn,
+          sourceUrl: tx.sourceUrl,
+        }))
+      : undefined,
+    sourceUrl: charge.sourceUrl,
+  });
+}
+
+function chargesListStructured(
+  list: CompaniesHouseChargeList,
+): Record<string, unknown> {
+  return definedProps({
+    charges: list.charges.map(chargeStructured),
+    companyNumber: list.companyNumber,
+    totalCount: list.totalCount,
+    satisfiedCount: list.satisfiedCount,
+    partSatisfiedCount: list.partSatisfiedCount,
+    sourceJurisdiction: "GB",
+  });
+}
+
+function ownershipParentStructured(
+  parent: OwnershipParent | undefined,
+): Record<string, unknown> | undefined {
+  if (!parent) return undefined;
+  if (parent.entity) {
+    return definedProps({
+      kind: parent.kind,
+      legalName: parent.entity.legalName,
+      lei: parent.entity.lei,
+      jurisdiction: parent.entity.jurisdiction,
+      sourceUrl: parent.entity.sourceUrl,
+    });
+  }
+  if (parent.exceptionReason || parent.exceptionCategory) {
+    return definedProps({
+      kind: parent.kind,
+      exceptionReason: parent.exceptionReason,
+      exceptionCategory: parent.exceptionCategory,
+    });
+  }
+  return undefined;
+}
+
+/**
+ * OwnershipChain is the one intent in this batch that declares an outputSchema
+ * (see ownershipChainOutput): its only non-error paths are the resolved chain
+ * below and a not-found miss, and both carry structuredContent, so the SDK's
+ * validateToolOutput never trips on an absent structured object.
+ */
+function ownershipChainStructured(
+  chain: OwnershipChainResult,
+): Record<string, unknown> {
+  return definedProps({
+    resolved: true,
+    entity: definedProps({
+      legalName: chain.entity.legalName,
+      lei: chain.entity.lei,
+      jurisdiction: chain.entity.jurisdiction,
+      status: chain.entity.status,
+      sourceUrl: chain.entity.sourceUrl,
+    }),
+    directParent: ownershipParentStructured(chain.directParent),
+    ultimateParent: ownershipParentStructured(chain.ultimateParent),
+    children: chain.children.map((child) => definedProps({
+      legalName: child.legalName,
+      lei: child.lei,
+      jurisdiction: child.jurisdiction,
+      status: child.status,
+      sourceUrl: child.sourceUrl,
+    })),
+    goldenCopyPublishedAt: chain.goldenCopyPublishedAt,
+    sourceJurisdiction: "Global",
+  });
+}
+
+const leiEntityOutputShape = {
+  legalName: z.string().optional(),
+  lei: z.string().optional(),
+  jurisdiction: z.string().optional(),
+  status: z.string().optional(),
+  sourceUrl: z.string().optional(),
+};
+
+const ownershipParentOutputShape = {
+  kind: z.string().optional(),
+  legalName: z.string().optional(),
+  lei: z.string().optional(),
+  jurisdiction: z.string().optional(),
+  exceptionReason: z.string().optional(),
+  exceptionCategory: z.string().optional(),
+  sourceUrl: z.string().optional(),
+};
+
+/**
+ * outputSchema for OwnershipChain. Every field except `children` and
+ * `sourceJurisdiction` is optional so both the resolved-chain object and the
+ * minimal not-found object ({resolved:false, children:[], …}) validate.
+ */
+const ownershipChainOutput = {
+  resolved: z.boolean().optional(),
+  query: z.string().optional(),
+  entity: z.object(leiEntityOutputShape).optional(),
+  directParent: z.object(ownershipParentOutputShape).optional(),
+  ultimateParent: z.object(ownershipParentOutputShape).optional(),
+  children: z.array(z.object(leiEntityOutputShape)),
+  goldenCopyPublishedAt: z.string().optional(),
+  sourceJurisdiction: z.string(),
+};
 
 /**
  * One-line "what to call next" trailer for chainable outputs. Kept to a single
@@ -1481,7 +1758,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             `_Regime: ${BAFIN_MAR_REGIME}._`,
             `_${BAFIN_INSIDERS_CAVEAT}_`,
-          ));
+          ), insidersStructured(dealings, "DE"));
         }
         if (jurisdiction === "TW") {
           const holdings = await getTwseDirectorHoldings(company, options);
@@ -1506,7 +1783,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               ]),
             ),
             `_${TWSE_INSIDER_CAVEAT}_`,
-          ));
+          ), twDirectorHoldingsStructured(holdings));
         }
         if (jurisdiction === "KR") {
           const insiders = await getOpenDartInsiders(company, options);
@@ -1528,7 +1805,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               ]),
             ),
             `_${OPEN_DART_INSIDER_CAVEAT}_`,
-          ));
+          ), insidersStructured(insiders, "KR"));
         }
         if (jurisdiction === "GB") {
           const officers = await getCompaniesHouseOfficers(company, options);
@@ -1573,7 +1850,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               : "_No ECCTA identity-verification details are present on these records yet. Absence " +
                 "is not proof of non-verification: Companies House populates the " +
                 "`identity_verification_details` field progressively following the 18 Nov 2025 rollout._",
-          ));
+          ), insidersStructured(officers, "GB"));
         }
 
         const insiders = await getSecInsiders(company, options);
@@ -1596,7 +1873,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ),
           "_Parsed from recent Forms 3/4/5. Roles reflect what each insider reported; " +
             "insiders who have not filed recently will not appear._",
-        ));
+        ), insidersStructured(insiders, "US"));
       } catch (error) {
         return failureResult(company, error);
       }
@@ -1681,7 +1958,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             `_Threshold regime: ${BAFIN_WPHG_THRESHOLD_REGIME}._`,
             `_${BAFIN_OWNERS_CAVEAT}_`,
-          ));
+          ), ownersStructured(owners, "DE"));
         }
         if (jurisdiction === "JP") {
           const owners = await getEdinetLargeHolders(
@@ -1715,7 +1992,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             `_${EDINET_OWNERS_CAVEAT}_`,
             `_${EDINET_NO_DEEP_LINK_CAVEAT}_`,
-          ));
+          ), ownersStructured(owners, "JP"));
         }
         if (jurisdiction === "TW") {
           const owners = await getTwseMajorShareholders(company, options);
@@ -1739,7 +2016,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               ]),
             ),
             `_${TWSE_OWNER_CAVEAT}_`,
-          ));
+          ), ownersStructured(owners, "TW"));
         }
         if (jurisdiction === "KR") {
           const owners = await getOpenDartOwners(company, options);
@@ -1765,7 +2042,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             `_Threshold regime: ${OPEN_DART_5_PERCENT_THRESHOLD_REGIME}._`,
             `_${OPEN_DART_OWNER_CAVEAT}_`,
-          ));
+          ), ownersStructured(owners, "KR"));
         }
         if (jurisdiction === "GB") {
           // PSC (statutory >25% control) is the primary section; its config /
@@ -1813,7 +2090,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               `_${COMPANIES_HOUSE_PSC_CAVEAT}_`,
             );
           const majorHoldings = await buildGbMajorHoldingsSection(company, options);
-          return textResult(joinSections(pscSection, majorHoldings));
+          // Structured PSC records ride along only when there are any; the
+          // TR-1 major-holdings section stays text-only (inject-only feed).
+          return textResult(
+            joinSections(pscSection, majorHoldings),
+            owners.length ? ownersStructured(owners, "GB") : undefined,
+          );
         }
 
         const owners = await getSecOwners(company, options);
@@ -1837,7 +2119,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ),
           "_Newest filing per holder. Exact percentages require opening the linked filing. " +
             "Filing-based disclosure only — not a share register, not UBO tracing._",
-        ));
+        ), ownersStructured(owners, "US"));
       } catch (error) {
         return failureResult(company, error);
       }
@@ -1915,7 +2197,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `# Annual financials (EDINET XBRL): ${company}`,
             ...sections,
             `_${EDINET_FINANCIALS_CAVEAT}_`,
-          ));
+          ), financialsStructured(byConcept, "JP"));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -1987,7 +2269,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `# Annual financials (CVM DFP): ${company}`,
             ...sections,
             `_${CVM_FINANCIALS_CAVEAT}_`,
-          ));
+          ), financialsStructured(byConcept, "BR"));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -2034,7 +2316,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             "_As-filed annual major-account values from DART 사업보고서 filings. " +
               "\"Basis\" distinguishes consolidated (CFS) from separate (OFS) statements; " +
               "both are shown where the company files both._",
-          ));
+          ), financialsStructured(byConcept, "KR"));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -2088,7 +2370,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               "filings.xbrl.org, labeled by fiscal period end; a newer report's " +
               "restated figure supersedes an earlier one. Only undimensioned reported " +
               "totals are shown (no segment breakdowns)._",
-          ));
+          ), financialsStructured(byConcept, jurisdiction));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -2126,7 +2408,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ...sections,
           "_As-filed annual XBRL values from SEC EDGAR, labeled by fiscal period end; " +
             "restatements supersede original filings._",
-        ));
+        ), financialsStructured(byConcept, "US"));
       } catch (error) {
         return failureResult(company, error);
       }
@@ -2176,11 +2458,31 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           `## Known direct children (${chain.children.length})`,
           childRows,
           `_${CONSOLIDATION_CAVEAT}_`,
-        ));
+        ), ownershipChainStructured(chain));
       } catch (error) {
-        return failureResult(company, error);
+        // OwnershipChain declares an outputSchema, so every non-error result
+        // must carry structuredContent. failureResult keeps config/rate-limit
+        // failures as isError (exempt from output validation) but downgrades a
+        // GLEIF resolution miss to a non-error "Could not find" text result —
+        // attach a minimal structured miss object to that path so the SDK's
+        // validateToolOutput never sees a non-error result without structure.
+        const result = failureResult(company, error);
+        if (!result.isError && !result.structuredContent) {
+          return {
+            ...result,
+            structuredContent: {
+              resolved: false,
+              query: company,
+              children: [],
+              sourceJurisdiction: "Global",
+            },
+          };
+        }
+        return result;
       }
     },
+    undefined,
+    ownershipChainOutput,
   );
 
   const privateRaises = defineTool(
@@ -2258,7 +2560,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           `# Form D private raises: ${company}`,
           ...sections,
           "_US Regulation D filings only (v1). Absence of Form D does not mean no private raise._",
-        ));
+        ), privateRaisesStructured(raises));
       } catch (error) {
         return failureResult(company, error);
       }
@@ -2711,7 +3013,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `# Charge ${charge_id}: ${company}`,
             chargeDetailSection(charge),
             `_${COMPANIES_HOUSE_CHARGES_CAVEAT}_`,
-          ));
+          ), { charges: [chargeStructured(charge)], sourceJurisdiction: "GB" });
         }
         const statusFilter = (status ?? "all") as CompaniesHouseChargeStatusFilter;
         const list = await getCompaniesHouseCharges(company, options, statusFilter);
@@ -2746,7 +3048,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ]),
           ),
           `_Source: ${link("Companies House charges", list.sourceUrl)}. ${COMPANIES_HOUSE_CHARGES_CAVEAT}_`,
-        ));
+        ), chargesListStructured(list));
       } catch (error) {
         return failureResult(company, error);
       }

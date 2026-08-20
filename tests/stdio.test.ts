@@ -46,6 +46,17 @@ describe("stdio MCP server", () => {
         if (!nonCompanyTools.has(tool.name)) {
           expect(tool.inputSchema.properties).toHaveProperty("company");
         }
+        // outputSchema is declared only where every non-error path emits
+        // structuredContent — currently OwnershipChain alone. The other tools
+        // emit structuredContent additively on success but keep honest-miss
+        // text-only paths legal by not declaring an outputSchema.
+        if (tool.name === "OwnershipChain") {
+          expect(tool.outputSchema?.type).toBe("object");
+          expect(tool.outputSchema?.properties).toHaveProperty("children");
+          expect(tool.outputSchema?.properties).toHaveProperty("sourceJurisdiction");
+        } else {
+          expect(tool.outputSchema).toBeUndefined();
+        }
       }
 
       // Jurisdiction reference cards ride the same server as resources.
