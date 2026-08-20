@@ -93,6 +93,21 @@ env = { DISCLOSURES_USER_AGENT = "Your Organization your-email@example.com" }
 
 </details>
 
+### HTTP mode
+
+The same server also speaks the MCP **streamable-HTTP** transport, for hosted or networked deployments. Pass `--http` (stdio remains the default with no flag):
+
+```bash
+disclosures --http --port 8080          # or: node dist/server.mjs --http
+```
+
+- Binds `127.0.0.1` by default; pass `--host 0.0.0.0` to expose it. Port comes from `--port`, else the `PORT` env var, else `8080`.
+- MCP endpoint: `POST /mcp` (the transport also answers the streamable-HTTP `GET`/`DELETE` handshake). Runs **stateless** — no session id, a fresh server instance per request.
+- Health check: `GET /healthz` → `200 {"name","version","tools"}`.
+- Diagnostics go to stderr only, as in stdio mode.
+
+Connect any streamable-HTTP MCP client at `http://127.0.0.1:8080/mcp`.
+
 Restart the client after changing its configuration, then try:
 
 > *"Use disclosures to list Apple's board of directors and their latest Form 4 activity."*

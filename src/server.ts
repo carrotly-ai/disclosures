@@ -74,6 +74,8 @@ export async function runServer(options: AdapterOptions = {}): Promise<void> {
 }
 
 // Library exports
+export { runHttpServer } from "./serverHttp.js";
+export type { HttpServerOptions, RunningHttpServer } from "./serverHttp.js";
 export { createTools, TOOL_NAMES } from "./tools/index.js";
 export { defineTool, textResult, errorResult } from "./core/toolDefs.js";
 export type { ToolDefinition } from "./core/toolDefs.js";
@@ -110,8 +112,32 @@ function isMainModule(): boolean {
   }
 }
 
+// `--http [--port N] [--host H]` starts the streamable-HTTP transport; no flag
+// keeps stdio behaviour unchanged. Kept dependency-free (no arg-parsing lib).
+function parseCliFlag(argv: string[], flag: string): string | undefined {
+  const index = argv.indexOf(flag);
+  if (index === -1) return undefined;
+  return argv[index + 1];
+}
+
+async function main(): Promise<void> {
+  const argv = process.argv.slice(2);
+  if (argv.includes("--http")) {
+    // Deferred import so stdio mode never loads the HTTP transport.
+    const { runHttpServer } = await import("./serverHttp.js");
+    const portArg = parseCliFlag(argv, "--port");
+    const hostArg = parseCliFlag(argv, "--host");
+    await runHttpServer({
+      ...(portArg !== undefined ? { port: Number(portArg) } : {}),
+      ...(hostArg !== undefined ? { host: hostArg } : {}),
+    });
+    return;
+  }
+  await runServer();
+}
+
 if (isMainModule()) {
-  runServer().catch((error) => {
+  main().catch((error) => {
     console.error("disclosures server failed to start:", error);
     process.exitCode = 1;
   });
