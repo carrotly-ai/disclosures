@@ -166,6 +166,19 @@ export const cvmRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 // on one bounded lookup while cross-call abuse still trips it.
 export const bafinRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 
+// HKEXnews (www1.hkexnews.hk). Keyless JSON reference files + title-search
+// servlet + direct PDFs, no documented limit. One intent issues a cached
+// stock-list load plus a single search request (or one document fetch), so keep
+// a modest budget that never self-trips on one bounded lookup while cross-call
+// abuse still trips it.
+export const hkexNewsRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
+
+// Singapore ACRA on data.gov.sg (datastore_search). Keyless CKAN API, no
+// documented limit. One resolve issues at most a consolidated UEN lookup plus a
+// letter-split fetch, so keep a modest budget that never self-trips on one
+// bounded lookup while cross-call abuse still trips it.
+export const acraRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -179,4 +192,6 @@ export function resetRateLimiters(): void {
   twseRateLimiter.reset();
   cvmRateLimiter.reset();
   bafinRateLimiter.reset();
+  hkexNewsRateLimiter.reset();
+  acraRateLimiter.reset();
 }

@@ -15,6 +15,8 @@ export const JURISDICTIONS = {
   TW: "TW",
   BR: "BR",
   DE: "DE",
+  HK: "HK",
+  SG: "SG",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -33,6 +35,8 @@ export const DATA_SOURCES = {
   TWSE: "TWSE",
   CVM: "CVM",
   BAFIN: "BaFin",
+  HKEX: "HKEXnews",
+  ACRA: "ACRA",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -68,6 +72,10 @@ export interface IdentifierSet {
   cvmCode?: string;
   /** BaFin issuer id (Emittenten-BaFin-Id) used by the German AnteileInfo database, e.g. 40001244 (SAP SE). */
   bafinId?: string;
+  /** HKEXnews internal stock id (not the public 5-digit code), e.g. 7609 (Tencent). */
+  hkexStockId?: string;
+  /** Singapore ACRA Unique Entity Number (UEN), e.g. 197200078R (Singapore Airlines). */
+  uen?: string;
   jurisdiction?: string;
 }
 

@@ -169,6 +169,21 @@ import {
   searchBafinPeople,
 } from "../adapters/bafin.js";
 import {
+  getHkexDocumentMetadata,
+  getHkexDocumentPdf,
+  getLatestHkexAnnualReport,
+  HKEXNEWS_DOCUMENT_CONTENT_WARNING,
+  HKEXNEWS_DOCUMENT_XHTML_MESSAGE,
+  searchHkexCompanies,
+  searchHkexFilings,
+} from "../adapters/hkexNews.js";
+import type { HkexDocumentMetadata } from "../adapters/hkexNews.js";
+import {
+  ACRA_CAVEAT,
+  searchAcraCompanies,
+} from "../adapters/acraSg.js";
+import type { AcraEntity } from "../adapters/acraSg.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -313,6 +328,8 @@ function identifierText(entity: Entity): string {
     entity.orgId ? `cninfo ${entity.orgId}` : undefined,
     entity.scripCode ? `BSE ${entity.scripCode}` : undefined,
     entity.isin ? `ISIN ${entity.isin}` : undefined,
+    entity.hkexStockId ? `HKEX stockId ${entity.hkexStockId}` : undefined,
+    entity.uen ? `UEN ${entity.uen}` : undefined,
   ].filter((value): value is string => Boolean(value)).join("; ") || "—";
 }
 
@@ -371,6 +388,8 @@ function entitiesStructured(entities: Entity[]): Record<string, unknown> {
       scripCode: entity.scripCode,
       cvmCode: entity.cvmCode,
       bafinId: entity.bafinId,
+      hkexStockId: entity.hkexStockId,
+      uen: entity.uen,
       sourceUrl: entity.sourceUrl,
     })),
   };
@@ -947,6 +966,108 @@ function esefFilingToFiling(filing: EsefFiling): Filing {
   };
 }
 
+// --- HK (HKEXnews) + SG (ACRA) constants -----------------------------------
+
+const HKEX_FILINGS_CAVEAT =
+  "HKEXnews is the official electronic-disclosure portal for every Hong Kong " +
+  "listed issuer (SEHK Main Board + GEM). Links open the official keyless PDF; " +
+  "this tool never returns document text. Absence here is not proof a filing " +
+  "does not exist — narrow or widen start_date/end_date to change the window.";
+
+const HKEX_RESOLVE_CAVEAT =
+  "HKEXnews resolves listed SEHK/GEM issuers only (by 4/5-digit stock code or " +
+  "name). Private Hong Kong companies live in the paid Companies Registry " +
+  "(ICRIS), which is not a free keyless source, so they do not resolve here.";
+
+const HKEX_OWNERS_UNSUPPORTED =
+  "CompanyOwners is unsupported for jurisdiction \"HK\". Substantial-shareholder " +
+  "holdings sit in the SFO Part XV Disclosure of Interests (DI) system " +
+  "(di.hkex.com.hk / sdinotice.hkex.com.hk), which is behind an ASP.NET WebForms " +
+  "wall and a login captcha — no keyless structured feed. Use CompanyFilings " +
+  "with jurisdiction \"HK\" to locate an issuer-side shareholding-change " +
+  "announcement PDF instead.";
+
+const HKEX_INSIDERS_UNSUPPORTED =
+  "CompanyInsiders is unsupported for jurisdiction \"HK\". HKEXnews has no " +
+  "Section 16-equivalent per-insider dealing feed; the DI directors'-interests " +
+  "register is captcha-walled and the \"List of Directors\" search " +
+  "(www3.hkexnews.hk/reports/dirsearch) is session/anti-CSRF-gated HTML, not a " +
+  "keyless JSON source. Director details are disclosed inside annual-report " +
+  "PDFs — use CompanyFilings with jurisdiction \"HK\".";
+
+const HKEX_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"HK\". HKEXnews figures " +
+  "live only inside annual-report PDFs (Financial Statements/ESG Information " +
+  "category); there is no structured XBRL financial feed. Use CompanyFilings " +
+  "with jurisdiction \"HK\" and mode \"latest_annual\" to locate the annual " +
+  "report PDF.";
+
+const HKEX_DOCUMENT_XHTML_HINT = HKEXNEWS_DOCUMENT_XHTML_MESSAGE;
+
+const SG_RESOLVE_CAVEAT = ACRA_CAVEAT;
+
+const SG_FILINGS_UNSUPPORTED =
+  "CompanyFilings is unsupported for jurisdiction \"SG\". SGX/SGXNet company " +
+  "announcements (including substantial-shareholder and director-dealings " +
+  "notices) are served from api.sgx.com, which is Akamai-blocked to datacenter " +
+  "IPs and additionally auth-gated (403 at the CDN edge, 401 at the origin) — " +
+  "unreachable from a server-hosted MCP even through a headless browser. ACRA on " +
+  "data.gov.sg (jurisdiction \"SG\", CompanyResolve) is the only feasible SG " +
+  "intent; BizFile filing extracts are paid.";
+
+const SG_INSIDERS_UNSUPPORTED =
+  "CompanyInsiders is unsupported for jurisdiction \"SG\". SGXNet director " +
+  "dealings are Akamai + auth walled, and ACRA exposes only an officer count " +
+  "(no names) — officer/shareholder extracts are in paid BizFile. Use " +
+  "jurisdiction \"SG\" with CompanyResolve for the ACRA registry snapshot.";
+
+const SG_OWNERS_UNSUPPORTED =
+  "CompanyOwners is unsupported for jurisdiction \"SG\". SGXNet " +
+  "substantial-shareholder announcements are Akamai + auth walled, and ACRA " +
+  "publishes no shareholder data — there is no keyless source. Use jurisdiction " +
+  "\"SG\" with CompanyResolve for the ACRA registry snapshot.";
+
+const SG_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"SG\". SGX financials are " +
+  "Akamai + auth walled, and ACRA/BizFile financial-statement extracts are paid. " +
+  "No keyless normalized financials source exists for Singapore.";
+
+// Render the enriched ACRA profile for the top resolved SG match: previous-name
+// history (like GB), incorporation date, SSIC classification, and auditor firms.
+function buildSgProfileDetailSection(entity: AcraEntity): string {
+  const rows: [string, string | undefined][] = [
+    ["UEN", entity.uen],
+    ["Status", entity.status],
+    ["Entity type", entity.entityType],
+    ["Company type", entity.companyType],
+    ["Incorporated", entity.incorporationDate],
+    [
+      "Primary SSIC",
+      [entity.ssicCode, entity.ssicDescription].filter(Boolean).join(" — ") ||
+        undefined,
+    ],
+    ["Officers on record", entity.officerCount ? `${entity.officerCount} (count only; ACRA exposes no names)` : undefined],
+    ["Auditor(s)", entity.auditFirms.length ? entity.auditFirms.join("; ") : undefined],
+  ];
+  const detailTable = markdownTable(
+    ["Field", "Value"],
+    rows
+      .filter((row): row is [string, string] => Boolean(row[1]))
+      .map(([field, value]) => [field, value]),
+  );
+  const sections = [`## Company profile: ${entity.legalName}`, detailTable];
+  if (entity.formerNames.length) {
+    sections.push(
+      "### Former names",
+      markdownTable(
+        ["Former name"],
+        entity.formerNames.map((name) => [name]),
+      ),
+    );
+  }
+  return joinSections(...sections);
+}
+
 function describeParent(parent: OwnershipParent | undefined): string {
   if (!parent) return "No parent information reported";
   if (parent.entity) {
@@ -1134,6 +1255,46 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           return failureResult(company, error);
         }
       }
+      if (jurisdiction === "HK") {
+        try {
+          const results = await searchHkexCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, "Try a 4/5-digit HKEX stock code (e.g. 700 or 00700) or a listed issuer's name.");
+          }
+          return textResult(joinSections(
+            `# Company resolution (HKEXnews): ${company}`,
+            entityRows(results.slice(0, 10)),
+            `_${HKEX_RESOLVE_CAVEAT}_`,
+            nextStep(
+              "use the stock code from this table with CompanyFilings " +
+                "(jurisdiction \"HK\"), then a transaction id with CompanyDocument.",
+            ),
+          ), entitiesStructured(results.slice(0, 10)));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "SG") {
+        try {
+          const results = await searchAcraCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, "Try a Singapore UEN (e.g. 197200078R) or a company name.");
+          }
+          const sections = [
+            `# Company resolution (ACRA / data.gov.sg): ${company}`,
+            entityRows(results.slice(0, 10)),
+          ];
+          const top = results[0];
+          if (top) sections.push(buildSgProfileDetailSection(top));
+          sections.push(`_${SG_RESOLVE_CAVEAT}_`);
+          return textResult(
+            joinSections(...sections),
+            entitiesStructured(results.slice(0, 10)),
+          );
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
 
       const results: Entity[] = [];
       const warnings: string[] = [];
@@ -1192,7 +1353,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "CompanyFilings",
     "Search a company's regulatory filings in any supported jurisdiction " +
       "(US SEC EDGAR default; GB Companies House, KR DART, JP EDINET, CN " +
-      "cninfo, IN BSE, TW TWSE, BR CVM). Filter by form type and date range. " +
+      "cninfo, IN BSE, TW TWSE, BR CVM, HK HKEXnews). Filter by form type and date range. " +
       "Mode \"latest_annual\"/\"latest_quarterly\" returns the newest periodic " +
       "report's metadata where the register supports it; mode \"insolvency\" " +
       "(GB only) returns insolvency-case history. Returns filing metadata, " +
@@ -1502,6 +1663,65 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         if (jurisdiction === "DE") {
           return textResult(BAFIN_FILINGS_UNSUPPORTED);
         }
+        if (jurisdiction === "SG") {
+          return textResult(SG_FILINGS_UNSUPPORTED);
+        }
+        if (jurisdiction === "HK") {
+          if (mode === "latest_quarterly") {
+            return textResult(
+              "Latest quarterly mode is unsupported for HK. HKEXnews indexes " +
+                "annual reports and interim/other filings, but not a normalized " +
+                "quarterly-report metadata equivalent. Use mode \"latest_annual\" " +
+                "or mode \"search\".",
+            );
+          }
+          if (mode === "latest_annual") {
+            const report = await getLatestHkexAnnualReport(company, options);
+            if (!report) {
+              return textResult(joinSections(
+                `No annual report found on HKEXnews for "${company}" in the scanned window.`,
+                `_${HKEX_FILINGS_CAVEAT}_`,
+              ));
+            }
+            return textResult(joinSections(
+              `# Latest annual report (HKEXnews): ${company}`,
+              markdownTable(
+                ["Filed", "Title", "Issuer", "Transaction id", "PDF"],
+                [[report.filedDate, report.form, report.category, report.accession, link("open", report.sourceUrl)]],
+              ),
+              `_${HKEX_FILINGS_CAVEAT}_`,
+              FILINGS_NEXT_STEP,
+            ), filingsStructured([report]));
+          }
+          const filings = await searchHkexFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No HKEXnews filings found for "${company}" in the scanned window.`,
+              `_${HKEX_FILINGS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# HKEXnews filings: ${company}`,
+            markdownTable(
+              ["Filed", "Title", "Issuer", "Description", "PDF"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            `_${HKEX_FILINGS_CAVEAT}_`,
+            FILINGS_NEXT_STEP,
+          ), filingsStructured(filings));
+        }
         if (jurisdiction === "KR") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
             const report = await getLatestOpenDartReport(
@@ -1751,6 +1971,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "BR") {
         return textResult(CVM_INSIDER_UNSUPPORTED);
       }
+      if (jurisdiction === "HK") {
+        return textResult(HKEX_INSIDERS_UNSUPPORTED);
+      }
+      if (jurisdiction === "SG") {
+        return textResult(SG_INSIDERS_UNSUPPORTED);
+      }
       try {
         if (jurisdiction === "DE") {
           const dealings = await getBafinDirectorsDealings(company, options);
@@ -1946,6 +2172,18 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "BR") {
         return textResult(joinSections(
           CVM_OWNER_UNSUPPORTED,
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "HK") {
+        return textResult(joinSections(
+          HKEX_OWNERS_UNSUPPORTED,
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "SG") {
+        return textResult(joinSections(
+          SG_OWNERS_UNSUPPORTED,
           "_Absence of a result here is not evidence that no large holder exists._",
         ));
       }
@@ -2231,6 +2469,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             'CompanyFilings with jurisdiction "CN" and mode "latest_annual" to locate ' +
             "the report PDF.",
         );
+      }
+      if (jurisdiction === "HK") {
+        return textResult(HKEX_FINANCIALS_UNSUPPORTED);
+      }
+      if (jurisdiction === "SG") {
+        return textResult(SG_FINANCIALS_UNSUPPORTED);
       }
       if (jurisdiction === "IN") {
         return textResult(
@@ -2569,7 +2813,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (
         jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
-        jurisdiction === "BR" || jurisdiction === "DE"
+        jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "HK" ||
+        jurisdiction === "SG"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -2585,7 +2830,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                     ? "TWSE"
                     : jurisdiction === "BR"
                       ? "CVM (Brazil)"
-                      : "BaFin (Germany)";
+                      : jurisdiction === "DE"
+                        ? "BaFin (Germany)"
+                        : jurisdiction === "HK"
+                          ? "HKEXnews (Hong Kong)"
+                          : "ACRA (Singapore)";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +
@@ -2887,11 +3136,76 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  async function companyDocumentHk(
+    company: string,
+    transactionId: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!transactionId) {
+      return textResult(
+        "Provide a transaction_id (the HKEXnews FILE_LINK path from " +
+          "CompanyFilings, e.g. /listedco/listconews/…/….pdf) to fetch an HK " +
+          "filing's document.",
+      );
+    }
+    try {
+      if (mode === "xhtml") {
+        return textResult(joinSections(
+          `# HKEXnews document: ${transactionId}`,
+          `_${HKEX_DOCUMENT_XHTML_HINT}_`,
+        ));
+      }
+
+      if (mode === "pdf") {
+        const pdf = await getHkexDocumentPdf(transactionId, options);
+        const target = outputPath
+          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
+          : join(tmpdir(), pdf.suggestedFilename);
+        await writeFile(target, pdf.bytes);
+        return textResult(joinSections(
+          `# HKEXnews document: ${transactionId}`,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
+              ["Filing", link("view", pdf.sourceUrl)],
+            ],
+          ),
+          `_${HKEXNEWS_DOCUMENT_CONTENT_WARNING} The file was written to disk; its bytes are not inlined here._`,
+        ));
+      }
+
+      const metadata: HkexDocumentMetadata =
+        await getHkexDocumentMetadata(transactionId, options);
+      return textResult(joinSections(
+        `# HKEXnews document: ${metadata.filename}`,
+        markdownTable(
+          ["Field", "Value"],
+          [
+            ["Transaction id", metadata.transactionId],
+            ["Document path", metadata.path],
+            ["Content type", metadata.contentType ?? "—"],
+            ["Size (bytes)", metadata.byteLength !== undefined ? String(metadata.byteLength) : "—"],
+            ["Filing", link("view", metadata.sourceUrl)],
+          ],
+        ),
+        "_Use mode=\"pdf\" to download the PDF (saved to disk, 25 MB cap). " +
+          HKEXNEWS_DOCUMENT_CONTENT_WARNING + "_",
+      ));
+    } catch (error) {
+      return failureResult(transactionId, error);
+    }
+  }
+
   const companyDocument = defineTool(
     "CompanyDocument",
     "Fetch a filed document's content by the transaction_id CompanyFilings " +
       "returned (GB transaction id — default; US accession number; JP EDINET " +
-      "docID; KR DART rcept_no). Mode \"metadata\" (default) lists the " +
+      "docID; KR DART rcept_no; HK HKEXnews FILE_LINK path). Mode \"metadata\" (default) lists the " +
       "filing's documents/renditions with sizes; \"xhtml\" returns the primary " +
       "machine-readable document's extracted plain text (paged via " +
       "text_offset; filings with no machine-readable rendition are reported " +
@@ -2903,11 +3217,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .min(1)
         .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR)"),
       jurisdiction: z
-        .enum(["US", "GB", "JP", "KR"])
+        .enum(["US", "GB", "JP", "KR", "HK"])
         .optional()
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
-            "or \"KR\" (OpenDART)",
+            "\"KR\" (OpenDART), or \"HK\" (HKEXnews)",
         ),
       transaction_id: z
         .string()
@@ -2915,7 +3229,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .optional()
         .describe(
           "GB Companies House filing-history transaction id, US SEC accession " +
-            "number, JP EDINET docID, or KR OpenDART receipt number (rcept_no) — " +
+            "number, JP EDINET docID, KR OpenDART receipt number (rcept_no), or " +
+            "HK HKEXnews FILE_LINK path (e.g. /listedco/listconews/…/….pdf) — " +
             "all from CompanyFilings",
         ),
       document_id: z
@@ -2956,6 +3271,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "KR") {
         return companyDocumentKr(company, transaction_id, mode, text_offset);
+      }
+      if (jurisdiction === "HK") {
+        return companyDocumentHk(company, transaction_id, mode, output_path);
       }
       try {
         let documentId = document_id;
