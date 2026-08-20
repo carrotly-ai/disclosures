@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Added
+
+- France open-data feasibility finding ([`FR-FEASIBILITY.md`](FR-FEASIBILITY.md)), live-verified against info-financiere.gouv.fr, recherche-entreprises.api.gouv.fr, BODACC, the AMF open datasets, INPI RNE, and INSEE Sirene: `CompanyFilings` + `CompanyDocument` are cleanly feasible over the official OAM's keyless OpenDataSoft Explore v2 JSON API (535k regulated filings with direct PDF URLs, etalab-2.0); `CompanyResolve` + `PersonAppointments` are feasible over DINUM's keyless recherche-entreprises registry search (SIREN, `dirigeants[]`, person→companies); `CompanyOwners` is partial (threshold-crossing notifications exist but holder and percentage live inside the PDF, unlike BaFin's structured tables); `CompanyInsiders` (managers' transactions are BDIF-UI-only), FR-specific `CompanyFinancials` (listed issuers already covered via `jurisdiction: "EU"` ESEF; non-listed accounts are INPI token-gated), `PrivateRaises`, and `CompanyCharges` (greffes/Infogreffe are paid) are honestly not feasible on free structured data. Finding only — no adapter or tool change ships with it.
+
 ## 0.2.0 - 2026-08-20
 
 All changes are backward-compatible: the ten tool names and their input schemas are unchanged, and every addition (structured output, annotations, resources, paging) is additive. The minor bump reflects the new machine-readable output surface (`structuredContent`) that clients may now rely on.
