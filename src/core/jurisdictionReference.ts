@@ -181,6 +181,8 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "CompanyOwners is a linked-notification list, not a structured cap table " +
       "(the crossing holder and % live inside the PDF). No managers'-transaction " +
       "feed; recherche-entreprises keys people by name, so homonyms are common.",
+  },
+  {
     code: "HK",
     name: "Hong Kong",
     source: "HKEXnews",

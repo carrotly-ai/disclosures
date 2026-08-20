@@ -188,6 +188,7 @@ import {
   searchRechercheEntreprises,
   searchRecherchePeople,
 } from "../adapters/rechercheEntreprises.js";
+import {
   getHkexDocumentMetadata,
   getHkexDocumentPdf,
   getLatestHkexAnnualReport,
@@ -1321,6 +1322,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "jurisdiction \"EU\" and OwnershipChain.",
             ),
           ), entitiesStructured(merged));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
       if (jurisdiction === "HK") {
         try {
           const results = await searchHkexCompanies(company, options);
@@ -2080,6 +2085,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "FR") {
         return textResult(INFO_FINANCIERE_INSIDERS_UNSUPPORTED);
+      }
       if (jurisdiction === "HK") {
         return textResult(HKEX_INSIDERS_UNSUPPORTED);
       }
