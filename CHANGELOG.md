@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented here.
 
-## Unreleased
+## 0.4.0 - 2026-08-21
+
+The coverage-expansion release: three new jurisdictions (FR, HK, SG — now 13 total), a new financials market (TW), and three live-verified feasibility findings (AU, CA, HK/SG) recording exactly why the skipped markets were skipped. All changes are backward-compatible: the ten tool names are unchanged and every `jurisdiction` enum widening is additive.
 
 ### Added
 
