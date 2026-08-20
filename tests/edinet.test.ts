@@ -1,14 +1,19 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   EDINET_5_PERCENT_THRESHOLD_REGIME,
+  EDINET_FINANCIAL_CONCEPT_NAMES,
   EDINET_VIEWER_URL,
+  EdinetApiError,
   EdinetConfigurationError,
   EdinetRateLimitError,
   getEdinetConfigurationError,
+  getEdinetFinancials,
   getEdinetLargeHolders,
   getLatestEdinetReport,
   hasEdinetConfiguration,
+  parseEdinetContexts,
   parseEdinetCodeCsv,
+  parseEdinetXbrlFinancials,
   resetEdinetCodeCache,
   resolveEdinetCode,
   searchEdinetCompanies,
@@ -19,6 +24,8 @@ import type { AdapterOptions, Env } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import {
   EDINET_CODE_CSV_BYTES,
+  EDINET_XBRL_INSTANCE,
+  edinetArchiveRoute,
   edinetCodeListRoute,
   edinetDay,
 } from "./helpers/edinetFixture.js";
@@ -378,6 +385,148 @@ describe("rate limiting", () => {
         options(fetchFn),
       ),
     ).rejects.toBeInstanceOf(EdinetRateLimitError);
+  });
+});
+
+describe("parseEdinetXbrlFinancials", () => {
+  test("parses contexts into period + consolidation metadata", () => {
+    const contexts = parseEdinetContexts(EDINET_XBRL_INSTANCE);
+    expect(contexts.get("CurrentYearDuration")).toEqual({
+      periodKey: "current",
+      periodEnd: "2026-03-31",
+      basis: "consolidated",
+    });
+    expect(contexts.get("Prior1YearInstant")).toEqual({
+      periodKey: "prior1",
+      periodEnd: "2025-03-31",
+      basis: "consolidated",
+    });
+    expect(contexts.get("CurrentYearDuration_NonConsolidatedMember")?.basis).toBe(
+      "separate",
+    );
+    // Segment-dimensioned contexts are not whitelisted.
+    expect(contexts.has("CurrentYearDuration_ReportableSegmentsTotalMember")).toBe(false);
+  });
+
+  test("extracts headline concepts and prefers consolidated over non-consolidated", () => {
+    const facts = parseEdinetXbrlFinancials(EDINET_XBRL_INSTANCE, { periods: 5 });
+    const revenue = facts.filter((fact) => fact.concept === "revenue");
+    const currentRevenue = revenue.find((fact) => fact.periodEnd === "2026-03-31");
+    // The consolidated 45T value wins over the non-consolidated 15T companion,
+    // and over the 99T segment total whose context is ignored.
+    expect(currentRevenue?.value).toBe(45_000_000_000_000);
+    expect(currentRevenue?.basis).toBe("consolidated");
+    expect(currentRevenue?.unit).toBe("JPY");
+
+    const assets = facts.find(
+      (fact) => fact.concept === "total_assets" && fact.periodEnd === "2026-03-31",
+    );
+    expect(assets?.value).toBe(90_000_000_000_000);
+    expect(assets?.basis).toBe("consolidated");
+  });
+
+  test("falls back to non-consolidated when no consolidated fact exists", () => {
+    const facts = parseEdinetXbrlFinancials(EDINET_XBRL_INSTANCE);
+    const netIncome = facts.find((fact) => fact.concept === "net_income");
+    expect(netIncome?.value).toBe(4_800_000_000_000);
+    expect(netIncome?.basis).toBe("separate");
+  });
+
+  test("labels periods by fiscal end and honours the periods limit", () => {
+    const oneYear = parseEdinetXbrlFinancials(EDINET_XBRL_INSTANCE, { periods: 1 });
+    expect(new Set(oneYear.map((fact) => fact.periodEnd))).toEqual(
+      new Set(["2026-03-31"]),
+    );
+    const twoYears = parseEdinetXbrlFinancials(EDINET_XBRL_INSTANCE, { periods: 2 });
+    // Prior year's NetSales (43T) surfaces only when the second period is kept.
+    const priorRevenue = twoYears.find(
+      (fact) => fact.concept === "revenue" && fact.periodEnd === "2025-03-31",
+    );
+    expect(priorRevenue?.value).toBe(43_000_000_000_000);
+  });
+
+  test("restricts to requested concepts", () => {
+    const facts = parseEdinetXbrlFinancials(EDINET_XBRL_INSTANCE, {
+      concepts: ["total_assets"],
+      periods: 5,
+    });
+    expect(new Set(facts.map((fact) => fact.concept))).toEqual(new Set(["total_assets"]));
+  });
+
+  test("exposes the canonical concept set", () => {
+    expect(EDINET_FINANCIAL_CONCEPT_NAMES).toEqual([
+      "revenue",
+      "operating_income",
+      "net_income",
+      "total_assets",
+      "stockholders_equity",
+    ]);
+  });
+});
+
+describe("getEdinetFinancials", () => {
+  test("resolves the latest annual report and extracts XBRL facts", async () => {
+    const fetchFn = routedFetch([
+      edinetCodeListRoute,
+      documentsRoute,
+      edinetArchiveRoute("S100ANNUAL"),
+    ]);
+    const facts = await getEdinetFinancials(
+      { company: "7203", periods: 2 },
+      options(fetchFn),
+    );
+    const revenue = facts.find(
+      (fact) => fact.concept === "revenue" && fact.periodEnd === "2026-03-31",
+    );
+    expect(revenue?.value).toBe(45_000_000_000_000);
+    expect(revenue?.unit).toBe("JPY");
+    expect(revenue?.basis).toBe("consolidated");
+    // Metadata is stamped from the resolved annual report.
+    expect(revenue?.form).toBe("Annual securities report (有価証券報告書)");
+    expect(revenue?.filedDate).toBe("2026-06-25");
+    expect(revenue?.source).toBe("EDINET");
+    expect(revenue?.sourceUrl).toBe(EDINET_VIEWER_URL);
+    expect(revenue?.sourceIdentifiers?.edinetCode).toBe("E02144");
+    expect(revenue?.sourceIdentifiers?.jurisdiction).toBe("JP");
+    // Only the type=1 archive of the resolved docID is downloaded.
+    const archiveRequests = fetchFn.requests.filter((request) =>
+      request.url.includes("documents/S100ANNUAL"),
+    );
+    expect(archiveRequests).toHaveLength(1);
+    expect(archiveRequests[0]?.url).toContain("type=1");
+  });
+
+  test("returns no facts when the issuer has no annual report", async () => {
+    const fetchFn = routedFetch([
+      edinetCodeListRoute,
+      { pattern: "documents.json", body: edinetDay([]) },
+    ]);
+    const facts = await getEdinetFinancials(
+      { company: "E02144" },
+      options(fetchFn),
+    );
+    expect(facts).toHaveLength(0);
+  });
+
+  test("translates an error-envelope archive into a typed error", async () => {
+    const fetchFn = routedFetch([
+      edinetCodeListRoute,
+      documentsRoute,
+      {
+        pattern: "documents/S100ANNUAL",
+        body: { metadata: { status: "404", message: "指定されたドキュメントは存在しません。" } },
+      },
+    ]);
+    await expect(
+      getEdinetFinancials({ company: "E02144" }, options(fetchFn)),
+    ).rejects.toBeInstanceOf(EdinetApiError);
+  });
+
+  test("requires an API key for the download (after keyless resolution)", async () => {
+    const fetchFn = routedFetch([edinetCodeListRoute]);
+    await expect(
+      getEdinetFinancials({ company: "E02144" }, options(fetchFn, {})),
+    ).rejects.toBeInstanceOf(EdinetConfigurationError);
   });
 });
 
