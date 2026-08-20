@@ -8,34 +8,39 @@ an empty or fabricated result.
 
 Three further **filed-document / register tools** — `CompanyDocument`, `CompanyCharges`, and
 `PersonAppointments` — originated as Companies House features. `CompanyDocument` now also
-serves **US** (SEC EDGAR), **JP** (EDINET), and **KR** (OpenDART); `PersonAppointments`
-also serves **US** (SEC EDGAR reporting owners) and **DE** (BaFin DealingsInfo notifying
-persons), all via a `jurisdiction` parameter (default `GB`). `CompanyCharges`
-remains UK-only for now. See [GB.md](GB.md), [US.md](US.md), [JP.md](JP.md), and
-[KR.md](KR.md) for the per-jurisdiction document / person paths.
+serves **US** (SEC EDGAR), **JP** (EDINET), **KR** (OpenDART), and **FR** (info-financiere
+OAM); `PersonAppointments` also serves **US** (SEC EDGAR reporting owners), **DE** (BaFin
+DealingsInfo notifying persons), and **FR** (recherche-entreprises *dirigeants*), all via a
+`jurisdiction` parameter (default `GB`). `CompanyCharges` remains UK-only for now. See
+[GB.md](GB.md), [US.md](US.md), [JP.md](JP.md), [KR.md](KR.md), and [FR.md](FR.md) for the
+per-jurisdiction document / person paths.
 
 This directory documents each jurisdiction in depth. For the quickstart, client
 configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — |
-| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — |
+| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
-✅ supported · — returns an honest unsupported-jurisdiction explanation · 🌐 global
+✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, and `KR`; `PersonAppointments`
-accepts `US`, `GB` (default), and `DE`; `CompanyCharges` is UK-only and takes no
+FR `CompanyOwners` is **partial**: it returns the *franchissement de seuil*
+threshold-crossing notifications as a linked-PDF list, but the crossing holder and the exact
+percentage live inside each PDF, not in a machine-readable field. See [FR.md](FR.md).
+
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, and `FR`; `PersonAppointments`
+accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no
 `jurisdiction` parameter.
 
 `OwnershipChain` takes no `jurisdiction` parameter: it is GLEIF Level-2 relationship data
@@ -56,6 +61,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | TW | TWSE OpenAPI | None | [TW.md](TW.md) |
 | BR | CVM open data | None | [BR.md](BR.md) |
 | DE | BaFin AnteileInfo + DealingsInfo | None | [DE.md](DE.md) |
+| FR | info-financiere.gouv.fr (OAM) + recherche-entreprises | None | [FR.md](FR.md) |
 
 ## Honesty invariants (all jurisdictions)
 
