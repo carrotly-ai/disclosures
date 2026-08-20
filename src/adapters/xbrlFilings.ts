@@ -7,11 +7,12 @@
 // rows. Coverage is not comprehensive — some OAMs hamper collection, and
 // alternative-market issuers (e.g. First North) are exempt from ESEF and absent
 // here — so a miss never proves a company did not report.
+import { rankEntities } from "../core/entityMatching.js";
 import { AdapterRateLimitError } from "../core/errors.js";
 import { getJson } from "../core/http.js";
 import { asArray, asRecord, asString } from "../core/parsing.js";
 import { xbrlFilingsRateLimiter } from "../core/rateLimiter.js";
-import type { AdapterOptions, FetchFn, FinancialFact } from "../core/types.js";
+import type { AdapterOptions, Entity, FetchFn, FinancialFact } from "../core/types.js";
 import { isLei, resolveGleifEntity } from "./gleif.js";
 
 export const XBRL_FILINGS_BASE_URL = "https://filings.xbrl.org";
@@ -141,6 +142,104 @@ export async function resolveEsefIssuer(
   const entity = await resolveGleifEntity(trimmed, options);
   if (!entity?.lei) return null;
   return { lei: entity.lei, ...(entity.legalName ? { name: entity.legalName } : {}) };
+}
+
+// --- Entity resolution against the filings.xbrl.org register -----------------
+//
+// The `/api/entities` JSON:API indexes only issuers that have actually filed an
+// ESEF/UKSEF/FRS report here, so a hit is a self-verifying "this is a real
+// filer" signal — unlike a GLEIF name lookup, which resolves any legal entity
+// whether or not it ever filed. `identifier` carries the LEI for ESEF filers.
+// The endpoint speaks the flask-combo-jsonapi filter dialect, so a legal name is
+// matched case-insensitively with the `ilike` operator; a bare LEI is matched
+// exactly on `identifier`.
+
+/** Build the `/api/entities` query for a legal-name (ilike) or LEI (exact) lookup. */
+function entitiesUrl(query: string, byLei: boolean): string {
+  const url = new URL(`${XBRL_FILINGS_BASE_URL}/api/entities`);
+  if (byLei) {
+    url.searchParams.set("filter[identifier]", query);
+  } else {
+    url.searchParams.set(
+      "filter",
+      JSON.stringify([{ name: "name", op: "ilike", val: `%${query}%` }]),
+    );
+  }
+  url.searchParams.set("page[size]", "50");
+  return url.toString();
+}
+
+function entityFromResource(item: unknown): Entity | undefined {
+  const record = asRecord(item);
+  if (!record || record.type !== "entity") return undefined;
+  const attrs = asRecord(record.attributes);
+  const lei = asString(attrs?.identifier);
+  if (!lei) return undefined;
+  const name = asString(attrs?.name);
+  return {
+    legalName: name ?? lei,
+    lei,
+    source: "filings.xbrl.org",
+    sourceUrl: absoluteUrl(`/api/entities/${encodeURIComponent(lei)}`),
+    jurisdiction: "EU",
+  };
+}
+
+function parseEntities(payload: unknown): Entity[] {
+  const out: Entity[] = [];
+  for (const item of asArray(asRecord(payload)?.data)) {
+    const entity = entityFromResource(item);
+    if (entity) out.push(entity);
+  }
+  return out;
+}
+
+/**
+ * Search the filings.xbrl.org register for issuers matching a legal name or LEI,
+ * best match first. A legal name is ranked by normalized similarity; a bare LEI
+ * resolves to at most the one exactly-matching filer. Every result is a
+ * confirmed ESEF/UKSEF filer, so an empty list means "not an indexed filer here"
+ * rather than "no such company anywhere".
+ */
+export async function searchEsefEntities(
+  company: string,
+  options: AdapterOptions = {},
+  limit = 10,
+): Promise<Entity[]> {
+  const trimmed = company.trim();
+  if (!trimmed) return [];
+  const byLei = isLei(trimmed);
+  const query = byLei ? trimmed.toUpperCase() : trimmed;
+  const entities = parseEntities(await requestJson(entitiesUrl(query, byLei), options));
+  if (byLei) {
+    return entities
+      .slice(0, limit)
+      .map((entity) => ({ ...entity, matchReason: "Exact LEI match" }));
+  }
+  return rankEntities(trimmed, entities, {
+    fallbackReason: "filings.xbrl.org register name match",
+  }).slice(0, limit);
+}
+
+/** Resolve a company to a single best ESEF filer LEI, or null if none is indexed. */
+export async function resolveEsefEntity(
+  company: string,
+  options: AdapterOptions = {},
+): Promise<Entity | null> {
+  const trimmed = company.trim();
+  if (!trimmed) return null;
+  if (isLei(trimmed)) {
+    const lei = trimmed.toUpperCase();
+    return {
+      legalName: lei,
+      lei,
+      source: "filings.xbrl.org",
+      sourceUrl: absoluteUrl(`/api/entities/${encodeURIComponent(lei)}`),
+      jurisdiction: "EU",
+      matchReason: "Exact LEI match",
+    };
+  }
+  return (await searchEsefEntities(trimmed, options, 1))[0] ?? null;
 }
 
 function parseFilings(payload: unknown): EsefFiling[] {

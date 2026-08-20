@@ -24,8 +24,9 @@ export const companyInput = {
     .optional()
     .describe(
       "Jurisdiction to search: US (SEC EDGAR), GB (Companies House), " +
-        "EU (pan-European ESEF financials via filings.xbrl.org — CompanyFinancials " +
-        "only), KR (OpenDART/DART), JP (EDINET), CN (cninfo — SSE/SZSE), " +
+        "EU (pan-European ESEF filers via filings.xbrl.org — CompanyResolve, " +
+        "CompanyFilings, and CompanyFinancials), KR (OpenDART/DART), JP (EDINET), " +
+        "CN (cninfo — SSE/SZSE), " +
         "IN (BSE India), TW (TWSE OpenAPI — Taiwan listed companies), " +
         "BR (CVM open data — Brazilian listed companies), or " +
         "DE (BaFin — German major-holding voting rights + directors' dealings). " +
@@ -36,17 +37,18 @@ export const companyInput = {
 export type ToolRuntime = AdapterOptions;
 
 /**
- * The EU jurisdiction is served only by filings.xbrl.org (ESEF/UKSEF annual
- * financials), so every intent other than CompanyFinancials returns this honest
- * unsupported explanation rather than silently falling through to the US path.
+ * The EU jurisdiction is served only by filings.xbrl.org (ESEF/UKSEF filers), so
+ * every intent beyond CompanyResolve, CompanyFilings, and CompanyFinancials
+ * returns this honest unsupported explanation rather than silently falling
+ * through to the US path.
  */
 export function euUnsupportedResult(tool: string): ToolResult {
   return textResult(
     `${tool} is unsupported for jurisdiction "EU". The EU route covers only ` +
       "ESEF/UKSEF annual financial reports indexed by filings.xbrl.org, which serve " +
-      'CompanyFinancials. For an EU issuer use CompanyFinancials with jurisdiction "EU", ' +
-      "OwnershipChain (global GLEIF), or the issuer's national jurisdiction where this " +
-      "release supports one.",
+      "CompanyResolve, CompanyFilings, and CompanyFinancials. For an EU issuer use one " +
+      'of those with jurisdiction "EU", OwnershipChain (global GLEIF), or the issuer\'s ' +
+      "national jurisdiction where this release supports one.",
   );
 }
 

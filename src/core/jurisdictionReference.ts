@@ -57,14 +57,17 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
   },
   {
     code: "EU",
-    name: "European Union (financials only)",
+    name: "European Union (ESEF filers)",
     source: "filings.xbrl.org (ESEF/UKSEF)",
     credential: "None.",
     identifiers: "LEI or legal name",
     intents:
-      "CompanyFinancials only (annual IFRS, FY2020+). Every other intent " +
-      "returns an honest unsupported explanation.",
-    caveat: "LEI-indexed; use CompanyResolve (US/default) to find an LEI first.",
+      "CompanyResolve (ESEF register search), CompanyFilings (annual reports, " +
+      "FY2020+), CompanyFinancials (annual IFRS). CompanyInsiders, " +
+      "CompanyOwners, and PrivateRaises return an honest unsupported explanation.",
+    caveat:
+      "ESEF filers only, not a company register; a legal name matches the " +
+      "filings.xbrl.org entity name, else pass a 20-character LEI.",
   },
   {
     code: "KR",

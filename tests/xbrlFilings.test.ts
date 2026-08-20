@@ -3,7 +3,9 @@ import {
   ESEF_FINANCIAL_CONCEPT_NAMES,
   getEsefFilings,
   getEsefFinancials,
+  resolveEsefEntity,
   resolveEsefIssuer,
+  searchEsefEntities,
   XbrlFilingsRateLimitError,
 } from "../src/adapters/xbrlFilings.js";
 import { resetRateLimiters, xbrlFilingsRateLimiter } from "../src/core/rateLimiter.js";
@@ -185,6 +187,82 @@ describe("resolveEsefIssuer", () => {
       },
     ]);
     expect(await resolveEsefIssuer("No Such Company Ltd", { fetchFn })).toBeNull();
+  });
+});
+
+// --- /api/entities register-search fixtures ---------------------------------
+
+function entityResource(id: string, name: string, identifier: string): Record<string, unknown> {
+  return { type: "entity", id, attributes: { name, identifier } };
+}
+
+describe("searchEsefEntities", () => {
+  test("a legal name is matched with the ilike operator and ranked best-first", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "api/entities",
+        body: {
+          data: [
+            entityResource("99", "KAINOS SOFTWARE HOLDINGS LTD", "529900OTHERLEI0000099"),
+            entityResource("2670", "KAINOS GROUP PLC", LEI),
+          ],
+          meta: { count: 2 },
+        },
+      },
+    ]);
+    const results = await searchEsefEntities("Kainos Group PLC", { fetchFn });
+    // The exact normalized name ranks above the mere substring match.
+    expect(results[0]?.lei).toBe(LEI);
+    expect(results[0]?.legalName).toBe("KAINOS GROUP PLC");
+    expect(results[0]?.source).toBe("filings.xbrl.org");
+    expect(results[0]?.jurisdiction).toBe("EU");
+    // The register was queried with the flask-combo-jsonapi ilike filter.
+    expect(fetchFn.requests[0]?.url).toContain("ilike");
+    expect(fetchFn.requests[0]?.url).toContain("api/entities");
+  });
+
+  test("a bare LEI resolves on the exact identifier filter", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: `filter%5Bidentifier%5D=${LEI}`,
+        body: { data: [entityResource("2670", "KAINOS GROUP PLC", LEI)], meta: { count: 1 } },
+      },
+    ]);
+    const results = await searchEsefEntities(`  ${LEI.toLowerCase()}  `, { fetchFn });
+    expect(results).toHaveLength(1);
+    expect(results[0]?.lei).toBe(LEI);
+    expect(results[0]?.matchReason).toBe("Exact LEI match");
+    expect(fetchFn.requests[0]?.url).not.toContain("ilike");
+  });
+
+  test("an empty register response yields no candidates", async () => {
+    const fetchFn = routedFetch([{ pattern: "api/entities", body: { data: [], meta: { count: 0 } } }]);
+    expect(await searchEsefEntities("No Such Issuer", { fetchFn })).toEqual([]);
+  });
+});
+
+describe("resolveEsefEntity", () => {
+  test("a bare LEI resolves directly with no network call", async () => {
+    const fetchFn = routedFetch([]);
+    const entity = await resolveEsefEntity(`  ${LEI.toLowerCase()}  `, { fetchFn });
+    expect(entity?.lei).toBe(LEI);
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("a name resolves to the single best register match", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "api/entities",
+        body: { data: [entityResource("2670", "KAINOS GROUP PLC", LEI)], meta: { count: 1 } },
+      },
+    ]);
+    const entity = await resolveEsefEntity("Kainos", { fetchFn });
+    expect(entity?.lei).toBe(LEI);
+  });
+
+  test("an unresolvable name returns null", async () => {
+    const fetchFn = routedFetch([{ pattern: "api/entities", body: { data: [], meta: { count: 0 } } }]);
+    expect(await resolveEsefEntity("No Such Issuer", { fetchFn })).toBeNull();
   });
 });
 
