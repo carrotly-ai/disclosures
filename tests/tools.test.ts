@@ -75,6 +75,54 @@ const esefRoutes: Route[] = [
   },
 ];
 
+// filings.xbrl.org /api/entities register lookups: an LEI resolves on exact
+// identifier, a name resolves through the flask-combo-jsonapi ilike operator.
+const esefEntityResource = {
+  type: "entity",
+  id: "2670",
+  attributes: { name: "KAINOS GROUP PLC", identifier: ESEF_LEI },
+};
+const esefEntityByLeiRoute: Route = {
+  pattern: `filter%5Bidentifier%5D=${ESEF_LEI}`,
+  body: { data: [esefEntityResource], meta: { count: 1 } },
+};
+const esefEntityByNameRoute: Route = {
+  pattern: "ilike",
+  body: { data: [esefEntityResource], meta: { count: 1 } },
+};
+
+// A two-period filings list for the same issuer, newest reporting period first,
+// each linking an iXBRL viewer plus package/json/xHTML documents.
+function esefFilingResource(periodEnd: string, addedYear: string): Record<string, unknown> {
+  return {
+    type: "filing",
+    id: periodEnd,
+    attributes: {
+      fxo_id: `${ESEF_LEI}-${periodEnd}`,
+      country: "GB",
+      period_end: periodEnd,
+      json_url: `/report/${periodEnd}.json`,
+      viewer_url: `/view/${periodEnd}/`,
+      package_url: `/pkg/${periodEnd}.zip`,
+      report_url: `/report/${periodEnd}/`,
+      date_added: `${addedYear}-08-21T00:00:00Z`,
+    },
+    relationships: { entity: { data: { type: "entity", id: "ent-1" } } },
+  };
+}
+const esefFilingsListRoute: Route = {
+  pattern: `filter%5Bentity.identifier%5D=${ESEF_LEI}`,
+  body: {
+    data: [
+      esefFilingResource("2025-03-31", "2025"),
+      esefFilingResource("2024-03-31", "2024"),
+    ],
+    included: [
+      { type: "entity", id: "ent-1", attributes: { identifier: ESEF_LEI, name: "KAINOS GROUP PLC" } },
+    ],
+  },
+};
+
 const TICKERS = {
   "0": { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." },
 };
@@ -1359,16 +1407,10 @@ describe("explicit EU routing", () => {
     expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
   });
 
-  test("every non-financials tool returns the honest EU-unsupported message without any network call", async () => {
+  test("the still-unsupported EU tools return the honest message without any network call", async () => {
     const fetchFn = routedFetch([]);
     const tools = createTools({ fetchFn, env: ENV });
-    for (const name of [
-      "CompanyResolve",
-      "CompanyFilings",
-      "CompanyInsiders",
-      "CompanyOwners",
-      "PrivateRaises",
-    ]) {
+    for (const name of ["CompanyInsiders", "CompanyOwners", "PrivateRaises"]) {
       const result = await toolByName(tools, name).handler({
         company: ESEF_LEI,
         jurisdiction: "EU",
@@ -1378,6 +1420,137 @@ describe("explicit EU routing", () => {
       expect(resultText(result)).toContain("CompanyFinancials");
     }
     expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyResolve resolves an ESEF filer by LEI and lists the register match", async () => {
+    const fetchFn = routedFetch([esefEntityByLeiRoute, ...esefRoutes]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: ESEF_LEI,
+      jurisdiction: "EU",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Company resolution (filings.xbrl.org)");
+    expect(text).toContain("KAINOS GROUP PLC");
+    expect(text).toContain(`LEI ${ESEF_LEI}`);
+    // Top match enriched with country (GB) from its newest filing.
+    expect(text).toContain("GB");
+    expect(result.structuredContent).toMatchObject({
+      candidates: [{ lei: ESEF_LEI, jurisdiction: "GB" }],
+    });
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyResolve resolves an ESEF filer by name via the ilike register search", async () => {
+    const fetchFn = routedFetch([esefEntityByNameRoute, ...esefRoutes]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "Kainos",
+      jurisdiction: "EU",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("KAINOS GROUP PLC");
+    expect(text).toContain(ESEF_LEI);
+    // The register was queried with the flask-combo-jsonapi ilike operator.
+    expect(fetchFn.requests.some(({ url }) => url.includes("ilike"))).toBe(true);
+  });
+
+  test("CompanyResolve returns an honest not-found for a name absent from the register", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "api/entities", body: { data: [], meta: { count: 0 } } },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "No Such Issuer",
+      jurisdiction: "EU",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('Could not find a company matching "No Such Issuer"');
+    expect(resultText(result)).toContain("ESEF filers only");
+  });
+
+  test("CompanyFilings lists an ESEF filer's annual reports by LEI with viewer and document links", async () => {
+    const fetchFn = routedFetch([esefFilingsListRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: ESEF_LEI,
+      jurisdiction: "EU",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("ESEF/UKSEF annual reports");
+    expect(text).toContain("2025-03-31");
+    expect(text).toContain("2024-03-31");
+    expect(text).toContain("ESEF (GB)");
+    expect(text).toContain("https://filings.xbrl.org/view/2025-03-31/");
+    expect(text).toContain("xBRL-JSON");
+    // Newest reporting period first; fxo_id chains as the transaction id.
+    expect(result.structuredContent).toMatchObject({
+      filings: [
+        { transactionId: `${ESEF_LEI}-2025-03-31`, form: "ESEF (GB)" },
+        { transactionId: `${ESEF_LEI}-2024-03-31`, form: "ESEF (GB)" },
+      ],
+    });
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyFilings honours the date window, limit, and latest_annual mode", async () => {
+    const windowed = await toolByName(
+      createTools({ fetchFn: routedFetch([esefFilingsListRoute]), env: ENV }),
+      "CompanyFilings",
+    ).handler({
+      company: ESEF_LEI,
+      jurisdiction: "EU",
+      start_date: "2025-01-01",
+      end_date: "2025-12-31",
+    } as never);
+    const windowedText = resultText(windowed);
+    expect(windowedText).toContain("2025-03-31");
+    expect(windowedText).not.toContain("2024-03-31");
+
+    const latest = await toolByName(
+      createTools({ fetchFn: routedFetch([esefFilingsListRoute]), env: ENV }),
+      "CompanyFilings",
+    ).handler({
+      company: ESEF_LEI,
+      jurisdiction: "EU",
+      mode: "latest_annual",
+    } as never);
+    const latestText = resultText(latest);
+    expect(latestText).toContain("2025-03-31");
+    expect(latestText).not.toContain("2024-03-31");
+  });
+
+  test("CompanyFilings returns an honest empty message and rejects latest_quarterly", async () => {
+    const emptyFetch = routedFetch([
+      { pattern: `filter%5Bentity.identifier%5D=${ESEF_LEI}`, body: { data: [], included: [] } },
+    ]);
+    const emptyResult = await toolByName(
+      createTools({ fetchFn: emptyFetch, env: ENV }),
+      "CompanyFilings",
+    ).handler({ company: ESEF_LEI, jurisdiction: "EU" } as never);
+    expect(emptyResult.isError).toBeUndefined();
+    expect(resultText(emptyResult)).toContain("No ESEF/UKSEF annual reports found");
+
+    const quarterly = await toolByName(
+      createTools({ fetchFn: routedFetch([]), env: ENV }),
+      "CompanyFilings",
+    ).handler({ company: ESEF_LEI, jurisdiction: "EU", mode: "latest_quarterly" } as never);
+    expect(resultText(quarterly)).toContain("Latest quarterly mode is unsupported for EU");
+  });
+
+  test("CompanyFilings surfaces an upstream failure as an error result", async () => {
+    const fetchFn = routedFetch([
+      { pattern: `filter%5Bentity.identifier%5D=${ESEF_LEI}`, body: "boom", status: 503 },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: ESEF_LEI,
+      jurisdiction: "EU",
+    } as never);
+    expect(result.isError).toBe(true);
   });
 });
 

@@ -104,8 +104,8 @@ Restart the client after changing its configuration, then try:
 
 | Tool | What it answers | Coverage |
 |---|---|---|
-| `CompanyResolve` | "Which company is this?" — canonical name plus CIK, ticker, LEI, ISIN, and local registry identifiers; GB adds previous names with date ranges and status/accounts detail. | US, GB, KR, JP, CN, IN, TW, BR, DE + global LEI/ISIN |
-| `CompanyFilings` | "What has it filed?" — dates, types, descriptions, direct source links; a latest annual/quarterly report mode, plus a GB insolvency-history mode. | US, GB, KR, JP, CN, IN, TW, BR |
+| `CompanyResolve` | "Which company is this?" — canonical name plus CIK, ticker, LEI, ISIN, and local registry identifiers; GB adds previous names with date ranges and status/accounts detail. | US, GB, EU (ESEF filers), KR, JP, CN, IN, TW, BR, DE + global LEI/ISIN |
+| `CompanyFilings` | "What has it filed?" — dates, types, descriptions, direct source links; a latest annual/quarterly report mode, plus a GB insolvency-history mode. | US, GB, EU (ESEF/UKSEF annual reports), KR, JP, CN, IN, TW, BR |
 | `CompanyInsiders` | "Who runs it?" — directors, officers, titles, and 10%+ owners from insider registers. | US, GB (incl. ECCTA identity status), KR, TW, DE (MAR Art. 19) |
 | `CompanyOwners` | "Who owns it?" — major-shareholder filers with thresholds, dates, and filing links. | US (13D/13G), GB (PSC + TR-1), KR (5% rule), JP (5% rule / 大量保有報告書), TW (>10%), DE (§§33 ff. WpHG) |
 | `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, BR |

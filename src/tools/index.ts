@@ -118,8 +118,13 @@ import {
 } from "../adapters/fcaNsm.js";
 import {
   ESEF_FINANCIAL_CONCEPT_NAMES,
+  getEsefFilings,
   getEsefFinancials,
+  resolveEsefEntity,
+  searchEsefEntities,
+  XBRL_FILINGS_BASE_URL,
 } from "../adapters/xbrlFilings.js";
+import type { EsefFiling } from "../adapters/xbrlFilings.js";
 import {
   getTwseDirectorHoldings,
   getTwseMajorShareholders,
@@ -580,6 +585,69 @@ const BAFIN_FINANCIALS_UNSUPPORTED =
   "CompanyFinancials with jurisdiction \"EU\" for a German issuer's annual " +
   "financial facts.";
 
+const EU_ESEF_ONLY_HINT =
+  "The EU route is ESEF filers only (pan-European annual reports indexed by " +
+  "filings.xbrl.org, FY2020+, LEI-indexed), not a company register — pass a " +
+  "20-character LEI or a listed issuer's legal name, or use the issuer's " +
+  "national jurisdiction where this release supports one.";
+
+const ESEF_ENTITY_CAVEAT =
+  "filings.xbrl.org indexes only issuers that have filed an ESEF/UKSEF annual " +
+  "report, so this is a listed-issuer financial-reporting index, not a company " +
+  "registry. Coverage is not comprehensive (alternative-market issuers are " +
+  "ESEF-exempt, and some national OAMs hamper collection), so absence here is " +
+  "not proof the company did not report.";
+
+const ESEF_FILINGS_CAVEAT =
+  "ESEF/UKSEF annual financial reports indexed by filings.xbrl.org (FY2020+, " +
+  "LEI-indexed). Each row links the official iXBRL viewer plus the report " +
+  "package, xBRL-JSON, and xHTML documents. \"Filed\" is the date filings.xbrl.org " +
+  "indexed the report. This tool never returns document text; for normalized " +
+  "figures use CompanyFinancials. Coverage is not comprehensive — absence here " +
+  "is not proof the company did not report.";
+
+const ESEF_FILINGS_NEXT_STEP = nextStep(
+  "use CompanyFinancials with jurisdiction \"EU\" and the same company for " +
+    "normalized annual IFRS figures parsed from these reports.",
+);
+
+function esefFormLabel(filing: EsefFiling): string {
+  return filing.country ? `ESEF (${filing.country})` : "ESEF";
+}
+
+/** Human links for a filing's report package, xBRL-JSON, and xHTML documents. */
+function esefDocumentLinks(filing: EsefFiling): string {
+  const parts = [
+    filing.packageUrl ? link("package", filing.packageUrl) : undefined,
+    filing.jsonUrl ? link("xBRL-JSON", filing.jsonUrl) : undefined,
+    filing.reportUrl ? link("xHTML", filing.reportUrl) : undefined,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length ? parts.join(" · ") : "—";
+}
+
+/**
+ * Map an ESEF filing onto the shared Filing shape so filingsStructured emits the
+ * same machine-readable envelope as every other jurisdiction. `fxoId` is the
+ * stable per-filing id a future CompanyDocument EU path could accept as
+ * transaction_id (CompanyDocument does not serve EU in this release).
+ */
+function esefFilingToFiling(filing: EsefFiling): Filing {
+  return {
+    source: "filings.xbrl.org",
+    filedDate: filing.dateAdded ?? "",
+    form: esefFormLabel(filing),
+    ...(filing.country ? { category: filing.country } : {}),
+    description: `Annual financial report — period ended ${filing.periodEnd}`,
+    accession: filing.fxoId,
+    sourceUrl:
+      filing.viewerUrl ??
+      filing.reportUrl ??
+      filing.jsonUrl ??
+      filing.packageUrl ??
+      XBRL_FILINGS_BASE_URL,
+  };
+}
+
 function describeParent(parent: OwnershipParent | undefined): string {
   if (!parent) return "No parent information reported";
   if (parent.entity) {
@@ -605,7 +673,41 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "here to get the identifiers the other tools accept.",
     companyInput,
     async ({ company, jurisdiction }) => {
-      if (jurisdiction === "EU") return euUnsupportedResult("CompanyResolve");
+      if (jurisdiction === "EU") {
+        try {
+          const results = await searchEsefEntities(company, options, 10);
+          if (!results.length) {
+            return notFoundResult(company, EU_ESEF_ONLY_HINT);
+          }
+          // Enrich the top match with the country and a human viewer link from
+          // its newest filing. Supplementary — a lookup failure never nukes the
+          // resolution table above.
+          const top = results[0];
+          if (top?.lei) {
+            try {
+              const filings = await getEsefFilings(top.lei, options);
+              const newest = filings[0];
+              if (newest) {
+                if (newest.country) top.jurisdiction = newest.country;
+                if (newest.viewerUrl) top.sourceUrl = newest.viewerUrl;
+              }
+            } catch {
+              // ignore — the resolution table above is unaffected
+            }
+          }
+          return textResult(joinSections(
+            `# Company resolution (filings.xbrl.org): ${company}`,
+            entityRows(results),
+            `_${ESEF_ENTITY_CAVEAT}_`,
+            nextStep(
+              "use the LEI from this table with CompanyFinancials or " +
+                "CompanyFilings (jurisdiction \"EU\"), or OwnershipChain.",
+            ),
+          ), entitiesStructured(results));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
       if (jurisdiction === "JP") {
         try {
           const results = await searchEdinetCompanies(company, options);
@@ -824,8 +926,53 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         ),
     },
     async ({ company, jurisdiction, forms, start_date, end_date, limit, mode }) => {
-      if (jurisdiction === "EU") return euUnsupportedResult("CompanyFilings");
       try {
+        if (jurisdiction === "EU") {
+          if (mode === "latest_quarterly") {
+            return textResult(
+              "Latest quarterly mode is unsupported for EU. ESEF is an annual " +
+                "reporting format; filings.xbrl.org indexes annual financial reports " +
+                'only. Use mode "latest_annual" or mode "search".',
+            );
+          }
+          const lei = isLei(company)
+            ? company.trim().toUpperCase()
+            : (await resolveEsefEntity(company, options))?.lei;
+          if (!lei) {
+            return textResult(joinSections(
+              `No ESEF filer found on filings.xbrl.org for "${company}". ${EU_ESEF_ONLY_HINT}`,
+              `_${ESEF_FILINGS_CAVEAT}_`,
+            ));
+          }
+          let filings = await getEsefFilings(lei, options);
+          // start_date/end_date bound the register's index date (date_added).
+          if (start_date) filings = filings.filter((f) => (f.dateAdded ?? "") >= start_date);
+          if (end_date) filings = filings.filter((f) => (f.dateAdded ?? "") <= end_date);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No ESEF/UKSEF annual reports found on filings.xbrl.org for "${company}"` +
+                (start_date || end_date ? " in the given date window." : "."),
+              `_${ESEF_FILINGS_CAVEAT}_`,
+            ));
+          }
+          filings = mode === "latest_annual" ? filings.slice(0, 1) : filings.slice(0, limit ?? 20);
+          return textResult(joinSections(
+            `# ESEF/UKSEF annual reports: ${company}`,
+            markdownTable(
+              ["Period end", "Country", "Filed", "Type", "Viewer", "Documents"],
+              filings.map((filing) => [
+                filing.periodEnd,
+                filing.country || "—",
+                filing.dateAdded ?? "—",
+                esefFormLabel(filing),
+                filing.viewerUrl ? link("open", filing.viewerUrl) : "—",
+                esefDocumentLinks(filing),
+              ]),
+            ),
+            `_${ESEF_FILINGS_CAVEAT}_`,
+            ESEF_FILINGS_NEXT_STEP,
+          ), filingsStructured(filings.map(esefFilingToFiling)));
+        }
         if (jurisdiction === "JP") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
             const report = await getLatestEdinetReport(
