@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented here.
 
-## Unreleased
+## 0.2.0 - 2026-08-20
+
+All changes are backward-compatible: the ten tool names and their input schemas are unchanged, and every addition (structured output, annotations, resources, paging) is additive. The minor bump reflects the new machine-readable output surface (`structuredContent`) that clients may now rely on.
 
 ### Added
 
