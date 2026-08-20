@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   getTwseDirectorHoldings,
+  getTwseFinancials,
   getTwseMajorShareholders,
   isTwseStockCode,
   resetTwseDatasetCache,
@@ -9,8 +10,11 @@ import {
   rocYearMonthToIso,
   searchTwseCompanies,
   searchTwseFilings,
+  twseQuarterPeriodEnd,
   TWSE_ANNOUNCEMENTS_ENDPOINT,
+  TWSE_BALANCE_SHEET_ENDPOINT,
   TWSE_BASIC_ENDPOINT,
+  TWSE_COMPREHENSIVE_INCOME_ENDPOINT,
   TWSE_DIRECTOR_HOLDINGS_ENDPOINT,
   TWSE_MAJOR_SHAREHOLDERS_ENDPOINT,
   TwseRateLimitError,
@@ -276,6 +280,162 @@ describe("caching and rate limiting", () => {
       { pattern: TWSE_BASIC_ENDPOINT, body: "rate limited", status: 429 },
     ]);
     await expect(searchTwseCompanies("2330", options(fetchFn))).rejects.toBeInstanceOf(
+      TwseRateLimitError,
+    );
+  });
+});
+
+// Financial-statement snapshots (t187ap06_L_ci comprehensive income,
+// t187ap07_L_ci balance sheet). Values are NT$ thousands with full-width
+// parentheses on the income keys, exactly as the live feed emits them. 2330 is
+// general-industry; a second row (2317) that a code filter must exclude.
+const INCOME_ROWS = [
+  {
+    出表日期: "1150821",
+    年度: "115",
+    季別: "2",
+    公司代號: "2330",
+    公司名稱: "台積電",
+    營業收入: "2404483690.00",
+    "營業利益（損失）": "1425568793.00",
+    "本期淨利（淨損）": "1279582227.00",
+  },
+  {
+    出表日期: "1150821",
+    年度: "115",
+    季別: "2",
+    公司代號: "2317",
+    公司名稱: "鴻海",
+    營業收入: "3500000000.00",
+    "營業利益（損失）": "90000000.00",
+    "本期淨利（淨損）": "70000000.00",
+  },
+];
+const balanceRows2330 = [
+  {
+    出表日期: "1150821",
+    年度: "115",
+    季別: "2",
+    公司代號: "2330",
+    公司名稱: "台積電",
+    資產總計: "9375654727.00",
+    權益總計: "6474470981.00",
+  },
+];
+const incomeRoute: Route = {
+  pattern: TWSE_COMPREHENSIVE_INCOME_ENDPOINT,
+  body: INCOME_ROWS,
+};
+const balanceRoute: Route = {
+  pattern: TWSE_BALANCE_SHEET_ENDPOINT,
+  body: balanceRows2330,
+};
+
+describe("twseQuarterPeriodEnd", () => {
+  test("maps ROC year + quarter to the period end", () => {
+    expect(twseQuarterPeriodEnd("115", "2")?.periodEnd).toBe("2026-06-30");
+    expect(twseQuarterPeriodEnd("114", "4")?.periodEnd).toBe("2025-12-31");
+    expect(twseQuarterPeriodEnd("115", "1")?.periodEnd).toBe("2026-03-31");
+    expect(twseQuarterPeriodEnd("115", "5")).toBeUndefined();
+    expect(twseQuarterPeriodEnd("", "2")).toBeUndefined();
+  });
+});
+
+describe("getTwseFinancials", () => {
+  test("maps the canonical concepts, scales NT$ thousands, and labels the period", async () => {
+    const fetchFn = routedFetch([basicRoute, incomeRoute, balanceRoute]);
+    const { entity, facts, financialSectorVariant } = await getTwseFinancials(
+      "2330",
+      options(fetchFn),
+    );
+    expect(entity.stockCode).toBe("2330");
+    expect(financialSectorVariant).toBe(false);
+    const byConcept = new Map(facts.map((fact) => [fact.concept, fact]));
+    // Concept order follows the adapter's canonical sequence.
+    expect(facts.map((fact) => fact.concept)).toEqual([
+      "revenue",
+      "operating_income",
+      "net_income",
+      "total_assets",
+      "stockholders_equity",
+    ]);
+    // Reported thousands are scaled to whole NT$.
+    expect(byConcept.get("revenue")?.value).toBe(2404483690 * 1000);
+    expect(byConcept.get("total_assets")?.value).toBe(9375654727 * 1000);
+    for (const fact of facts) {
+      expect(fact.unit).toBe("TWD");
+      expect(fact.periodEnd).toBe("2026-06-30");
+      expect(fact.filedDate).toBe("2026-08-21");
+      expect(fact.source).toBe("TWSE");
+      expect(fact.sourceUrl).toContain("owncode=2330");
+    }
+    expect(byConcept.get("revenue")?.form).toContain("綜合損益表");
+    expect(byConcept.get("total_assets")?.form).toContain("資產負債表");
+  });
+
+  test("honours a concepts filter and fetches only the needed statement", async () => {
+    const fetchFn = routedFetch([basicRoute, incomeRoute, balanceRoute]);
+    const { facts } = await getTwseFinancials(
+      { company: "2330", concepts: ["revenue"] },
+      options(fetchFn),
+    );
+    expect(facts.map((fact) => fact.concept)).toEqual(["revenue"]);
+    // Balance-sheet dataset is never fetched when only an income concept is asked.
+    expect(
+      fetchFn.requests.some((request) =>
+        request.url.includes(TWSE_BALANCE_SHEET_ENDPOINT),
+      ),
+    ).toBe(false);
+  });
+
+  test("flags a finance/insurance-sector issuer that files a variant format", async () => {
+    // 2882 resolves via the basic feed (產業別 17) but is absent from the
+    // general-industry statement snapshots, which still carry other issuers.
+    const basic: Route = {
+      pattern: TWSE_BASIC_ENDPOINT,
+      body: [
+        { 公司代號: "2882", 公司名稱: "國泰金融控股股份有限公司", 產業別: "17" },
+      ],
+    };
+    const fetchFn = routedFetch([basic, incomeRoute, balanceRoute]);
+    const { facts, financialSectorVariant } = await getTwseFinancials(
+      "2882",
+      options(fetchFn),
+    );
+    expect(facts).toHaveLength(0);
+    expect(financialSectorVariant).toBe(true);
+  });
+
+  test("returns an empty result without the sector flag for a general-industry miss", async () => {
+    const basic: Route = {
+      pattern: TWSE_BASIC_ENDPOINT,
+      body: [{ 公司代號: "2454", 公司名稱: "聯發科技股份有限公司", 產業別: "24" }],
+    };
+    const fetchFn = routedFetch([basic, incomeRoute, balanceRoute]);
+    const { facts, financialSectorVariant } = await getTwseFinancials(
+      "2454",
+      options(fetchFn),
+    );
+    expect(facts).toHaveLength(0);
+    expect(financialSectorVariant).toBe(false);
+  });
+
+  test("serves a repeat lookup from the injected cache without refetching", async () => {
+    const cache = new InMemoryCache();
+    const fetchFn = routedFetch([basicRoute, incomeRoute, balanceRoute]);
+    await getTwseFinancials("2330", { fetchFn, cache });
+    const firstCount = fetchFn.requests.length;
+    resetTwseDatasetCache();
+    await getTwseFinancials("2330", { fetchFn, cache });
+    expect(fetchFn.requests.length).toBe(firstCount);
+  });
+
+  test("maps an HTTP 429 on the income feed to TwseRateLimitError", async () => {
+    const fetchFn = routedFetch([
+      basicRoute,
+      { pattern: TWSE_COMPREHENSIVE_INCOME_ENDPOINT, body: "rate limited", status: 429 },
+    ]);
+    await expect(getTwseFinancials("2330", options(fetchFn))).rejects.toBeInstanceOf(
       TwseRateLimitError,
     );
   });
