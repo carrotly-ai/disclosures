@@ -25,7 +25,7 @@ configuration, and library API, see the top-level [README](../../README.md).
 | `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ |
 | `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — |
 | `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — |
 | `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — |

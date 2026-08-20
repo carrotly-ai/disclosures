@@ -123,7 +123,7 @@ Restart the client after changing its configuration, then try:
 | `CompanyFilings` | "What has it filed?" — dates, types, descriptions, direct source links; a latest annual/quarterly report mode, plus a GB insolvency-history mode. | US, GB, EU (ESEF/UKSEF annual reports), KR, JP, CN, IN, TW, BR |
 | `CompanyInsiders` | "Who runs it?" — directors, officers, titles, and 10%+ owners from insider registers. | US, GB (incl. ECCTA identity status), KR, TW, DE (MAR Art. 19) |
 | `CompanyOwners` | "Who owns it?" — major-shareholder filers with thresholds, dates, and filing links. | US (13D/13G), GB (PSC + TR-1), KR (5% rule), JP (5% rule / 大量保有報告書), TW (>10%), DE (§§33 ff. WpHG) |
-| `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, BR |
+| `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, JP (EDINET XBRL), TW (latest-period general-industry statements, NT$), BR |
 | `OwnershipChain` | "Who consolidates it?" — GLEIF direct/ultimate accounting-consolidation parents and children. | 🌐 Global (any LEI or legal name) |
 | `PrivateRaises` | "Has it raised privately?" — Form D exempt offerings, amounts, investor counts, named related persons. | US only in v1 |
 | `CompanyDocument` | "What does the filing actually say?" — fetches a filed document's content: extracted iXBRL/HTML/DART-XML text or the source PDF saved to disk (image-only / pre-inline / XBRL-archive filings are reported honestly, never faked). | GB (Companies House), US (SEC EDGAR), JP (EDINET), KR (OpenDART) |
@@ -142,7 +142,7 @@ Every `company` input accepts a **name or a local identifier** — ticker, CIK, 
 | `CompanyFilings` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — |
 | `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ |
 | `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 global via GLEIF — jurisdiction-independent |
 

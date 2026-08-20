@@ -133,8 +133,10 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
     intents:
       "CompanyResolve, CompanyFilings (material information), " +
       "CompanyInsiders (director/supervisor holdings), CompanyOwners (>10% " +
-      "holders)",
-    caveat: "Financial reports live on MOPS and are not served here.",
+      "holders), CompanyFinancials (latest-period general-industry statements, NT$)",
+    caveat:
+      "Financials are the latest reported period only (general-industry issuers); " +
+      "finance/insurance issuers file a variant format and history lives on MOPS.",
   },
   {
     code: "BR",

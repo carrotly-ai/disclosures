@@ -8,6 +8,7 @@ import type {
   AdapterOptions,
   Entity,
   Filing,
+  FinancialFact,
   OwnerRecord,
 } from "../core/types.js";
 
@@ -36,6 +37,28 @@ export const TWSE_ANNOUNCEMENTS_ENDPOINT = "t187ap04_L";
 export const TWSE_MAJOR_SHAREHOLDERS_ENDPOINT = "t187ap02_L";
 /** 董監事持股餘額明細資料 — director/supervisor shareholding balances. */
 export const TWSE_DIRECTOR_HOLDINGS_ENDPOINT = "t187ap11_L";
+/** 綜合損益表（一般業）— comprehensive income statement, general-industry variant. */
+export const TWSE_COMPREHENSIVE_INCOME_ENDPOINT = "t187ap06_L_ci";
+/** 資產負債表（一般業）— balance sheet, general-industry variant. */
+export const TWSE_BALANCE_SHEET_ENDPOINT = "t187ap07_L_ci";
+
+/**
+ * 產業別 code 17 = 金融保險業 (finance & insurance). Its issuers — banks (銀行業),
+ * securities firms (證券業), insurers (保險業) and financial-holding companies
+ * (金控業) — file the sector statement variants (…_basi / _bd / _ins / _fh),
+ * whose income statement has no 營業收入 / 營業利益 lines at all (they report
+ * 淨收益 net revenue instead). This release parses only the general-industry
+ * (_ci) statements, so a finance/insurance issuer is degraded honestly rather
+ * than force-fit onto a concept set its statements do not carry.
+ */
+export const TWSE_FINANCE_INSURANCE_INDUSTRY_CODE = "17";
+
+/**
+ * TWSE reports financial-statement values in New Taiwan Dollar thousands
+ * (新臺幣仟元), so each parsed figure is multiplied by this scale to canonical
+ * whole-NT$ units before it is surfaced.
+ */
+export const TWSE_STATEMENT_SCALE = 1000;
 
 export const TWSE_MAJOR_SHAREHOLDER_THRESHOLD_REGIME =
   "Taiwan Securities and Exchange Act — shareholders holding more than 10% of a " +
@@ -434,6 +457,182 @@ export async function getTwseDirectorHoldings(
     });
 }
 
+// --- Financial statements (CompanyFinancials) ------------------------------
+
+interface TwseConceptSpec {
+  concept: string;
+  label: string;
+  statement: "income" | "balance";
+  /** Live Chinese column key on the general-industry (_ci) snapshot row. */
+  field: string;
+}
+
+/**
+ * Map the shared canonical concept set onto the general-industry (_ci) TWSE
+ * statement columns. Revenue and operating income come from the comprehensive
+ * income statement (綜合損益表); total assets and total equity from the balance
+ * sheet (資產負債表). Net income uses 本期淨利（淨損） — the whole-entity figure,
+ * not the parent-only 淨利歸屬於母公司業主 — to match the "net income" semantics
+ * of the other adapters. Column keys carry full-width parentheses, exactly as
+ * the live feed emits them.
+ */
+export const TWSE_FINANCIAL_CONCEPTS: readonly TwseConceptSpec[] = [
+  { concept: "revenue", label: "Operating revenue (營業收入)", statement: "income", field: "營業收入" },
+  { concept: "operating_income", label: "Operating income (營業利益)", statement: "income", field: "營業利益（損失）" },
+  { concept: "net_income", label: "Net income (本期淨利／淨損)", statement: "income", field: "本期淨利（淨損）" },
+  { concept: "total_assets", label: "Total assets (資產總計)", statement: "balance", field: "資產總計" },
+  { concept: "stockholders_equity", label: "Total equity (權益總計)", statement: "balance", field: "權益總計" },
+];
+
+export const TWSE_FINANCIAL_CONCEPT_NAMES = TWSE_FINANCIAL_CONCEPTS.map(
+  (spec) => spec.concept,
+);
+
+const TWSE_QUARTER_MONTH_DAY: Record<number, string> = {
+  1: "03-31",
+  2: "06-30",
+  3: "09-30",
+  4: "12-31",
+};
+
+/**
+ * Resolve a TWSE snapshot's 年度 (ROC year) + 季別 (quarter) to the fiscal
+ * period end it covers. The comprehensive-income figures are cumulative from
+ * the fiscal-year start through this quarter (year-to-date); the balance-sheet
+ * figures are as-of this date. Returns undefined for an unrecognized quarter
+ * rather than guessing a period.
+ */
+export function twseQuarterPeriodEnd(
+  rocYear: unknown,
+  quarter: unknown,
+): { periodEnd: string; year: number; quarter: number } | undefined {
+  const yearText = asString(rocYear);
+  if (!yearText || !/^\d{2,3}$/.test(yearText)) return undefined;
+  const quarterNumber = Number.parseInt(asString(quarter) ?? "", 10);
+  const monthDay = TWSE_QUARTER_MONTH_DAY[quarterNumber];
+  if (!monthDay) return undefined;
+  const gregorianYear = Number.parseInt(yearText, 10) + 1911;
+  return {
+    periodEnd: `${gregorianYear}-${monthDay}`,
+    year: gregorianYear,
+    quarter: quarterNumber,
+  };
+}
+
+export interface TwseFinancialsParams {
+  company: string;
+  concepts?: readonly string[];
+}
+
+export interface TwseFinancialsResult {
+  entity: Entity;
+  facts: FinancialFact[];
+  /**
+   * True when no general-industry statement row exists for the issuer and its
+   * 產業別 marks it a finance/insurance-sector filer using a variant statement
+   * format this release does not parse. Lets the caller degrade honestly with
+   * the right explanation instead of an ambiguous empty result.
+   */
+  financialSectorVariant: boolean;
+}
+
+const TWSE_INCOME_FORM = "TWSE comprehensive income statement (綜合損益表), general-industry";
+const TWSE_BALANCE_FORM = "TWSE balance sheet (資產負債表), general-industry";
+
+function twseRowToFacts(
+  row: JsonRecord,
+  specs: readonly TwseConceptSpec[],
+  statement: "income" | "balance",
+  code: string,
+): FinancialFact[] {
+  const period = twseQuarterPeriodEnd(row["年度"], row["季別"]);
+  if (!period) return [];
+  const filedDate = rocDateToIso(row["出表日期"]) ?? "";
+  const form = statement === "income" ? TWSE_INCOME_FORM : TWSE_BALANCE_FORM;
+  const facts: FinancialFact[] = [];
+  for (const spec of specs) {
+    if (spec.statement !== statement) continue;
+    const value = parseTwNumber(row[spec.field]);
+    if (value === undefined) continue;
+    facts.push({
+      concept: spec.concept,
+      label: spec.label,
+      periodEnd: period.periodEnd,
+      value: value * TWSE_STATEMENT_SCALE,
+      unit: "TWD",
+      filedDate,
+      form,
+      sourceUrl: companyProfileUrl(code),
+      source: "TWSE",
+      sourceIdentifiers: { stockCode: code, jurisdiction: "TW" },
+    });
+  }
+  return facts;
+}
+
+async function twseIndustryCode(
+  code: string,
+  options: AdapterOptions,
+): Promise<string | undefined> {
+  const rows = await loadDataset(TWSE_BASIC_ENDPOINT, options);
+  const row = rows.find((candidate) => asString(candidate["公司代號"]) === code);
+  return asString(row?.["產業別"]);
+}
+
+/**
+ * Latest-period financial-statement figures for a listed company from the TWSE
+ * general-industry (_ci) comprehensive-income and balance-sheet open-data
+ * snapshots. Each dataset is the whole-market snapshot for its most recent
+ * reported quarter with no per-company filter, so this filters client-side by
+ * listing code and maps the row onto the canonical concept set (in whole NT$).
+ * A finance/insurance-sector issuer, which files a variant statement format not
+ * parsed here, returns no facts with financialSectorVariant set.
+ */
+export async function getTwseFinancials(
+  input: string | TwseFinancialsParams,
+  options: AdapterOptions = {},
+): Promise<TwseFinancialsResult> {
+  const params = typeof input === "string" ? { company: input } : input;
+  const entity = await resolveTwseEntity(params.company, options);
+  const code = entity.stockCode!;
+  const wanted = new Set(
+    params.concepts && params.concepts.length
+      ? params.concepts
+      : TWSE_FINANCIAL_CONCEPT_NAMES,
+  );
+  const specs = TWSE_FINANCIAL_CONCEPTS.filter((spec) => wanted.has(spec.concept));
+  const needIncome = specs.some((spec) => spec.statement === "income");
+  const needBalance = specs.some((spec) => spec.statement === "balance");
+
+  const facts: FinancialFact[] = [];
+  if (needIncome) {
+    const rows = await loadDataset(TWSE_COMPREHENSIVE_INCOME_ENDPOINT, options);
+    const row = rows.find((candidate) => asString(candidate["公司代號"]) === code);
+    if (row) facts.push(...twseRowToFacts(row, specs, "income", code));
+  }
+  if (needBalance) {
+    const rows = await loadDataset(TWSE_BALANCE_SHEET_ENDPOINT, options);
+    const row = rows.find((candidate) => asString(candidate["公司代號"]) === code);
+    if (row) facts.push(...twseRowToFacts(row, specs, "balance", code));
+  }
+
+  // Sort by the adapter's canonical concept order (all facts share the latest
+  // period, so concept order alone gives a stable, statement-like sequence).
+  const order = new Map(
+    TWSE_FINANCIAL_CONCEPTS.map((spec, index) => [spec.concept, index]),
+  );
+  facts.sort((left, right) =>
+    (order.get(left.concept) ?? 0) - (order.get(right.concept) ?? 0),
+  );
+
+  let financialSectorVariant = false;
+  if (!facts.length) {
+    financialSectorVariant =
+      (await twseIndustryCode(code, options)) === TWSE_FINANCE_INSURANCE_INDUSTRY_CODE;
+  }
+  return { entity, facts, financialSectorVariant };
+}
+
 // --- Adapter factory -------------------------------------------------------
 
 export function createTwseAdapter(options: AdapterOptions = {}) {
@@ -446,5 +645,7 @@ export function createTwseAdapter(options: AdapterOptions = {}) {
       getTwseMajorShareholders(company, options),
     getDirectorHoldings: (company: string) =>
       getTwseDirectorHoldings(company, options),
+    getFinancials: (input: string | TwseFinancialsParams) =>
+      getTwseFinancials(input, options),
   };
 }

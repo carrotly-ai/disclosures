@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Added
+
+- `CompanyFinancials` now supports **TW** (TWSE OpenAPI) by parsing the general-industry (一般業) financial-statement open data, where it previously returned an unsupported explanation. It reuses the existing TWSE fetch/cache (6h TTL)/listing-code resolution machinery and reads two keyless whole-market snapshots — the comprehensive income statement (`t187ap06_L_ci`, 綜合損益表) and balance sheet (`t187ap07_L_ci`, 資產負債表) — filtering client-side by listing code. It maps the shared canonical concept set in New Taiwan Dollars (NT$): `revenue` (營業收入), `operating_income` (營業利益（損失）), `net_income` (本期淨利（淨損）), `total_assets` (資產總計), and `stockholders_equity` (權益總計), converting the feed's reported thousands to whole NT$ (new `TWD` currency format, symbol `NT$`) and labelling each fact by the fiscal period end derived from the snapshot's 年度 (ROC year) + 季別 (quarter). **These snapshots carry only the single most recent reported period** — income figures are cumulative year-to-date through the labelled quarter end, balance-sheet figures are as-of that date — and the caveat states plainly that TWSE open data serves no historical statement archive (that is MOPS, anti-bot POST-form territory, out of scope). **Finance/insurance-sector issuers** (產業別 `17`: banks, securities firms, insurers, financial-holding companies) file variant statement formats (`…_basi`/`_bd`/`_ins`/`_fh`) whose income statement reports net revenue (淨收益) with no 營業收入/營業利益 lines at all; this release parses only the general-industry (`_ci`) statements and degrades honestly for a sector issuer (detected via 產業別) rather than force-fit a concept set its statements do not carry. Emits `structuredContent` on the success path in the shared shape. No new runtime dependency, no schema change (TW was already in the enum). See [`docs/jurisdictions/TW.md`](docs/jurisdictions/TW.md).
+
 ## 0.3.0 - 2026-08-20
 
 All changes are backward-compatible and additive: the ten tool names and their input schemas are unchanged. The minor bump reflects the second transport (streamable HTTP), two new coverage cells (EU resolve/filings, JP financials), the completed `structuredContent` surface, and the first declared `outputSchema` (OwnershipChain).

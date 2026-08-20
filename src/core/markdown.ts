@@ -35,6 +35,7 @@ const CURRENCY_FORMATS: Record<
   DKK: { symbol: "kr ", maximumFractionDigits: 2 },
   PLN: { symbol: "zł ", maximumFractionDigits: 2 },
   BRL: { symbol: "R$", maximumFractionDigits: 2 },
+  TWD: { symbol: "NT$", maximumFractionDigits: 0 },
 };
 
 export function formatNumber(value: number, unit: string): string {

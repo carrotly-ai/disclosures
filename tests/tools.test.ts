@@ -372,6 +372,35 @@ const twDirectorRoute: Route = {
     },
   ],
 };
+// General-industry financial-statement snapshots (comprehensive income +
+// balance sheet), NT$ thousands, full-width parentheses on income keys.
+const twIncomeRoute: Route = {
+  pattern: "t187ap06_L_ci",
+  body: [
+    {
+      出表日期: "1150821",
+      年度: "115",
+      季別: "2",
+      公司代號: "2330",
+      營業收入: "2404483690.00",
+      "營業利益（損失）": "1425568793.00",
+      "本期淨利（淨損）": "1279582227.00",
+    },
+  ],
+};
+const twBalanceRoute: Route = {
+  pattern: "t187ap07_L_ci",
+  body: [
+    {
+      出表日期: "1150821",
+      年度: "115",
+      季別: "2",
+      公司代號: "2330",
+      資產總計: "9375654727.00",
+      權益總計: "6474470981.00",
+    },
+  ],
+};
 
 // BR (CVM open data) fixtures: Latin-1 registration CSV plus IPE and DFP ZIP
 // bundles, keyed by the live column names. The tool handlers pick years from the
@@ -2055,17 +2084,60 @@ describe("explicit TW routing", () => {
     expect(text).toContain("more than 10%");
   });
 
-  test("CompanyFinancials and PrivateRaises explain the TW limits", async () => {
+  test("CompanyFinancials renders latest-period NT$ figures from TWSE open data", async () => {
+    const fetchFn = routedFetch([twBasicRoute, twIncomeRoute, twBalanceRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "2330",
+      jurisdiction: "TW",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Latest financial statements (TWSE open data)");
+    expect(text).toContain("Operating revenue (營業收入)");
+    expect(text).toContain("NT$2,404,483,690,000");
+    expect(text).toContain("Total assets (資產總計)");
+    expect(text).toContain("2026-06-30");
+    const structured = result.structuredContent as {
+      concepts: Array<{ concept: string; facts: Array<{ value: number }> }>;
+      sourceJurisdiction: string;
+    };
+    expect(structured.sourceJurisdiction).toBe("TW");
+    const revenue = structured.concepts.find((c) => c.concept === "revenue");
+    expect(revenue?.facts[0]?.value).toBe(2404483690 * 1000);
+  });
+
+  test("CompanyFinancials explains the finance/insurance-sector variant honestly", async () => {
+    // 2882 (a financial-holding company, 產業別 17) resolves but is absent from
+    // the general-industry statement snapshots.
+    const twBankBasic: Route = {
+      pattern: "t187ap03_L",
+      body: [
+        { 公司代號: "2882", 公司名稱: "國泰金融控股股份有限公司", 產業別: "17" },
+      ],
+    };
+    const fetchFn = routedFetch([twBankBasic, twIncomeRoute, twBalanceRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "2882",
+      jurisdiction: "TW",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("finance/insurance-sector issuer");
+    expect(text).toContain("淨收益");
+    expect(result.structuredContent).toBeUndefined();
+  });
+
+  test("PrivateRaises explains the TW limit with no network hit", async () => {
     const fetchFn = routedFetch([]);
     const tools = createTools({ fetchFn, env: ENV });
-    for (const name of ["CompanyFinancials", "PrivateRaises"]) {
-      const result = await toolByName(tools, name).handler({
-        company: "2330",
-        jurisdiction: "TW",
-      } as never);
-      expect(result.isError).toBeUndefined();
-      expect(resultText(result)).toContain('unsupported for jurisdiction "TW"');
-    }
+    const result = await toolByName(tools, "PrivateRaises").handler({
+      company: "2330",
+      jurisdiction: "TW",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "TW"');
     expect(fetchFn.requests).toHaveLength(0);
   });
 });
