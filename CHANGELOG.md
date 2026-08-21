@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Changed
+
+- **FR `CompanyOwners` upgraded from a linked-PDF list to a best-effort structured extraction.** For the **5 newest** *franchissement de seuil* notifications (`INFO_FINANCIERE_OWNERS_PARSE_CAP`), the adapter now downloads the notification PDF and parses its text layer (via the zero-dependency `src/core/pdfText.ts` extractor shipped in 0.5.0) for the declaring **holder**, crossing **direction** (*hausse*/*baisse*) and **date**, the statutory **threshold(s) crossed** (including fractional 1/3, 2/3 and mass multi-threshold crossings), and the resulting **capital / voting-rights percentages** (French comma decimals normalized). New exported `parseThresholdCrossing(text)` matches the AMF's regular prose on a whitespace-free projection of the extracted text — so it survives the heavy intra-word fragmentation typical of these positioned-text PDFs — and emits **only fields it matched confidently**: a partially-matched notification yields only its matched fields, and a scanned/custom-font/non-standard PDF (or any older than the parse cap) stays a link-only row.
+  - The `CompanyOwners` FR output now renders holder / crossing / threshold(s) / resulting-% columns with the PDF link when any row parsed; rows that were attempted but did not match are marked *not machine-readable — see PDF*, rows beyond the parse cap *beyond parse cap — see PDF*, and when **no** row parses the output falls back to the previous four-column honest linked-notification list. Extracted figures are labelled **as-stated in the notification**, not a maintained cap table.
+  - The owners `structuredContent` gains optional keys, emitted only when present: `crossingDirection`, `crossingDate`, `thresholdsCrossed`, `pctCapital`, `pctVotingRights`, `machineReadable` (new optional fields on `OwnerRecord`).
+  - Caveat text updated from "holder and % live inside the PDF" to an honest description of the best-effort extraction, its as-stated figures, and the parse cap.
+
 ## 0.5.0 - 2026-08-21
 
 Document content becomes readable: zero-dependency PDF text-layer extraction turns the PDF-only jurisdictions (FR, HK, JP) from save-a-file into read-the-filing, and the live E2E suite now exercises the full 13-jurisdiction surface. All changes backward-compatible and additive.

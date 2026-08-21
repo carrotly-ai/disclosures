@@ -95,6 +95,35 @@ export function buildToUnicodePdf(
   ]);
 }
 
+/**
+ * Encode a plain (accented) JS string as the body of a PDF literal string using
+ * single-byte WinAnsi/Latin-1 octal escapes for any non-ASCII char — mirroring
+ * how real simple-font notification PDFs carry "société"/"déclaré". Parens and
+ * backslashes are escaped; code points above 0xFF are not expected in fixtures.
+ */
+function toWinAnsiLiteral(text: string): string {
+  let out = "";
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!;
+    if (ch === "(") out += "\\(";
+    else if (ch === ")") out += "\\)";
+    else if (ch === "\\") out += "\\\\";
+    else if (cp < 0x80) out += ch;
+    else if (cp <= 0xff) out += `\\${cp.toString(8).padStart(3, "0")}`;
+    else out += "?";
+  }
+  return out;
+}
+
+/**
+ * A one-page PDF whose text layer is `text` (French accents preserved via
+ * WinAnsi octal escapes). Used to fixture AMF threshold-crossing notifications
+ * for the FR CompanyOwners extraction path.
+ */
+export function buildFrenchTextPdf(text: string): Uint8Array {
+  return buildSimplePdf(`BT /F1 12 Tf (${toWinAnsiLiteral(text)}) Tj ET`);
+}
+
 /** A one-page, image-only PDF (a DCTDecode XObject, no text) over 20 KB. */
 export function buildImagePdf(imageBytes = 30_000): Uint8Array {
   const image = new Uint8Array(imageBytes).fill(0x41);

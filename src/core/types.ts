@@ -145,6 +145,19 @@ export interface OwnerRecord extends SourceScopedRecord {
   accession?: string;
   naturesOfControl?: string[];
   sourceUrl: string;
+  /**
+   * Best-effort structured fields parsed from a threshold-crossing notification's
+   * PDF text layer (currently the FR OAM path). Every field is optional and only
+   * set when parsed confidently; a notification whose PDF is scanned or phrased
+   * non-standardly leaves them unset and stays a link-only row.
+   */
+  crossingDirection?: "up" | "down";
+  crossingDate?: string;
+  thresholdsCrossed?: string[];
+  pctCapital?: number;
+  pctVotingRights?: number;
+  /** True when at least one structured field was extracted from the PDF text. */
+  machineReadable?: boolean;
 }
 
 export type FinancialBasis = "consolidated" | "separate";

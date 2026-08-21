@@ -172,6 +172,7 @@ import {
 import {
   INFO_FINANCIERE_DOCUMENT_CONTENT_WARNING,
   INFO_FINANCIERE_FILINGS_CAVEAT,
+  INFO_FINANCIERE_OWNER_PLACEHOLDER,
   INFO_FINANCIERE_OWNERS_CAVEAT,
   INFO_FINANCIERE_OWNERS_THRESHOLD_REGIME,
   getInfoFinanciereDocumentSize,
@@ -510,6 +511,12 @@ function ownersStructured(
       ceasedDate: owner.ceasedDate,
       identityVerification: owner.identityVerification,
       naturesOfControl: owner.naturesOfControl?.length ? owner.naturesOfControl : undefined,
+      crossingDirection: owner.crossingDirection,
+      crossingDate: owner.crossingDate,
+      thresholdsCrossed: owner.thresholdsCrossed?.length ? owner.thresholdsCrossed : undefined,
+      pctCapital: owner.pctCapital,
+      pctVotingRights: owner.pctVotingRights,
+      machineReadable: owner.machineReadable,
       transactionId: owner.accession,
       sourceUrl: owner.sourceUrl && owner.sourceUrl.startsWith("http")
         ? owner.sourceUrl
@@ -2357,20 +2364,74 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               `_${INFO_FINANCIERE_OWNERS_CAVEAT}_`,
             ));
           }
+          const pdfLink = (owner: OwnerRecord): string | undefined =>
+            owner.sourceUrl && owner.sourceUrl.startsWith("http")
+              ? link("open", owner.sourceUrl)
+              : undefined;
+          const anyParsed = owners.some((owner) => owner.machineReadable);
+          if (!anyParsed) {
+            // No PDF parsed cleanly — fall back to the honest linked-notification
+            // list (holder + % live inside each PDF).
+            return textResult(joinSections(
+              `# Threshold-crossing notifications (franchissement de seuil, OAM): ${company}`,
+              markdownTable(
+                ["Notification", "Holder", "Filed", "Notification (PDF)"],
+                owners.map((owner) => [
+                  owner.naturesOfControl?.[0] ?? owner.form,
+                  owner.holderName,
+                  owner.notifiedDate ?? owner.filedDate,
+                  pdfLink(owner),
+                ]),
+              ),
+              `_Threshold regime: ${INFO_FINANCIERE_OWNERS_THRESHOLD_REGIME}._`,
+              `_${INFO_FINANCIERE_OWNERS_CAVEAT}_`,
+            ), ownersStructured(owners, "FR"));
+          }
+          const fmtPct = (n: number | undefined): string | undefined =>
+            n === undefined ? undefined : `${n}%`;
           return textResult(joinSections(
             `# Threshold-crossing notifications (franchissement de seuil, OAM): ${company}`,
             markdownTable(
-              ["Notification", "Holder", "Filed", "Notification (PDF)"],
-              owners.map((owner) => [
-                owner.naturesOfControl?.[0] ?? owner.form,
-                owner.holderName,
-                owner.notifiedDate ?? owner.filedDate,
-                owner.sourceUrl && owner.sourceUrl.startsWith("http")
-                  ? link("open", owner.sourceUrl)
-                  : undefined,
-              ]),
+              [
+                "Notified", "Holder", "Crossing", "Threshold(s)",
+                "Resulting % (capital / voting)", "Notification (PDF)",
+              ],
+              owners.map((owner) => {
+                const notified = owner.notifiedDate ?? owner.filedDate;
+                if (owner.machineReadable !== true) {
+                  // false = attempted but no standard prose matched; undefined =
+                  // older than the parse cap, so never downloaded.
+                  const marker = owner.machineReadable === false
+                    ? "_not machine-readable — see PDF_"
+                    : "_beyond parse cap — see PDF_";
+                  return [
+                    notified, marker,
+                    undefined, undefined, undefined,
+                    pdfLink(owner),
+                  ];
+                }
+                const crossing = [
+                  owner.crossingDirection,
+                  owner.crossingDate,
+                ].filter(Boolean).join(" ");
+                const resulting = owner.pctCapital !== undefined || owner.pctVotingRights !== undefined
+                  ? `${fmtPct(owner.pctCapital) ?? "—"} / ${fmtPct(owner.pctVotingRights) ?? "—"}`
+                  : undefined;
+                return [
+                  notified,
+                  owner.holderName === INFO_FINANCIERE_OWNER_PLACEHOLDER
+                    ? "_holder not parsed_"
+                    : owner.holderName,
+                  crossing || undefined,
+                  owner.thresholdsCrossed?.join(", "),
+                  resulting,
+                  pdfLink(owner),
+                ];
+              }),
             ),
             `_Threshold regime: ${INFO_FINANCIERE_OWNERS_THRESHOLD_REGIME}._`,
+            `_Figures extracted from each notification's PDF text (see caveat); ` +
+              `"crossing" is direction + date of the franchissement._`,
             `_${INFO_FINANCIERE_OWNERS_CAVEAT}_`,
           ), ownersStructured(owners, "FR"));
         }

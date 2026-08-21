@@ -28,7 +28,7 @@
 | `CompanyResolve` | Merges the OAM (listed issuers, with ISIN + LEI) and recherche-entreprises (SIREN-keyed, non-listed). A name tries both (OAM first); an ISIN/LEI stays on the OAM; a bare SIREN uses recherche-entreprises. |
 | `CompanyFilings` | The OAM `flux-amf-new-prod` regulated-information index: filed date, FR + EN subtype, title, and the direct PDF URL — newest first, with optional `forms`/date-window/`limit` filters. `mode: "latest_annual"`/`"latest_quarterly"` is unsupported (the flux is a flat index). |
 | `CompanyInsiders` | Unsupported — managers' transactions (Art. 19 MAR) are **not** in the OAM flux; they live only on the AMF BDIF web UI, which exposes no free machine-readable feed. |
-| `CompanyOwners` | **Partial.** Threshold-crossing notifications (*franchissement de seuil*, Art. L233-7 CoMoFi) from the OAM, newest first, each linked to its PDF — a **linked-notification list, not a structured cap table**: the crossing holder and the exact percentage live inside the PDF, not in any machine-readable field. |
+| `CompanyOwners` | **Partial (best-effort extraction).** Threshold-crossing notifications (*franchissement de seuil*, Art. L233-7 CoMoFi) from the OAM, newest first, each linked to its PDF. The OAM index carries no structured holder/percentage field, so for the **5 newest** notifications the tool downloads the PDF and parses its **text layer** for the declaring holder, crossing direction/date, threshold(s) crossed, and resulting capital / voting-rights %. Figures are **as-stated in the notification** (a point-in-time filer declaration, not a maintained cap table); scanned/custom-font PDFs and non-standard phrasings stay link-only (marked per-row), as do notifications older than the parse cap. |
 | `CompanyFinancials` | Unsupported — use `jurisdiction: "EU"` (filings.xbrl.org ESEF) for a listed French issuer's annual accounts. |
 | `PrivateRaises` | Unsupported — no Form D-equivalent dataset. |
 | `CompanyDocument` | Given an OAM record id (the `transaction_id` from `CompanyFilings`, e.g. `169110_20260818`) — or a full OAM PDF URL — returns `metadata` (record fields + best-effort size via HEAD), `pdf` (saves the PDF to disk, 25 MB cap, path + bytes + page count), or `xhtml` (**best-effort text-layer extraction from the filed PDF**, fenced as untrusted and paged via `text_offset`; scanned/image PDFs and documents whose fonts lack a `/ToUnicode` map are reported honestly with no text). |
@@ -80,9 +80,18 @@ The French registry keys people **by name, not by a stable person id**:
 
 ## Caveats
 
-- **`CompanyOwners` is a partial capability.** *Franchissement de seuil* is a
-  threshold-notification regime, and the OAM index carries only the notification metadata and
-  its PDF — the holder identity and percentage are inside the document. Absence of a
+- **`CompanyOwners` is a partial capability — best-effort, never fabricated.**
+  *Franchissement de seuil* is a threshold-notification regime, and the OAM index carries only
+  the notification metadata and its PDF. For the **5 newest** notifications (`INFO_FINANCIERE_OWNERS_PARSE_CAP`)
+  the adapter downloads the PDF and does a best-effort extraction from its text layer
+  (`parseThresholdCrossing`): declaring holder, crossing direction (*hausse*/*baisse*) and date,
+  the statutory threshold(s) crossed (including fractional 1/3, 2/3 and mass crossings), and the
+  resulting capital / voting-rights percentages (French comma decimals normalized). The parser
+  matches the AMF's regular prose on a whitespace-free form of the text, so it survives the heavy
+  intra-word fragmentation typical of these positioned-text PDFs; it emits **only fields it matched
+  confidently** — a partially-matched notification yields only the matched fields, and a
+  scanned/non-standard PDF stays a link-only row (marked *not machine-readable*). Extracted figures
+  are labelled **as-stated in the notification**, not a maintained cap table. Absence of a
   notification is not proof no notifiable holder exists.
 - **No managers'-transaction feed.** Art. 19 MAR declarations are not in the OAM flux, so
   `CompanyInsiders` is honestly unsupported; use `PersonAppointments` for officers.
