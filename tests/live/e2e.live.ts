@@ -169,15 +169,17 @@ async function callLiveTool(
   return (await callLiveToolFull(name, args)).text;
 }
 
-// CN (cninfo), IN (BSE/Akamai) and DE (BaFin) are keyless but cannot be relied
-// on from an arbitrary datacenter host: cninfo/BSE are anti-bot walled and may
-// answer with a 403/redirect/timeout, and BaFin's portal emits an obsolete
-// line-folded `Permissions-Policy` response header that Node's undici HTTP/1.1
-// parser rejects outright ("Invalid header value char"), so the built server's
-// global fetch can never read it even though curl can. For these three we treat
-// an upstream/runtime block as an explicit, logged SKIP rather than a failure —
-// a genuine assertion mismatch still fails, because its message does not look
-// like a transport block.
+// CN (cninfo) and IN (BSE/Akamai) are keyless but cannot be relied on from an
+// arbitrary datacenter host: both are anti-bot walled and may answer with a
+// 403/redirect/timeout. For those we treat an upstream/runtime block as an
+// explicit, logged SKIP rather than a failure — a genuine assertion mismatch
+// still fails, because its message does not look like a transport block.
+// (DE/BaFin used to be here too: its portal emits an obsolete line-folded
+// `Permissions-Policy` header that undici's fetch rejects with "Invalid header
+// value char". As of #42 the adapter reads BaFin through a lenient node:https
+// path when no fetchFn is injected, so the DE case now asserts — it is no
+// longer tolerant-skipped. The signature is kept in isBlockedFromThisHost only
+// as a defensive transport-error classifier.)
 function isBlockedFromThisHost(message: string): boolean {
   return (
     isTransientFailure(message) ||
@@ -614,17 +616,20 @@ describe("live end-to-end MCP suite", () => {
     });
   }, testTimeoutMs);
 
-  test("resolves a live DE issuer through BaFin (tolerant of the undici header incompatibility)", async () => {
-    await tolerateUpstreamBlock("DE CompanyResolve (BaFin)", async () => {
-      const resolved = await callLiveTool("CompanyResolve", {
-        company: "Siemens",
-        jurisdiction: "DE",
-      });
-      expect(resolved).toMatch(/Company resolution \(BaFin\)/i);
-      expect(resolved).toMatch(/Siemens/i);
-      // A BaFin issuer row carries either a numeric BaFin-Id or a DE ISIN.
-      expect(resolved).toMatch(/\b\d{7,9}\b|ISIN\s+[A-Z]{2}[A-Z0-9]{9,10}/);
+  test("resolves a live DE issuer through BaFin under the built server's default fetch", async () => {
+    // BaFin's portal emits an obsolete line-folded `Permissions-Policy` header
+    // that undici's global `fetch` rejects ("Invalid header value char"), so
+    // the adapter reads it through a lenient node:https path when no fetchFn is
+    // injected (issue #42). This case therefore ASSERTS on a default-fetch run
+    // — it no longer tolerant-skips — proving that fix end-to-end.
+    const resolved = await callLiveTool("CompanyResolve", {
+      company: "Siemens",
+      jurisdiction: "DE",
     });
+    expect(resolved).toMatch(/Company resolution \(BaFin\)/i);
+    expect(resolved).toMatch(/Siemens/i);
+    // A BaFin issuer row carries either a numeric BaFin-Id or a DE ISIN.
+    expect(resolved).toMatch(/\b\d{7,9}\b|ISIN\s+[A-Z]{2}[A-Z0-9]{9,10}/);
   }, testTimeoutMs);
 
   test("resolves a live CN issuer through cninfo (tolerant of anti-bot blocks)", async () => {

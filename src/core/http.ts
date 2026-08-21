@@ -1,3 +1,6 @@
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
+import type { IncomingMessage } from "node:http";
 import type { FetchFn } from "./types.js";
 
 export class HttpError extends Error {
@@ -153,6 +156,183 @@ export async function getFollowingRedirects(
     undefined,
     currentUrl,
   );
+}
+
+// --- Lenient node:https GET for hosts with malformed response headers -------
+//
+// Some upstreams emit response headers that Node's default HTTP/1.1 parser
+// (and undici's global `fetch`) reject outright with "Invalid header value
+// char", making the page unreadable through `fetch` even though `curl` tolerates
+// it. The concrete case (issue #42) is Germany's BaFin portal, whose web server
+// emits an obsolete RFC 7230 line-folded (obs-fold) `Permissions-Policy`
+// response header. `curl` reads it fine; `fetch` cannot.
+//
+// The fix is a raw `node:https`/`node:http` request with the documented
+// `insecureHTTPParser: true` escape hatch, which relaxes the parser enough to
+// accept obs-fold / invalid-char headers. This lenient parser is deliberately
+// NOT the default path for any other host: it is gated behind an explicit
+// allowlist so a malformed-header tolerance can never silently apply elsewhere.
+const LENIENT_HOST_ALLOWLIST = new Set(["portal.mvp.bafin.de"]);
+
+/** Whether `url`'s host is on the malformed-header allowlist (see #42). */
+export function isLenientHost(url: string): boolean {
+  try {
+    return LENIENT_HOST_ALLOWLIST.has(new URL(url).hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
+const MAX_LENIENT_REDIRECTS = 5;
+
+interface LenientResponse {
+  status: number;
+  statusMessage: string;
+  location?: string;
+  contentType?: string;
+  body: Buffer;
+}
+
+function lenientGetOnce(
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+): Promise<LenientResponse> {
+  const transport = new URL(url).protocol === "http:" ? httpRequest : httpsRequest;
+  return new Promise<LenientResponse>((resolve, reject) => {
+    let settled = false;
+    const settle = (fn: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      fn();
+    };
+    const req = transport(
+      url,
+      {
+        method: "GET",
+        headers,
+        // BaFin (allowlisted above) folds its Permissions-Policy header across
+        // lines (RFC 7230 obs-fold); insecureHTTPParser is Node's documented
+        // opt-in to parse such otherwise-rejected headers leniently. See #42.
+        insecureHTTPParser: true,
+      },
+      (res: IncomingMessage) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk: Buffer) => chunks.push(chunk));
+        res.on("end", () => {
+          const location = res.headers.location;
+          const contentType = res.headers["content-type"];
+          settle(() =>
+            resolve({
+              status: res.statusCode ?? 0,
+              statusMessage: res.statusMessage ?? "",
+              ...(typeof location === "string" ? { location } : {}),
+              ...(typeof contentType === "string" ? { contentType } : {}),
+              body: Buffer.concat(chunks),
+            }),
+          );
+        });
+        res.on("error", (error) => settle(() => reject(error)));
+      },
+    );
+    const timer = setTimeout(() => {
+      settle(() => {
+        req.destroy();
+        reject(new HttpError(`Request to ${url} timed out after ${timeoutMs}ms`, undefined, url));
+      });
+    }, timeoutMs);
+    req.on("error", (error) => settle(() => reject(error)));
+    req.end();
+  });
+}
+
+/** Decode a response body the way `fetch(...).text()` would: honour the
+ * Content-Type charset if present, otherwise default to UTF-8 (BaFin serves
+ * UTF-8 with no charset parameter, so this matches the previous fetch path). */
+function decodeLenientBody(body: Buffer, contentType?: string): string {
+  const charset = contentType?.match(/charset\s*=\s*"?([^";]+)/i)?.[1]?.trim().toLowerCase();
+  const label = charset && charset !== "utf8" ? charset : "utf-8";
+  try {
+    return new TextDecoder(label).decode(body);
+  } catch {
+    return new TextDecoder("utf-8").decode(body);
+  }
+}
+
+/**
+ * GET text over a raw `node:https`/`node:http` request with a lenient HTTP
+ * parser (`insecureHTTPParser`). Mirrors `getText`'s contract — same timeout
+ * semantics and `HttpError` on non-2xx — and follows a small budget of
+ * same-origin redirects (a cross-origin hop is refused so a redirect can never
+ * carry the lenient parser off the intended host).
+ *
+ * This is the ungated engine; it does NOT check the host allowlist and must not
+ * be wired into any adapter directly. Production callers go through
+ * `getTextLenient`, which enforces `isLenientHost` first. It is exported only so
+ * the offline suite can exercise the real node path (non-2xx, timeout, decode)
+ * against a local server, since the obs-fold behaviour cannot be reproduced
+ * through the injected fetch stub.
+ */
+export async function performLenientGet(
+  url: string,
+  headers: Record<string, string> = {},
+  timeoutMs = 15_000,
+  maxRedirects = MAX_LENIENT_REDIRECTS,
+): Promise<string> {
+  let currentUrl = url;
+  for (let hop = 0; hop <= maxRedirects; hop += 1) {
+    const response = await lenientGetOnce(currentUrl, headers, timeoutMs);
+    if (REDIRECT_STATUSES.has(response.status)) {
+      if (!response.location) {
+        throw new HttpError(
+          `HTTP ${response.status} redirect without Location`,
+          response.status,
+          currentUrl,
+        );
+      }
+      const nextUrl = new URL(response.location, currentUrl).toString();
+      if (!sameOrigin(currentUrl, nextUrl)) {
+        throw new HttpError(
+          `Lenient HTTP path refused a cross-origin redirect to ${nextUrl}`,
+          response.status,
+          currentUrl,
+        );
+      }
+      currentUrl = nextUrl;
+      continue;
+    }
+    if (response.status < 200 || response.status >= 300) {
+      throw new HttpError(
+        `HTTP ${response.status} ${response.statusMessage}`.trim(),
+        response.status,
+        currentUrl,
+      );
+    }
+    return decodeLenientBody(response.body, response.contentType);
+  }
+  throw new HttpError(`Too many redirects (>${maxRedirects})`, undefined, currentUrl);
+}
+
+/**
+ * Gated entry point for the lenient HTTP path: reads text over the raw
+ * node:https engine above, but ONLY for hosts on `LENIENT_HOST_ALLOWLIST`
+ * (see #42). Any other host throws before a socket is opened, so this lenient
+ * parser can never silently become a general-purpose fetch path.
+ */
+export async function getTextLenient(
+  url: string,
+  headers: Record<string, string> = {},
+  timeoutMs = 15_000,
+): Promise<string> {
+  if (!isLenientHost(url)) {
+    throw new HttpError(
+      `Lenient HTTP path refused for non-allowlisted host: ${url}`,
+      undefined,
+      url,
+    );
+  }
+  return performLenientGet(url, headers, timeoutMs);
 }
 
 /**
