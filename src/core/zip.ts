@@ -1,5 +1,26 @@
 import { inflateRawSync } from "node:zlib";
 
+/**
+ * Inflate a zlib-wrapped DEFLATE stream — the container PDF `/FlateDecode` uses
+ * (a 2-byte zlib header followed by raw DEFLATE and a trailing adler32). We skip
+ * the 2-byte header and inflate the raw DEFLATE body; `inflateRawSync` stops at
+ * the final block, so the trailing adler is harmlessly ignored. Kept here so the
+ * one `node:zlib` dependency stays centralized in this module rather than
+ * spreading a second import across the codebase — `pdfText.ts` inflates content
+ * streams through this entry point. Falls back to a headerless raw-DEFLATE read
+ * for the producers that emit one, matching the extractor's best-effort bar.
+ */
+export function inflateZlib(data: Uint8Array, maxOutputLength?: number): Uint8Array {
+  const options =
+    maxOutputLength && maxOutputLength > 0 ? { maxOutputLength } : {};
+  try {
+    return new Uint8Array(inflateRawSync(data.subarray(2), options));
+  } catch {
+    // No (or malformed) zlib header: retry as headerless raw DEFLATE.
+    return new Uint8Array(inflateRawSync(data, options));
+  }
+}
+
 const LOCAL_FILE_HEADER = 0x04034b50;
 const CENTRAL_DIRECTORY_HEADER = 0x02014b50;
 const END_OF_CENTRAL_DIRECTORY = 0x06054b50;

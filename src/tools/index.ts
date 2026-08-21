@@ -4,6 +4,7 @@ import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { defineTool, textResult } from "../core/toolDefs.js";
 import type { ToolDefinition } from "../core/toolDefs.js";
+import { extractPdfText } from "../core/pdfText.js";
 import {
   formatNumber,
   joinSections,
@@ -170,7 +171,6 @@ import {
 } from "../adapters/bafin.js";
 import {
   INFO_FINANCIERE_DOCUMENT_CONTENT_WARNING,
-  INFO_FINANCIERE_DOCUMENT_XHTML_MESSAGE,
   INFO_FINANCIERE_FILINGS_CAVEAT,
   INFO_FINANCIERE_OWNERS_CAVEAT,
   INFO_FINANCIERE_OWNERS_THRESHOLD_REGIME,
@@ -193,7 +193,6 @@ import {
   getHkexDocumentPdf,
   getLatestHkexAnnualReport,
   HKEXNEWS_DOCUMENT_CONTENT_WARNING,
-  HKEXNEWS_DOCUMENT_XHTML_MESSAGE,
   searchHkexCompanies,
   searchHkexFilings,
 } from "../adapters/hkexNews.js";
@@ -735,6 +734,53 @@ function documentTextSections(text: string, offset: number): string[] {
   return sections;
 }
 
+/**
+ * Standing caveat for PDF-derived text: it is a best-effort *text layer*, not a
+ * rendered document, so tables/columns/reading order are not preserved.
+ */
+const PDF_TEXT_CAVEAT =
+  "Best-effort text-layer extraction from the filed PDF — not a rendered view. " +
+  "Layout (tables, columns, reading order) is not preserved and some characters " +
+  "may be mis-decoded.";
+
+const PDF_NO_TEXT_MESSAGE =
+  "The PDF has no reliable extractable text layer (it may be a scanned/image " +
+  "document, or use custom-encoded fonts without a /ToUnicode map). Use " +
+  "mode=\"pdf\" to download the original file.";
+
+/**
+ * Honest "no usable text" response for a PDF whose extraction produced nothing
+ * reliable, carrying the extractor's specific reason note when it has one.
+ */
+function pdfNoTextSections(result: ReturnType<typeof extractPdfText>): string[] {
+  const sections = [`_${PDF_NO_TEXT_MESSAGE}_`];
+  if (result.notes.length) {
+    sections.push(`_Extraction notes: ${result.notes.join("; ")}._`);
+  }
+  return sections;
+}
+
+/**
+ * Build the "## Extracted text" sections for a PDF whose extraction yielded
+ * text: the content warning + the extraction caveat, any honest degradation
+ * notes as italics, then the paged, fenced text window.
+ */
+function pdfExtractionSections(
+  result: ReturnType<typeof extractPdfText>,
+  contentWarning: string,
+  offset: number,
+): string[] {
+  const sections = [
+    "## Extracted text (from PDF)",
+    `_${contentWarning} ${PDF_TEXT_CAVEAT}_`,
+  ];
+  if (result.notes.length) {
+    sections.push(`_Extraction notes: ${result.notes.join("; ")}._`);
+  }
+  sections.push(...documentTextSections(result.text, offset));
+  return sections;
+}
+
 function profileFlags(detail: CompaniesHouseProfileDetail): string {
   const flags: string[] = [];
   if (detail.hasCharges) flags.push("has registered charges");
@@ -1038,8 +1084,6 @@ const HKEX_FINANCIALS_UNSUPPORTED =
   "category); there is no structured XBRL financial feed. Use CompanyFilings " +
   "with jurisdiction \"HK\" and mode \"latest_annual\" to locate the annual " +
   "report PDF.";
-
-const HKEX_DOCUMENT_XHTML_HINT = HKEXNEWS_DOCUMENT_XHTML_MESSAGE;
 
 const SG_RESOLVE_CAVEAT = ACRA_CAVEAT;
 
@@ -3138,6 +3182,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     company: string,
     docId: string | undefined,
     mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
     outputPath: string | undefined,
   ): Promise<ReturnType<typeof textResult>> {
     if (!hasEdinetConfiguration(options)) {
@@ -3174,6 +3219,25 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
 
       if (mode === "xhtml") {
+        // EDINET has no inline XHTML rendition, but a type=2 PDF usually exists.
+        // Attempt best-effort text extraction from it; fall back to the honest
+        // XBRL-archive message when the PDF has no text layer (or none exists).
+        try {
+          const pdf = await getEdinetDocumentPdf(docId, options);
+          const extracted = extractPdfText(pdf.bytes);
+          if (extracted.text) {
+            return textResult(joinSections(
+              `# EDINET document: ${docId}`,
+              ...pdfExtractionSections(
+                extracted,
+                EDINET_DOCUMENT_CONTENT_WARNING,
+                textOffset ?? 0,
+              ),
+            ));
+          }
+        } catch {
+          // No PDF rendition (or fetch failed): fall through to the honest note.
+        }
         return textResult(joinSections(
           `# EDINET document: ${docId}`,
           `_${EDINET_DOCUMENT_XHTML_MESSAGE}_`,
@@ -3288,6 +3352,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     company: string,
     transactionId: string | undefined,
     mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
     outputPath: string | undefined,
   ): Promise<ReturnType<typeof textResult>> {
     if (!transactionId) {
@@ -3307,9 +3372,21 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
 
       if (mode === "xhtml") {
+        const pdf = await getInfoFinancierePdf(pdfUrl, options);
+        const extracted = extractPdfText(pdf.bytes);
+        if (!extracted.text) {
+          return textResult(joinSections(
+            `# info-financiere document: ${record.id}`,
+            ...pdfNoTextSections(extracted),
+          ));
+        }
         return textResult(joinSections(
           `# info-financiere document: ${record.id}`,
-          `_${INFO_FINANCIERE_DOCUMENT_XHTML_MESSAGE}_`,
+          ...pdfExtractionSections(
+            extracted,
+            INFO_FINANCIERE_DOCUMENT_CONTENT_WARNING,
+            textOffset ?? 0,
+          ),
         ));
       }
 
@@ -3354,8 +3431,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       return textResult(joinSections(
         `# info-financiere document: ${record.id}`,
         markdownTable(["Field", "Value"], metaRows),
-        "_Use mode=\"pdf\" to download the PDF. " +
-          INFO_FINANCIERE_DOCUMENT_XHTML_MESSAGE + " " +
+        "_Use mode=\"xhtml\" for the PDF's best-effort extracted text (paged via " +
+          "text_offset), or mode=\"pdf\" to download the original PDF. " +
           INFO_FINANCIERE_DOCUMENT_CONTENT_WARNING + "_",
       ));
     } catch (error) {
@@ -3367,6 +3444,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     company: string,
     transactionId: string | undefined,
     mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
     outputPath: string | undefined,
   ): Promise<ReturnType<typeof textResult>> {
     if (!transactionId) {
@@ -3378,9 +3456,21 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
     try {
       if (mode === "xhtml") {
+        const pdf = await getHkexDocumentPdf(transactionId, options);
+        const extracted = extractPdfText(pdf.bytes);
+        if (!extracted.text) {
+          return textResult(joinSections(
+            `# HKEXnews document: ${transactionId}`,
+            ...pdfNoTextSections(extracted),
+          ));
+        }
         return textResult(joinSections(
           `# HKEXnews document: ${transactionId}`,
-          `_${HKEX_DOCUMENT_XHTML_HINT}_`,
+          ...pdfExtractionSections(
+            extracted,
+            HKEXNEWS_DOCUMENT_CONTENT_WARNING,
+            textOffset ?? 0,
+          ),
         ));
       }
 
@@ -3420,8 +3510,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ["Filing", link("view", metadata.sourceUrl)],
           ],
         ),
-        "_Use mode=\"pdf\" to download the PDF (saved to disk, 25 MB cap). " +
-          HKEXNEWS_DOCUMENT_CONTENT_WARNING + "_",
+        "_Use mode=\"xhtml\" for the PDF's best-effort extracted text (paged via " +
+          "text_offset), or mode=\"pdf\" to download the PDF (saved to disk, 25 MB " +
+          "cap). " + HKEXNEWS_DOCUMENT_CONTENT_WARNING + "_",
       ));
     } catch (error) {
       return failureResult(transactionId, error);
@@ -3435,10 +3526,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "docID; KR DART rcept_no; FR info-financiere OAM record id; HK HKEXnews " +
       "FILE_LINK path). Mode \"metadata\" (default) lists the " +
       "filing's documents/renditions with sizes; \"xhtml\" returns the primary " +
-      "machine-readable document's extracted plain text (paged via " +
-      "text_offset; filings with no machine-readable rendition are reported " +
-      "honestly); \"pdf\" saves the PDF to a local file and returns the path, " +
-      "never inline bytes. Downloads capped at 25 MB.",
+      "document's extracted plain text where available — from a machine-readable " +
+      "iXBRL/XHTML rendition (GB/US/KR) or best-effort text-layer extraction from " +
+      "the filed PDF (FR/HK, and JP where a PDF exists); paged via text_offset, " +
+      "with scanned/image PDFs and text-less filings reported honestly; \"pdf\" " +
+      "saves the PDF to a local file and returns the path, never inline bytes. " +
+      "Downloads capped at 25 MB.",
     {
       company: z
         .string()
@@ -3495,16 +3588,16 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         return companyDocumentUs(company, transaction_id, document_id, mode, text_offset, output_path);
       }
       if (jurisdiction === "JP") {
-        return companyDocumentJp(company, transaction_id, mode, output_path);
+        return companyDocumentJp(company, transaction_id, mode, text_offset, output_path);
       }
       if (jurisdiction === "KR") {
         return companyDocumentKr(company, transaction_id, mode, text_offset);
       }
       if (jurisdiction === "FR") {
-        return companyDocumentFr(company, transaction_id, mode, output_path);
+        return companyDocumentFr(company, transaction_id, mode, text_offset, output_path);
       }
       if (jurisdiction === "HK") {
-        return companyDocumentHk(company, transaction_id, mode, output_path);
+        return companyDocumentHk(company, transaction_id, mode, text_offset, output_path);
       }
       try {
         let documentId = document_id;
