@@ -108,10 +108,16 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
     identifiers: "6-digit A-share code, 5-digit HK code, or Chinese name",
     intents:
       "CompanyResolve, CompanyFilings (announcement PDFs + latest " +
-      "annual/quarterly)",
+      "annual/quarterly), CompanyFinancials (headline figures extracted from " +
+      "the latest periodic-report PDF — bounded/best-effort)",
     caveat:
-      "Ownership/financial data lives inside Chinese-language report PDFs " +
-      "this package does not parse.",
+      "CompanyFinancials extracts revenue/profit/total-assets/net-assets from " +
+      "the 主要会计数据 key-data table of the issuer's latest periodic report " +
+      "(latest only, no history), normalized to whole RMB from the report's " +
+      "stated unit (元/千元/万元/百万元); it degrades to the PDF link when the " +
+      "report is mojibake (an object-stream the extractor cannot read), over the " +
+      "40 MB cap, or has no readable key-data table. Ownership/insider data still " +
+      "lives inside report PDFs this package does not yet parse.",
   },
   {
     code: "IN",

@@ -11,7 +11,12 @@ import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
 import { loadFixture } from "./helpers/loadFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { latin1Bytes, makeStoredZip, makeStoredZipMulti } from "./helpers/zipFixture.js";
-import { buildFrenchTextPdf, buildImagePdf, buildSimplePdf } from "./helpers/pdfFixture.js";
+import {
+  buildCninfoReportPdf,
+  buildFrenchTextPdf,
+  buildImagePdf,
+  buildSimplePdf,
+} from "./helpers/pdfFixture.js";
 import {
   edinetArchiveRoute,
   edinetCodeListRoute,
@@ -1959,10 +1964,10 @@ describe("explicit CN routing", () => {
     expect(text).toContain("1220000001");
   });
 
-  test("CompanyInsiders, CompanyOwners, CompanyFinancials, and PrivateRaises explain CN limits", async () => {
+  test("CompanyInsiders, CompanyOwners, and PrivateRaises explain CN limits", async () => {
     const fetchFn = routedFetch([]);
     const tools = createTools({ fetchFn, env: ENV });
-    for (const name of ["CompanyInsiders", "CompanyOwners", "CompanyFinancials", "PrivateRaises"]) {
+    for (const name of ["CompanyInsiders", "CompanyOwners", "PrivateRaises"]) {
       const result = await toolByName(tools, name).handler({
         company: "600519",
         jurisdiction: "CN",
@@ -1971,6 +1976,63 @@ describe("explicit CN routing", () => {
       expect(resultText(result)).toContain('unsupported for jurisdiction "CN"');
     }
     expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyFinancials CN renders key-data figures + structuredContent", async () => {
+    const pdf = buildCninfoReportPdf([
+      "主要会计数据",
+      "单位：元",
+      "营业收入",
+      "168,838,102,514.79",
+      "170,899,152,276.34",
+      "归属于上市公司股东的净利润",
+      "82,320,067,101.68",
+      "86,228,146,421.62",
+    ]);
+    const fetchFn = routedFetch([
+      cnSearchRoute,
+      cnAnnouncementRoute,
+      { pattern: ".PDF", body: pdf },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Latest periodic-report figures (cninfo)");
+    expect(text).toContain("归属于上市公司股东的净利润");
+    expect(text).toContain("RMB 168,838,102,515"); // whole-CNY formatting
+    expect(text).toContain("as published");
+    expect(text).toContain("no historical series");
+    const structured = result.structuredContent as {
+      concepts?: Array<{ concept?: string; unit?: string; facts?: Array<{ value?: number }> }>;
+      sourceJurisdiction?: string;
+    };
+    expect(structured?.sourceJurisdiction).toBe("CN");
+    const revenue = structured.concepts?.find((c) => c.concept === "revenue");
+    expect(revenue?.unit).toBe("CNY");
+    expect(revenue?.facts?.[0]?.value).toBe(168_838_102_514.79);
+  });
+
+  test("CompanyFinancials CN degrades to the PDF link on a mojibake report", async () => {
+    // Image-only (scanned) PDF ⇒ zero CJK ⇒ honest link-only degradation.
+    const fetchFn = routedFetch([
+      cnSearchRoute,
+      cnAnnouncementRoute,
+      { pattern: ".PDF", body: buildImagePdf() },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("could not be reliably extracted");
+    expect(text).toContain("static.cninfo.com.cn");
+    expect(result.structuredContent).toBeUndefined();
   });
 });
 

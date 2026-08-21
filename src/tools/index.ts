@@ -116,6 +116,8 @@ import {
   searchEdinetFilings,
 } from "../adapters/edinet.js";
 import {
+  CNINFO_FINANCIAL_CONCEPT_NAMES,
+  getCninfoFinancials,
   getLatestCninfoReport,
   searchCninfoCompanies,
   searchCninfoFilings,
@@ -1119,6 +1121,35 @@ function hkexFinancialsFallback(
   return (
     `HK figures could not be reliably extracted for "${company}" — ${why}. ` +
     "Rather than serve numbers that may be wrong, open the results announcement " +
+    `directly${link ? `: ${link}` : "."}`
+  );
+}
+
+function cninfoFinancialsFallback(
+  company: string,
+  reason: "no-report" | "over-cap" | "mojibake" | "no-statements",
+  link?: string,
+): string {
+  if (reason === "no-report") {
+    return (
+      `No annual or interim periodic report found on cninfo for "${company}". CN ` +
+      "financials are extracted from the issuer's latest 年度报告 (annual report), " +
+      "else its newest 半年度/季度报告; an issuer with none on file returns nothing. " +
+      "Use CompanyFilings with jurisdiction \"CN\" to browse its disclosures."
+    );
+  }
+  const why = reason === "over-cap"
+    ? "the periodic-report PDF exceeds this mode's 40 MB download cap (large " +
+      "bank/insurer annuals)"
+    : reason === "mojibake"
+    ? "the report's text layer did not decode to Chinese — its page/font objects " +
+      "are packed in a compressed object stream this extractor could not read " +
+      "(zero CJK characters recovered)"
+    : "no 主要会计数据 key-data table or consolidated statement figures could be " +
+      "matched in the extracted text";
+  return (
+    `CN figures could not be reliably extracted for "${company}" — ${why}. ` +
+    "Rather than serve numbers that may be wrong, open the periodic report " +
     `directly${link ? `: ${link}` : "."}`
   );
 }
@@ -2754,7 +2785,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "HKEXnews results announcement PDF (Final/annual, else Interim), normalized " +
       "to whole currency units (HK$, RMB, or US$ as the filing states); it is the " +
       "latest announcement only (no history) and degrades to the PDF link when " +
-      "figures cannot be reliably extracted.",
+      "figures cannot be reliably extracted. Explicit CN extracts headline figures " +
+      `(${CNINFO_FINANCIAL_CONCEPT_NAMES.join(", ")}, in RMB) from the issuer's ` +
+      "latest cninfo periodic report (年度报告, else 半年度/季度报告), anchored on the " +
+      "主要会计数据 key-data table; latest report only (no history), degrading to the " +
+      "PDF link when the report is mojibake, over the size cap, or has no matchable table.",
     {
       ...companyInput,
       concepts: z
@@ -2819,13 +2854,47 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         }
       }
       if (jurisdiction === "CN") {
-        return textResult(
-          "CompanyFinancials is unsupported for jurisdiction \"CN\". cninfo publishes " +
-            "annual and interim reports (年度报告/季度报告) with XBRL data, but this " +
-            "release does not parse them into normalized financial facts. Use " +
-            'CompanyFilings with jurisdiction "CN" and mode "latest_annual" to locate ' +
-            "the report PDF.",
-        );
+        try {
+          const result = await getCninfoFinancials(company, options);
+          if (!result.facts.length) {
+            return textResult(
+              cninfoFinancialsFallback(
+                company,
+                result.reason ?? "no-statements",
+                result.report?.sourceUrl,
+              ),
+            );
+          }
+          const report = result.report!;
+          const byConcept = new Map<string, typeof result.facts>();
+          for (const fact of result.facts) {
+            const bucket = byConcept.get(fact.concept) ?? [];
+            bucket.push(fact);
+            byConcept.set(fact.concept, bucket);
+          }
+          const sections = [...byConcept.entries()].map(([, rows]) => {
+            const first = rows[0]!;
+            return joinSections(
+              `## ${first.label} (${first.unit})`,
+              markdownTable(
+                ["Period end", "Value"],
+                rows.map((fact) => [fact.periodEnd, formatNumber(fact.value, fact.unit)]),
+              ),
+            );
+          });
+          return textResult(joinSections(
+            `# Latest periodic-report figures (cninfo): ${company}`,
+            ...sections,
+            `_Extracted from the issuer's ${link(result.reportLabel ?? "periodic report", report.sourceUrl)} ` +
+              `as published (audited or unaudited per the filing), period end ` +
+              `${result.periodEnd ?? "as stated"}, filed ${report.filedDate}. This is the ` +
+              `latest report only — no historical series. Figures are normalized to whole ` +
+              `${result.currency} (Chinese yuan) from the statement's stated unit ` +
+              `(元 default; 千元/万元/百万元 qualifiers detected)._`,
+          ), financialsStructured(byConcept, "CN"));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "HK") {
         try {
