@@ -19,7 +19,7 @@ injectable `AdapterOptions.cache`.
 | `CompanyInsiders` | Unsupported — EDINET has no Section 16-style insider feed. |
 | `CompanyOwners` | Large-volume holding reports (大量保有報告書, the 5% rule) and their change reports (変更報告書), reverse-mapped to the subject issuer — each row is a ≥5% holder (requires `EDINET_API_KEY`). |
 | `CompanyFinancials` | Headline annual figures parsed from the latest 有価証券報告書's XBRL instance — net sales / operating revenue, operating income, profit attributable to owners of the parent, total assets, net assets — in JPY, consolidated preferred (requires `EDINET_API_KEY`). |
-| `CompanyDocument` | Fetches a filing's renditions by **EDINET docID** (passed as `transaction_id`, from `CompanyFilings`). Mode `metadata` (default) lists the XBRL archive members (type=1); `pdf` downloads the human-readable PDF (type=2) to disk with a page count; `xhtml` reports honestly that EDINET's machine-readable form is a bundled XBRL archive, not inline XHTML. Requires `EDINET_API_KEY`. |
+| `CompanyDocument` | Fetches a filing's renditions by **EDINET docID** (passed as `transaction_id`, from `CompanyFilings`). Mode `metadata` (default) lists the XBRL archive members (type=1); `pdf` downloads the human-readable PDF (type=2) to disk with a page count; `xhtml` attempts **best-effort text-layer extraction from the type=2 PDF** (fenced, paged via `text_offset`), falling back to the honest bundled-XBRL-archive note when the PDF has no usable text layer. Requires `EDINET_API_KEY`. |
 | `PrivateRaises` | Unsupported — no Form D-equivalent dataset. |
 | `OwnershipChain` | Global GLEIF — see the [index](README.md). |
 
@@ -29,7 +29,7 @@ injectable `AdapterOptions.cache`.
 - **Renditions:** every filing exposes two machine-fetchable renditions — a human-readable **PDF** (`type=2`) and a **ZIP archive** of the submission's XBRL instance, PublicDoc iXBRL HTML, and audit documents (`type=1`). Downloads are capped at 25 MB.
 - **`metadata`** downloads the type=1 archive and lists its members with sizes (the `XBRL/PublicDoc/*.htm` files are the formatted rendition; the `.xbrl` file is the structured data).
 - **`pdf`** downloads the type=2 PDF to disk (defaulting to a temp file; override with `output_path`), reporting the saved path, byte size, and page count. Document bytes are never inlined into the response.
-- **`xhtml`** is reported honestly as unsupported: EDINET has no single inline XHTML rendition — the machine-readable content is the bundled XBRL archive (`metadata` lists it), and the human-readable rendition is the PDF (`pdf` downloads it).
+- **`xhtml`** attempts best-effort text-layer extraction from the type=2 PDF via the zero-dep in-repo extractor (`src/core/pdfText.ts`), returning the text fenced as untrusted and paged via `text_offset`. EDINET has no single inline XHTML rendition, so when the PDF yields no usable text (scanned, or fonts with no `/ToUnicode` map) the response falls back to the honest note that the machine-readable content is the bundled XBRL archive (`metadata` lists it) and the human-readable rendition is the PDF (`pdf` downloads it). This is a text-layer extractor, not a renderer — layout is not preserved.
 - **Errors:** a bad docID or absent rendition answers a JSON envelope rather than bytes; it is detected by magic-byte inspection and surfaced as a readable error, never leaked as content.
 
 ## `CompanyFinancials` (JP)

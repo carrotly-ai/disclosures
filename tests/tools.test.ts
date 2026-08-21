@@ -11,6 +11,7 @@ import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
 import { loadFixture } from "./helpers/loadFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { latin1Bytes, makeStoredZip, makeStoredZipMulti } from "./helpers/zipFixture.js";
+import { buildImagePdf, buildSimplePdf } from "./helpers/pdfFixture.js";
 import {
   edinetArchiveRoute,
   edinetCodeListRoute,
@@ -839,8 +840,26 @@ describe("CompanyDocument JP (EDINET)", () => {
     }
   });
 
-  test("xhtml mode reports EDINET's XBRL-archive analog without a network call", async () => {
-    const fetchFn = routedFetch([]);
+  test("xhtml mode extracts text from the type=2 PDF when it has a text layer", async () => {
+    const textPdf = buildSimplePdf("BT (Annual securities report Toyota) Tj ET");
+    const fetchFn = routedFetch([{ pattern: "type=2", body: textPdf }]);
+    const tools = createTools({ fetchFn, env: JP_ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "7203",
+      jurisdiction: "JP",
+      transaction_id: DOC_ID,
+      mode: "xhtml",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Extracted text (from PDF)");
+    expect(text).toContain("Annual securities report Toyota");
+  });
+
+  test("xhtml mode falls back to the honest XBRL-archive analog for a text-less PDF", async () => {
+    // The type=2 fixture is a page shell with no content stream, so extraction
+    // yields no text and the honest EDINET message is preserved.
+    const fetchFn = routedFetch([{ pattern: "type=2", body: pdfBytes }]);
     const tools = createTools({ fetchFn, env: JP_ENV });
     const result = await toolByName(tools, "CompanyDocument").handler({
       company: "7203",
@@ -850,7 +869,6 @@ describe("CompanyDocument JP (EDINET)", () => {
     } as never);
     expect(result.isError).toBeUndefined();
     expect(resultText(result)).toContain("bundled XBRL archive");
-    expect(fetchFn.requests).toHaveLength(0);
   });
 
   test("a JSON error envelope for a bad docID is surfaced as a readable error", async () => {
@@ -3059,8 +3077,14 @@ describe("FR (info-financiere OAM + recherche-entreprises)", () => {
     expect(text).toContain("179954");
   });
 
-  test("CompanyDocument FR xhtml honestly reports the OAM serves PDFs", async () => {
-    const fetchFn = routedFetch([{ pattern: "uin_idt_uin%3D", body: oamRecords }]);
+  test("CompanyDocument FR xhtml extracts the PDF's text, fenced and paged", async () => {
+    const textPdf = buildSimplePdf(
+      "BT (Franchissement de seuil TotalEnergies) Tj T* (Declaration AMF) Tj ET",
+    );
+    const fetchFn = routedFetch([
+      { pattern: "uin_idt_uin%3D", body: oamRecords },
+      { pattern: ".pdf", body: textPdf, headers: { "Content-Type": "application/pdf" } },
+    ]);
     const tools = createTools({ fetchFn, env: ENV });
     const result = await toolByName(tools, "CompanyDocument").handler({
       company: "TotalEnergies",
@@ -3068,7 +3092,45 @@ describe("FR (info-financiere OAM + recherche-entreprises)", () => {
       transaction_id: "169110_20260818",
       mode: "xhtml",
     } as never);
-    expect(resultText(result)).toContain("serves regulated filings only as");
+    const text = resultText(result);
+    expect(text).toContain("Extracted text (from PDF)");
+    expect(text).toContain("BEGIN UNTRUSTED DOCUMENT TEXT");
+    expect(text).toContain("Franchissement de seuil TotalEnergies");
+    expect(text).toContain("text-layer extraction from the filed PDF");
+  });
+
+  test("CompanyDocument FR xhtml paging honors text_offset", async () => {
+    const body = "A".repeat(60_000);
+    const textPdf = buildSimplePdf(`BT (${body}) Tj ET`);
+    const fetchFn = routedFetch([
+      { pattern: "uin_idt_uin%3D", body: oamRecords },
+      { pattern: ".pdf", body: textPdf, headers: { "Content-Type": "application/pdf" } },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+      transaction_id: "169110_20260818",
+      mode: "xhtml",
+      text_offset: 50_000,
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Characters 50,000");
+  });
+
+  test("CompanyDocument FR xhtml reports an image-only PDF honestly", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "uin_idt_uin%3D", body: oamRecords },
+      { pattern: ".pdf", body: buildImagePdf(), headers: { "Content-Type": "application/pdf" } },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+      transaction_id: "169110_20260818",
+      mode: "xhtml",
+    } as never);
+    expect(resultText(result)).toContain("no extractable text layer");
   });
 
   test("CompanyDocument FR pdf saves the file and reports pages", async () => {

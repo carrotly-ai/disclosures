@@ -28,7 +28,7 @@ requires (for Tencent: code `00700` → `stockId` `7609`, which is *not* the pub
 |---|---|
 | `CompanyResolve` | Keyless resolution of listed SEHK/GEM issuers (code or name → stock code + internal `stockId`). |
 | `CompanyFilings` | Date-filterable title-search feed with direct PDF links; `mode "latest_annual"` filters the Annual Report category (t1code 40000 / t2code 40100). |
-| `CompanyDocument` | Fetches a filing's PDF by its `FILE_LINK` path (`metadata` for type + size via a HEAD request, `pdf` to download; `xhtml` is honestly unavailable — HKEXnews serves PDFs only). |
+| `CompanyDocument` | Fetches a filing's PDF by its `FILE_LINK` path (`metadata` for type + size via a HEAD request, `pdf` to download; `xhtml` returns **best-effort text-layer extraction from the PDF**, fenced as untrusted and paged via `text_offset` — bilingual EN/中文 text is decoded via each font's `/ToUnicode` CMap; scanned/image PDFs are reported honestly with no text). |
 | `CompanyInsiders` | Unsupported — no Section 16-equivalent feed; the DI directors'-interests register is captcha-walled and `dirsearch` is session/anti-CSRF-gated HTML. |
 | `CompanyOwners` | Unsupported — substantial-shareholder holdings sit behind the SFO Part XV Disclosure of Interests (DI) system (`di.hkex.com.hk` / `sdinotice.hkex.com.hk`), an ASP.NET WebForms + login-captcha wall with no keyless feed. |
 | `CompanyFinancials` | Unsupported — figures live only inside annual-report PDFs; there is no structured XBRL financial feed. |
@@ -47,6 +47,13 @@ preserved, exactly as returned by `CompanyFilings` (e.g.
 `https://www1.hkexnews.hk/…` URL is also accepted. The reconstructed document URL is
 validated to stay on `hkexnews.hk` (no SSRF to arbitrary hosts). Downloads are capped at
 25 MB and written to disk (bytes are never inlined).
+
+`mode: "xhtml"` downloads the same capped PDF and runs the zero-dependency in-repo extractor
+(`src/core/pdfText.ts`): object-level parse, `/FlateDecode` inflate via the shared `zip.ts`
+zlib wrapper, `Tj`/`TJ` operator text, and `/ToUnicode` CMap decoding so the bilingual
+English/Traditional-Chinese text layer round-trips. It is a **text-layer extractor, not a
+renderer** — table/column layout is not preserved — and a scanned/image PDF (or one whose
+fonts carry no `/ToUnicode` map) is surfaced as an honest "no reliable text layer" note.
 
 ## Licence / redistribution
 
