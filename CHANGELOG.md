@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Changed
+
+- **Live E2E suite extended to the full 13-jurisdiction surface** (`tests/live/e2e.live.ts`; offline suite unchanged at 491). Added real MCP-over-stdio cases for the eight jurisdictions and paths added since the suite was written: keyless **EU** ESEF resolution + latest annual report on filings.xbrl.org (Nokia Oyj — SAP SE resolves but its German OAM is not harvested, so a filer that is actually indexed is used); keyless **FR** issuer resolution, OAM filings by ISIN (`\d+_\d{8}` transaction ids), and a `dirigeant` search; keyless **HK** resolution, HKEXnews filings (`/listedco/…` ids), and `CompanyDocument` metadata; keyless **SG** UEN resolution via ACRA; keyless **TW** five-concept NT$ financials from TWSE; credentialed **JP** EDINET-XBRL financials (Toyota, JPY + consolidated basis); and keyless **BR/DE/CN/IN** resolution. Assertions stay drift-tolerant (identity, identifier shape, source host, structure — never volatile counts/dates/values), and an empty filings window is accepted via the tool's "no results" notice.
+- **Tolerant-skip path for transport-blocked jurisdictions.** BR (CVM), DE (BaFin), CN (cninfo) and IN (BSE India) now treat an upstream/runtime *transport* block (anti-bot 403/redirect/timeout, DNS/TLS, or undici's rejection of BaFin's obsolete line-folded `Permissions-Policy` header — `Invalid header value char`) as a logged SKIP rather than a failure, while a genuine assertion mismatch still fails. DE consequently skips on the current Node runtime because the built server's global `fetch` (undici) cannot parse BaFin's response headers even though `curl` can.
+- The live suite spawns the built server with `--dns-result-order=ipv4first --no-network-family-autoselection` so IPv4-only-reachable upstreams (notably Brazil's dados.cvm.gov.br, which publishes an unroutable AAAA record) resolve on hosts with broken IPv6 where undici does not fall back.
+- Documented the expanded coverage and the tolerant/IPv4 behaviour in [`docs/TESTING.md`](docs/TESTING.md).
+
 ## 0.4.0 - 2026-08-21
 
 The coverage-expansion release: three new jurisdictions (FR, HK, SG — now 13 total), a new financials market (TW), and three live-verified feasibility findings (AU, CA, HK/SG) recording exactly why the skipped markets were skipped. All changes are backward-compatible: the ten tool names are unchanged and every `jurisdiction` enum widening is additive.

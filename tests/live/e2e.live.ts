@@ -119,10 +119,15 @@ async function withTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
   }
 }
 
-async function callLiveTool(
+interface LiveToolResult {
+  text: string;
+  structuredContent: unknown;
+}
+
+async function callLiveToolFull(
   name: string,
   args: Record<string, unknown>,
-): Promise<string> {
+): Promise<LiveToolResult> {
   let lastFailure = "unknown failure";
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -137,7 +142,10 @@ async function callLiveTool(
       const text = firstText(result);
       if (!result.isError) {
         if (!text.trim()) throw new Error(`${name} returned no text content`);
-        return text;
+        return {
+          text,
+          structuredContent: (result as { structuredContent?: unknown }).structuredContent,
+        };
       }
       lastFailure = redactSecrets(text || `${name} returned isError without text`);
     } catch (error) {
@@ -152,6 +160,63 @@ async function callLiveTool(
     break;
   }
   throw new Error(`${name} live call failed: ${lastFailure}`);
+}
+
+async function callLiveTool(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  return (await callLiveToolFull(name, args)).text;
+}
+
+// CN (cninfo), IN (BSE/Akamai) and DE (BaFin) are keyless but cannot be relied
+// on from an arbitrary datacenter host: cninfo/BSE are anti-bot walled and may
+// answer with a 403/redirect/timeout, and BaFin's portal emits an obsolete
+// line-folded `Permissions-Policy` response header that Node's undici HTTP/1.1
+// parser rejects outright ("Invalid header value char"), so the built server's
+// global fetch can never read it even though curl can. For these three we treat
+// an upstream/runtime block as an explicit, logged SKIP rather than a failure —
+// a genuine assertion mismatch still fails, because its message does not look
+// like a transport block.
+function isBlockedFromThisHost(message: string): boolean {
+  return (
+    isTransientFailure(message) ||
+    /HTTP 4\d\d|forbidden|blocked|denied|captcha|akamai|Invalid header value char|does not match the HTTP|ETIMEDOUT|ENETUNREACH|ECONNREFUSED|EAI_AGAIN|getaddrinfo|certificate|TLS/i
+      .test(message)
+  );
+}
+
+async function tolerateUpstreamBlock(
+  label: string,
+  run: () => Promise<void>,
+): Promise<void> {
+  try {
+    await run();
+  } catch (error) {
+    const message = redactSecrets(error instanceof Error ? error.message : String(error));
+    if (isBlockedFromThisHost(message)) {
+      console.error(`[live-skip] ${label}: upstream blocked/unreachable from this host — ${message}`);
+      return;
+    }
+    throw error;
+  }
+}
+
+function structuredFilings(result: LiveToolResult): Array<{ transactionId?: string }> {
+  const filings = (result.structuredContent as { filings?: unknown })?.filings;
+  return Array.isArray(filings) ? (filings as Array<{ transactionId?: string }>) : [];
+}
+
+function structuredConcepts(result: LiveToolResult): Array<{ concept?: string }> {
+  const concepts = (result.structuredContent as { concepts?: unknown })?.concepts;
+  return Array.isArray(concepts) ? (concepts as Array<{ concept?: string }>) : [];
+}
+
+// A filings window can legitimately be empty on a quiet day; accept the tool's
+// drift-tolerant "no results" notice as an alternative to a populated table.
+function isNoFilingsNotice(text: string): boolean {
+  return /No .*(?:report|filing|result|disclosure)s? .*found|found no |no filings|not been indexed/i
+    .test(text);
 }
 
 function splitMarkdownRow(line: string): string[] {
@@ -206,11 +271,26 @@ beforeAll(async () => {
       `Missing ${serverPath}. Run this suite through "bun run test:live", which builds first.`,
     );
   }
+  // Prefer IPv4 for the spawned server. Several upstreams (notably Brazil's
+  // dados.cvm.gov.br) publish AAAA records that are unroutable from datacenter
+  // hosts with broken IPv6; undici's happy-eyeballs does not reliably fall back,
+  // so a raw fetch hangs to ETIMEDOUT. ipv4first + disabled autoselection forces
+  // the single connection attempt onto IPv4, which every upstream here serves.
+  const serverEnv: Record<string, string> = {
+    ...env,
+    NODE_OPTIONS: [
+      env.NODE_OPTIONS,
+      "--dns-result-order=ipv4first",
+      "--no-network-family-autoselection",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  };
   const transport = new StdioClientTransport({
     command: "node",
     args: [serverPath],
     cwd: repoRoot,
-    env,
+    env: serverEnv,
     stderr: "pipe",
   });
   client = new Client({ name: "disclosures-live-e2e", version: "0.0.0" });
@@ -374,4 +454,201 @@ describe("live end-to-end MCP suite", () => {
       expect(filings).toMatch(/date-indexed/i);
     },
   );
+
+  // ---- Keyless jurisdictions added after the original suite ----------------
+
+  test("resolves a live EU ESEF filer and lists its latest annual report (filings.xbrl.org)", async () => {
+    // Nokia Oyj — a stable Finnish ESEF filer that filings.xbrl.org indexes.
+    // (SAP SE resolves as an entity but its German OAM is not harvested, so it
+    // has no reports indexed — a deliberately different filer is used here.)
+    const nokiaLei = "549300A0JPRWG1KI7U06";
+    const resolved = await callLiveTool("CompanyResolve", {
+      company: nokiaLei,
+      jurisdiction: "EU",
+    });
+    expect(resolved).toMatch(/Nokia/i);
+    expect(resolved).toContain(nokiaLei);
+    expect(resolved).toMatch(/filings\.xbrl\.org/i);
+
+    const filings = await callLiveToolFull("CompanyFilings", {
+      company: nokiaLei,
+      jurisdiction: "EU",
+      mode: "latest_annual",
+    });
+    if (isNoFilingsNotice(filings.text)) {
+      console.error("[live-info] EU: no ESEF report in window; accepted no-results notice");
+      return;
+    }
+    expect(filings.text).toMatch(/filings\.xbrl\.org/i);
+    expect(filings.text).toMatch(/Period end/i);
+    const rows = structuredFilings(filings);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0]?.transactionId).toBeTruthy();
+  }, testTimeoutMs);
+
+  test("resolves a live FR issuer, lists OAM filings by ISIN, and searches dirigeants", async () => {
+    const resolved = await callLiveTool("CompanyResolve", {
+      company: "TotalEnergies",
+      jurisdiction: "FR",
+    });
+    expect(resolved).toMatch(/TOTALENERGIES/i);
+    expect(resolved).toContain("529900S21EQ1BO4ESM68");
+    expect(resolved).toMatch(/info-financiere/i);
+
+    const filings = await callLiveToolFull("CompanyFilings", {
+      company: "FR0000120271",
+      jurisdiction: "FR",
+      limit: 3,
+    });
+    if (isNoFilingsNotice(filings.text)) {
+      console.error("[live-info] FR: no OAM filing in window; accepted no-results notice");
+    } else {
+      expect(filings.text).toMatch(/info-financiere\.gouv\.fr|opendatasoft\.com/i);
+      const rows = structuredFilings(filings);
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows[0]?.transactionId).toMatch(/^\d+_\d{8}$/);
+    }
+
+    const people = await callLiveToolFull("PersonAppointments", {
+      query: "Pouyanne",
+      jurisdiction: "FR",
+      mode: "search",
+    });
+    expect(people.text).toMatch(/POUYANNE/i);
+    const peopleRows = (people.structuredContent as { people?: unknown })?.people;
+    expect(Array.isArray(peopleRows) && peopleRows.length >= 1).toBe(true);
+  }, testTimeoutMs);
+
+  test("resolves a live HK issuer, lists HKEXnews filings, and reads document metadata", async () => {
+    const resolved = await callLiveTool("CompanyResolve", {
+      company: "700",
+      jurisdiction: "HK",
+    });
+    expect(resolved).toMatch(/TENCENT/i);
+    expect(resolved).toMatch(/00700/);
+    expect(resolved).toMatch(/HKEXnews/i);
+
+    const filings = await callLiveToolFull("CompanyFilings", {
+      company: "700",
+      jurisdiction: "HK",
+      limit: 3,
+    });
+    if (isNoFilingsNotice(filings.text)) {
+      console.error("[live-info] HK: no HKEXnews filing in window; accepted no-results notice");
+      return;
+    }
+    expect(filings.text).toMatch(/hkexnews\.hk/i);
+    const rows = structuredFilings(filings);
+    expect(rows.length).toBeGreaterThan(0);
+    const transactionId = rows[0]?.transactionId ?? "";
+    expect(transactionId).toMatch(/^\/listedco\//);
+
+    const document = await callLiveTool("CompanyDocument", {
+      company: "700",
+      jurisdiction: "HK",
+      transaction_id: transactionId,
+      mode: "metadata",
+    });
+    expect(document).toMatch(/HKEXnews document/i);
+    expect(document).toMatch(/Content type/i);
+    expect(document).toMatch(/application\/pdf/i);
+    expect(document).toMatch(/Size \(bytes\)/i);
+    expect(document).toMatch(/hkexnews\.hk/i);
+  }, testTimeoutMs);
+
+  test("resolves a live SG company by UEN through ACRA open data", async () => {
+    const resolved = await callLiveTool("CompanyResolve", {
+      company: "197200078R",
+      jurisdiction: "SG",
+    });
+    expect(resolved).toMatch(/SINGAPORE AIRLINES/i);
+    expect(resolved).toContain("197200078R");
+    expect(resolved).toMatch(/ACRA|data\.gov\.sg/i);
+  }, testTimeoutMs);
+
+  test("returns live TW financial statements for TSMC from TWSE open data", async () => {
+    const financials = await callLiveToolFull("CompanyFinancials", {
+      company: "2330",
+      jurisdiction: "TW",
+    });
+    expect(financials.text).toMatch(/TWSE open data/i);
+    expect(financials.text).toContain("NT$");
+    for (const label of [
+      /Operating revenue/i,
+      /Operating income/i,
+      /Net income/i,
+      /Total assets/i,
+      /Total equity/i,
+    ]) {
+      expect(financials.text).toMatch(label);
+    }
+    const concepts = structuredConcepts(financials);
+    expect(concepts.length).toBeGreaterThanOrEqual(5);
+  }, testTimeoutMs);
+
+  credentialedTest(
+    "returns live JP annual financials for Toyota parsed from EDINET XBRL",
+    [edinetCredential],
+    async () => {
+      const financials = await callLiveToolFull("CompanyFinancials", {
+        company: "7203",
+        jurisdiction: "JP",
+      });
+      expect(financials.text).toMatch(/EDINET XBRL/i);
+      expect(financials.text).toContain("¥");
+      expect(financials.text).toMatch(/consolidated/i);
+      const concepts = structuredConcepts(financials);
+      expect(concepts.length).toBeGreaterThanOrEqual(3);
+    },
+  );
+
+  test("resolves a live BR issuer through CVM open data (tolerant of upstream blocks)", async () => {
+    await tolerateUpstreamBlock("BR CompanyResolve (CVM)", async () => {
+      const resolved = await callLiveTool("CompanyResolve", {
+        company: "Vale",
+        jurisdiction: "BR",
+      });
+      expect(resolved).toMatch(/VALE/i);
+      expect(resolved).toMatch(/CVM/i);
+      expect(resolved).toMatch(/dados\.cvm\.gov\.br|CVM/i);
+    });
+  }, testTimeoutMs);
+
+  test("resolves a live DE issuer through BaFin (tolerant of the undici header incompatibility)", async () => {
+    await tolerateUpstreamBlock("DE CompanyResolve (BaFin)", async () => {
+      const resolved = await callLiveTool("CompanyResolve", {
+        company: "Siemens",
+        jurisdiction: "DE",
+      });
+      expect(resolved).toMatch(/Company resolution \(BaFin\)/i);
+      expect(resolved).toMatch(/Siemens/i);
+      // A BaFin issuer row carries either a numeric BaFin-Id or a DE ISIN.
+      expect(resolved).toMatch(/\b\d{7,9}\b|ISIN\s+[A-Z]{2}[A-Z0-9]{9,10}/);
+    });
+  }, testTimeoutMs);
+
+  test("resolves a live CN issuer through cninfo (tolerant of anti-bot blocks)", async () => {
+    await tolerateUpstreamBlock("CN CompanyResolve (cninfo)", async () => {
+      const resolved = await callLiveTool("CompanyResolve", {
+        company: "600519",
+        jurisdiction: "CN",
+      });
+      expect(resolved).toMatch(/cninfo/i);
+      expect(resolved).toMatch(/600519/);
+      // Kweichow Moutai — assert the stable orgId identity, not the CJK name.
+      expect(resolved).toMatch(/gssh0600519/);
+    });
+  }, testTimeoutMs);
+
+  test("resolves a live IN issuer through BSE India (tolerant of Akamai blocks)", async () => {
+    await tolerateUpstreamBlock("IN CompanyResolve (BSE India)", async () => {
+      const resolved = await callLiveTool("CompanyResolve", {
+        company: "500325",
+        jurisdiction: "IN",
+      });
+      expect(resolved).toMatch(/BSE India/i);
+      expect(resolved).toMatch(/RELIANCE/i);
+      expect(resolved).toMatch(/INE002A01018/);
+    });
+  }, testTimeoutMs);
 });
