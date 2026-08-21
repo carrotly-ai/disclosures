@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented here.
 
-## Unreleased
+## 0.6.0 - 2026-08-21
+
+DE (BaFin) works again under the default runtime, and FR `CompanyOwners` graduates from linked PDFs to best-effort structured holder/percentage extraction. All changes backward-compatible.
 
 ### Fixed
 
