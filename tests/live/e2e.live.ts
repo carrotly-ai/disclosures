@@ -416,18 +416,36 @@ describe("live end-to-end MCP suite", () => {
         limit: 5,
       });
       expect(filings).toMatch(/DART filings \(OpenDART\)/i);
-      const receiptNumber = filings.match(/rcpNo=(\d{14})/)?.[1];
-      if (!receiptNumber) {
+      const receiptNumbers = [...filings.matchAll(/rcpNo=(\d{14})/g)].map((m) => m[1]!);
+      if (!receiptNumbers.length) {
         throw new Error("OpenDART filing output contained no 14-digit receipt number");
       }
 
-      const document = await callLiveTool("CompanyDocument", {
-        company: "005930",
-        jurisdiction: "KR",
-        transaction_id: receiptNumber,
-        mode: "metadata",
-      });
-      expect(document).toContain(`# DART document: ${receiptNumber}`);
+      // Not every DART filing type serves a downloadable document archive
+      // (document.xml answers "파일이 존재하지 않습니다" for some), so chain the
+      // first receipt in the window that does — drift-tolerant, like the rest
+      // of this suite.
+      let document: string | undefined;
+      let chainedReceipt: string | undefined;
+      const failures: string[] = [];
+      for (const receiptNumber of receiptNumbers) {
+        try {
+          document = await callLiveTool("CompanyDocument", {
+            company: "005930",
+            jurisdiction: "KR",
+            transaction_id: receiptNumber,
+            mode: "metadata",
+          });
+          chainedReceipt = receiptNumber;
+          break;
+        } catch (error) {
+          failures.push(`${receiptNumber}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      if (!document || !chainedReceipt) {
+        throw new Error(`No filing in the window served a document archive:\n${failures.join("\n")}`);
+      }
+      expect(document).toContain(`# DART document: ${chainedReceipt}`);
       expect(document).toContain("## Documents in this filing");
       expect(document).toMatch(/dart\.fss\.or\.kr/i);
     },
