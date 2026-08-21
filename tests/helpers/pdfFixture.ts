@@ -236,6 +236,58 @@ export function buildTextLayoutPdf(lines: string[]): Uint8Array {
   return buildSimplePdf(`BT ${ops} ET`);
 }
 
+/**
+ * A CN-shaped periodic-report PDF: a Type0 font with a `/ToUnicode` CMap, whose
+ * content stream positions **every glyph individually** (each character is a
+ * separate item in a `TJ` array, and every space in the source line is a large
+ * negative kern the extractor reads as one space). This reproduces the real
+ * cninfo extraction reality — 营业收入 comes out `营 业 收 入`, 168,838 comes out
+ * `1 6 8 , 8 3 8` — so the CN space-collapse normalizer is exercised end to end.
+ * Each element of `lines` becomes one logical line (a `T*` move between them);
+ * the extracted text is `lines` with each character space-separated exactly where
+ * the source string has a space. `pages`/`declaredPages` both read 1.
+ */
+export function buildCninfoReportPdf(lines: string[]): Uint8Array {
+  const charset = new Map<string, number>();
+  const bfchar: Array<{ code: string; unicode: string }> = [];
+  const codeOf = (ch: string): string => {
+    let code = charset.get(ch);
+    if (code === undefined) {
+      code = charset.size + 1;
+      charset.set(ch, code);
+      bfchar.push({
+        code: code.toString(16).padStart(4, "0"),
+        unicode: ch.codePointAt(0)!.toString(16).padStart(4, "0"),
+      });
+    }
+    return code.toString(16).padStart(4, "0");
+  };
+  const ops: string[] = [];
+  for (const line of lines) {
+    const items: string[] = [];
+    for (const ch of line) {
+      if (ch === " ") items.push("-150");
+      else items.push(`<${codeOf(ch)}>`);
+    }
+    ops.push(`[${items.join(" ")}] TJ T*`);
+  }
+  const cmap = toUnicodeCmap(bfchar);
+  const content = `BT /F1 12 Tf ${ops.join(" ")} ET`;
+  return concat([
+    enc.encode("%PDF-1.7\n"),
+    enc.encode("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"),
+    enc.encode("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"),
+    enc.encode(
+      "3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R " +
+        "/Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
+    ),
+    streamObject(4, "", enc.encode(content)),
+    enc.encode("5 0 obj\n<< /Type /Font /Subtype /Type0 /ToUnicode 6 0 R >>\nendobj\n"),
+    streamObject(6, "", enc.encode(cmap)),
+    enc.encode("%%EOF"),
+  ]);
+}
+
 /** A one-page, image-only PDF (a DCTDecode XObject, no text) over 20 KB. */
 export function buildImagePdf(imageBytes = 30_000): Uint8Array {
   const image = new Uint8Array(imageBytes).fill(0x41);
