@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented here.
 
-## Unreleased
+## 0.7.0 - 2026-08-21
+
+The HK/CN deep-dive release: the PDF extractor learns compressed object streams (ObjStm), unlocking bounded financials extraction for Hong Kong (results announcements) and China (periodic reports — the largest previously-unfilled market), plus Hong Kong custodian-level owners via CCASS. All changes backward-compatible.
 
 ### Added
 
