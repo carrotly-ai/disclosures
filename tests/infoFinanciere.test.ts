@@ -338,7 +338,7 @@ describe("getInfoFinanciereOwners best-effort PDF extraction", () => {
     ]);
     const owners = await getInfoFinanciereOwners("DBV Technologies", options(fetchFn));
     expect(owners.length).toBe(6);
-    const pdfRequests = fetchFn.requests.filter((r) => r.url.includes("opendatasoft.com"));
+    const pdfRequests = fetchFn.requests.filter((r) => new URL(r.url).host.endsWith(".opendatasoft.com"));
     expect(pdfRequests.length).toBe(INFO_FINANCIERE_OWNERS_PARSE_CAP);
     // The 6th (beyond the cap) is untouched — link-only.
     expect(owners[5]?.machineReadable).toBeUndefined();
