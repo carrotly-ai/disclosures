@@ -1,6 +1,7 @@
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
 import { getJson, getFollowingRedirects, HttpError } from "../core/http.js";
 import { asArray, asRecord, asString, countPdfPages } from "../core/parsing.js";
+import { extractPdfText } from "../core/pdfText.js";
 import { rankEntities } from "../core/entityMatching.js";
 import { infoFinanciereRateLimiter } from "../core/rateLimiter.js";
 import type { AdapterOptions, Entity, Filing, OwnerRecord } from "../core/types.js";
@@ -45,14 +46,22 @@ export const INFO_FINANCIERE_FILINGS_CAVEAT =
   "The index is by transmission date — absence here is not proof a filing does " +
   "not exist.";
 
+/** Cap on how many newest notification PDFs are downloaded and text-parsed. */
+export const INFO_FINANCIERE_OWNERS_PARSE_CAP = 5;
+
 export const INFO_FINANCIERE_OWNERS_CAVEAT =
   "Threshold-crossing notifications (franchissement de seuil) stored in the " +
-  "French OAM. Unlike a structured cap table, the OAM index carries only the " +
-  "notification metadata and its PDF — the crossing holder's identity and the " +
-  "exact percentage live inside the linked document, not in any machine-readable " +
-  "field, so this is a linked-notification list, not a holdings register. " +
-  "Filing-based disclosure only — not UBO tracing; absence here is not proof no " +
-  "notifiable holder exists.";
+  "French OAM. The OAM index itself carries no structured holder/percentage " +
+  `field, so for the ${INFO_FINANCIERE_OWNERS_PARSE_CAP} newest notifications ` +
+  "this tool does a best-effort extraction from the notification PDF's own text " +
+  "layer: the declaring holder, crossing direction/date, the statutory " +
+  "threshold(s) crossed, and the resulting capital / voting-rights percentages. " +
+  "Those figures are as-stated in the notification (a point-in-time filer " +
+  "declaration, not a maintained cap table). Scanned or custom-font PDFs and " +
+  "non-standard phrasings cannot be parsed and stay link-only (marked). Older " +
+  "notifications beyond the parse cap, and every row, always keep the official " +
+  "PDF link. Filing-based disclosure only — not UBO tracing; absence here is not " +
+  "proof no notifiable holder exists.";
 
 export const INFO_FINANCIERE_DOCUMENT_CONTENT_WARNING =
   "The linked/downloaded document is filer-authored regulated-information " +
@@ -356,10 +365,176 @@ export async function searchInfoFinanciereFilings(
   return records.map(recordToFiling);
 }
 
-// --- CompanyOwners (partial: threshold-crossing notification list) ---------
+// --- CompanyOwners (threshold-crossing notifications + best-effort parse) ---
 
 export const INFO_FINANCIERE_OWNER_PLACEHOLDER =
   "Holder disclosed inside linked notification (PDF)";
+
+/**
+ * The structured fields a `Décision de franchissement de seuil` notification
+ * yields when its PDF text layer matches the AMF's standard prose. Every field
+ * is optional: the parser only emits what it matched with confidence, and a
+ * notification that does not follow the pattern yields an empty object.
+ */
+export interface ThresholdCrossing {
+  /** Declaring holder as named after "la société / le groupe familial …". */
+  holderName?: string;
+  /** "up" = franchi en hausse, "down" = franchi en baisse. */
+  direction?: "up" | "down";
+  /** ISO date of the crossing itself (le <jour> <mois> <année>). */
+  crossingDate?: string;
+  /** Statutory threshold(s) crossed, verbatim tokens, e.g. ["5%","1/3","50%"]. */
+  thresholdsCrossed?: string[];
+  /** Resulting stake in % of capital, as stated ("soit N% du capital …"). */
+  pctCapital?: number;
+  /** Resulting stake in % of voting rights, as stated. */
+  pctVotingRights?: number;
+}
+
+const FR_MONTHS: Record<string, string> = {
+  janvier: "01", février: "02", fevrier: "02", mars: "03", avril: "04",
+  mai: "05", juin: "06", juillet: "07", août: "08", aout: "08",
+  septembre: "09", octobre: "10", novembre: "11", décembre: "12", decembre: "12",
+};
+
+const FR_MONTH_ALT =
+  "janvier|février|fevrier|mars|avril|mai|juin|juillet|août|aout|" +
+  "septembre|octobre|novembre|décembre|decembre";
+
+/** "franchi[…]en hausse/baisse" — the few connective words in between only. */
+const DIRECTION_RE = /franchi[a-zà-ÿ,]{0,25}en(hausse|baisse)/;
+const CROSSING_DATE_RE = new RegExp(
+  `franchi[a-zà-ÿ,]{0,25}en(?:hausse|baisse),le(\\d{1,2})(${FR_MONTH_ALT})(\\d{4})`,
+);
+/** The declarant intro right before "a déclaré avoir franchi …". */
+const HOLDER_INTRO_RE =
+  /\b(?:la société de droit \w+|la société européenne|la société anonyme|la société par actions simplifiée|la société|le groupe familial|les sociétés|le groupe)\s+([^(]+?)\s*\d*\s*(?:\(|$)/i;
+/** Legal-form / preamble fragments to peel off the front of a captured name. */
+const HOLDER_LEGAL_PREFIX_RE =
+  /^(?:de droit (?:de l[’']état d[eu] \w+|\w+)|à capital variable|anonyme|par actions simplifiée|en commandite par actions|européenne|l[’']état d[eu] \w+)\s+/i;
+/** Verb/fragment signatures that betray a mis-captured (fragmented) name. */
+const HOLDER_BAD_RE = /\b(a déclaré|avoir franchi|détenir|précisé|envisage|franchi)\b/i;
+
+function frDecimal(value: string): number | undefined {
+  const n = Number(value.replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * Collapse a text to a whitespace-free, lower-cased string while recording, for
+ * each surviving character, its index in the original. AMF notification PDFs
+ * routinely split words across many positioned text runs (so "déclaré" extracts
+ * as "décla ré"); matching French prose on the space-free form and mapping the
+ * hit back to the original is the only reliable anchor.
+ */
+function compactWithMap(text: string): { compact: string; map: number[] } {
+  let compact = "";
+  const map: number[] = [];
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i]!;
+    if (/\s/.test(c)) continue;
+    compact += c.toLowerCase();
+    map.push(i);
+  }
+  return { compact, map };
+}
+
+function cleanHolderName(raw: string): string | undefined {
+  let name = raw
+    .replace(/\s*\d+\s*$/, "")
+    .replace(/\b([A-Za-zÀ-ÿ])\s+\./g, "$1.")
+    .replace(/\.\s+([A-Z])\b/g, ".$1")
+    .replace(/\s+([.,])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  name = name.replace(HOLDER_LEGAL_PREFIX_RE, "").trim();
+  if (name.length < 2 || name.length > 80) return undefined;
+  if (HOLDER_BAD_RE.test(name)) return undefined;
+  if (!/[A-Za-zÀ-ÿ]/.test(name)) return undefined;
+  return name;
+}
+
+/**
+ * Best-effort structured extraction from the text of an AMF threshold-crossing
+ * notification (`Décision de franchissement de seuil`). Designed against the
+ * regular French prose ("… a déclaré avoir franchi en hausse, le <date>, … les
+ * seuils de N% du capital … et détenir … soit N,NN% du capital et N,NN% des
+ * droits de vote …"). Returns only the fields it matched confidently; a
+ * scanned/non-standard document yields an empty object. Never throws.
+ */
+export function parseThresholdCrossing(text: string): ThresholdCrossing {
+  const out: ThresholdCrossing = {};
+  if (!text) return out;
+  const { compact, map } = compactWithMap(text);
+
+  const dir = compact.match(DIRECTION_RE);
+  if (dir) out.direction = dir[1] === "hausse" ? "up" : "down";
+
+  const dm = compact.match(CROSSING_DATE_RE);
+  if (dm) {
+    const month = FR_MONTHS[dm[2]!];
+    if (month) out.crossingDate = `${dm[3]}-${month}-${dm[1]!.padStart(2, "0")}`;
+  }
+
+  // Threshold(s): the run between "seuil(s) de" and the "du capital" / "des
+  // droits de vote" it qualifies — may hold a list ("5%, 10%, …, 1/3, 50%").
+  const seg = compact.match(/seuils?de(.+?)(?:ducapital|desdroitsdevote)/);
+  if (seg) {
+    const toks = [...(seg[1] ?? "").matchAll(/\d+(?:[.,]\d+)?%|\d\/\d/g)].map((m) => m[0]);
+    if (toks.length) out.thresholdsCrossed = toks;
+  }
+
+  // Resulting stake: the first "soit N% …" after the holding verb ("détenir").
+  const detenir = compact.indexOf("détenir");
+  const dirIdx = dir ? compact.indexOf(dir[0]) : -1;
+  const from = Math.max(detenir, dirIdx, 0);
+  const soitIdx = compact.indexOf("soit", from);
+  if (soitIdx >= 0) {
+    const clause = compact.slice(soitIdx, soitIdx + 120);
+    const combined = clause.match(/^soit(\d+(?:[.,]\d+)?)%ducapitaletdesdroitsdevote/);
+    if (combined) {
+      const both = frDecimal(combined[1]!);
+      if (both !== undefined) {
+        out.pctCapital = both;
+        out.pctVotingRights = both;
+      }
+    } else {
+      const cap = clause.match(/^soit(\d+(?:[.,]\d+)?)%ducapital/);
+      const vot = clause.match(/(\d+(?:[.,]\d+)?)%desdroitsdevote/);
+      const capVal = cap ? frDecimal(cap[1]!) : undefined;
+      const votVal = vot ? frDecimal(vot[1]!) : undefined;
+      if (capVal !== undefined) out.pctCapital = capVal;
+      if (votVal !== undefined) out.pctVotingRights = votVal;
+    }
+  }
+
+  // Holder name: anchor on the crossing verb (via the space-free form so heavy
+  // intra-word fragmentation cannot break the anchor), then read the declarant
+  // intro from the original text just before it.
+  let anchor = compact.indexOf("adéclaréavoirfranchi");
+  if (anchor < 0) anchor = compact.search(DIRECTION_RE);
+  if (anchor >= 0) {
+    const origEnd = map[anchor]!;
+    const region = text.slice(Math.max(0, origEnd - 400), origEnd).replace(/\s+/g, " ");
+    const m = region.match(HOLDER_INTRO_RE);
+    if (m) {
+      const name = cleanHolderName(m[1] ?? "");
+      if (name) out.holderName = name;
+    }
+  }
+
+  return out;
+}
+
+/** True when a parse yielded at least one structured (non-name) signal. */
+function hasStructuredSignal(c: ThresholdCrossing): boolean {
+  return (
+    c.direction !== undefined ||
+    c.pctCapital !== undefined ||
+    c.pctVotingRights !== undefined ||
+    (c.thresholdsCrossed?.length ?? 0) > 0
+  );
+}
 
 function recordToOwner(record: InfoFinanciereRecord): OwnerRecord {
   return {
@@ -381,11 +556,28 @@ function recordToOwner(record: InfoFinanciereRecord): OwnerRecord {
   };
 }
 
+/** Fold a confident parse into the owner row; leaves it link-only otherwise. */
+function applyCrossing(owner: OwnerRecord, parsed: ThresholdCrossing): void {
+  if (!hasStructuredSignal(parsed) && parsed.holderName === undefined) return;
+  owner.machineReadable = true;
+  if (parsed.holderName) owner.holderName = parsed.holderName;
+  if (parsed.direction) owner.crossingDirection = parsed.direction;
+  if (parsed.crossingDate) owner.crossingDate = parsed.crossingDate;
+  if (parsed.thresholdsCrossed?.length) owner.thresholdsCrossed = parsed.thresholdsCrossed;
+  if (parsed.pctCapital !== undefined) {
+    owner.pctCapital = parsed.pctCapital;
+    owner.pct = parsed.pctCapital;
+  }
+  if (parsed.pctVotingRights !== undefined) owner.pctVotingRights = parsed.pctVotingRights;
+}
+
 /**
  * Return the issuer's threshold-crossing notifications (franchissement de
- * seuil), newest first, each linked to its PDF. Honest partial: the crossing
- * holder and the exact percentage are inside the PDF, so `holderName`/`pct` are
- * intentionally not populated (see INFO_FINANCIERE_OWNERS_CAVEAT).
+ * seuil), newest first, each linked to its PDF. For the newest
+ * INFO_FINANCIERE_OWNERS_PARSE_CAP notifications this downloads the PDF and does
+ * a best-effort structured extraction (holder, direction, date, threshold(s),
+ * resulting %); rows that cannot be parsed — and every row beyond the cap — stay
+ * link-only with the placeholder holder (see INFO_FINANCIERE_OWNERS_CAVEAT).
  */
 export async function getInfoFinanciereOwners(
   company: string,
@@ -401,7 +593,27 @@ export async function getInfoFinanciereOwners(
     }),
     options,
   );
-  return records.map(recordToOwner);
+  const owners = records.map(recordToOwner);
+
+  const cap = Math.min(owners.length, INFO_FINANCIERE_OWNERS_PARSE_CAP);
+  for (let i = 0; i < cap; i += 1) {
+    const owner = owners[i]!;
+    // Mark the row as attempted (false); applyCrossing upgrades it to true on a
+    // confident parse. Rows beyond the cap keep `machineReadable` undefined, so a
+    // caller can tell "parsed nothing" apart from "not attempted".
+    owner.machineReadable = false;
+    const pdfUrl = records[i]?.pdfUrl;
+    if (!pdfUrl) continue;
+    try {
+      const pdf = await getInfoFinancierePdf(pdfUrl, options);
+      const { text } = extractPdfText(pdf.bytes);
+      if (!text) continue;
+      applyCrossing(owner, parseThresholdCrossing(text));
+    } catch {
+      // Any download/parse failure leaves the row as an honest link-only entry.
+    }
+  }
+  return owners;
 }
 
 // --- CompanyDocument --------------------------------------------------------
