@@ -11,7 +11,7 @@ import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
 import { loadFixture } from "./helpers/loadFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { latin1Bytes, makeStoredZip, makeStoredZipMulti } from "./helpers/zipFixture.js";
-import { buildImagePdf, buildSimplePdf } from "./helpers/pdfFixture.js";
+import { buildFrenchTextPdf, buildImagePdf, buildSimplePdf } from "./helpers/pdfFixture.js";
 import {
   edinetArchiveRoute,
   edinetCodeListRoute,
@@ -3027,7 +3027,9 @@ describe("FR (info-financiere OAM + recherche-entreprises)", () => {
     expect(structured?.filings?.[0]?.transactionId).toBe("169110_20260818");
   });
 
-  test("CompanyOwners FR lists threshold crossings with the PDF-holder caveat", async () => {
+  test("CompanyOwners FR falls back to the honest link-only list when no PDF parses", async () => {
+    // No PDF route is served, so the newest-notification download fails and the
+    // row stays link-only — the output must look like the pre-parse honest list.
     const fetchFn = routedFetch([{ pattern: "franchissement", body: oamThreshold }]);
     const tools = createTools({ fetchFn, env: ENV });
     const result = await toolByName(tools, "CompanyOwners").handler({
@@ -3036,10 +3038,59 @@ describe("FR (info-financiere OAM + recherche-entreprises)", () => {
     } as never);
     const text = resultText(result);
     expect(text).toContain("franchissement de seuil");
-    expect(text).toContain("inside the linked document");
-    const structured = result.structuredContent as { owners?: unknown[]; sourceJurisdiction?: string };
+    expect(text).toContain("best-effort extraction");
+    // The all-fail table keeps today's four-column linked-notification shape.
+    expect(text).toContain("| Notification | Holder | Filed | Notification (PDF) |");
+    expect(text).toContain("Holder disclosed inside linked notification (PDF)");
+    const structured = result.structuredContent as {
+      owners?: Array<{ machineReadable?: boolean }>;
+      sourceJurisdiction?: string;
+    };
     expect(structured?.sourceJurisdiction).toBe("FR");
     expect((structured?.owners ?? []).length).toBe(1);
+    // The newest row was attempted (PDF fetch failed with no route) → false, so
+    // anyParsed is false and the honest four-column fallback renders.
+    expect(structured?.owners?.[0]?.machineReadable).toBe(false);
+  });
+
+  test("CompanyOwners FR renders parsed holder/direction/threshold/% columns when a PDF parses", async () => {
+    const notif =
+      "DBV TECHNOLOGIES (Euronext Paris) Par courrier reçu le 13 août 2026, la " +
+      "société Acme Capital Management (200 rue de Rivoli, 75001 Paris) a déclaré " +
+      "avoir franchi en hausse, le 7 août 2026, les seuils de 10% du capital et des " +
+      "droits de vote de la société DBV TECHNOLOGIES et détenir 33 025 522 actions, " +
+      "soit 11,15% du capital et 12,50% des droits de vote de cette société.";
+    const fetchFn = routedFetch([
+      { pattern: "franchissement", body: oamThreshold },
+      { pattern: "opendatasoft.com", body: buildFrenchTextPdf(notif) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "DBV Technologies",
+      jurisdiction: "FR",
+    } as never);
+    const text = resultText(result);
+    // Rich table (not the four-column fallback).
+    expect(text).toContain("Resulting % (capital / voting)");
+    expect(text).toContain("Acme Capital Management");
+    expect(text).toContain("up 2026-08-07");
+    expect(text).toContain("11.15% / 12.5%");
+    expect(text).toContain("best-effort extraction");
+    const structured = result.structuredContent as {
+      owners?: Array<{
+        holderName?: string; crossingDirection?: string; crossingDate?: string;
+        thresholdsCrossed?: string[]; pctCapital?: number; pctVotingRights?: number;
+        machineReadable?: boolean;
+      }>;
+    };
+    const owner = structured?.owners?.[0];
+    expect(owner?.machineReadable).toBe(true);
+    expect(owner?.holderName).toBe("Acme Capital Management");
+    expect(owner?.crossingDirection).toBe("up");
+    expect(owner?.crossingDate).toBe("2026-08-07");
+    expect(owner?.thresholdsCrossed).toEqual(["10%"]);
+    expect(owner?.pctCapital).toBe(11.15);
+    expect(owner?.pctVotingRights).toBe(12.5);
   });
 
   test("CompanyInsiders FR is honestly unsupported (managers' transactions not in the OAM)", async () => {

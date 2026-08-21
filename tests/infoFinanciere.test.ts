@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   INFO_FINANCIERE_OWNER_PLACEHOLDER,
+  INFO_FINANCIERE_OWNERS_PARSE_CAP,
   InfoFinanciereApiError,
   InfoFinanciereRateLimitError,
   escapeOdsqlString,
@@ -8,12 +9,14 @@ import {
   getInfoFinanciereOwners,
   getInfoFinancierePdf,
   odsqlLiteral,
+  parseThresholdCrossing,
   resolveInfoFinanciereDocument,
   searchInfoFinanciereCompanies,
   searchInfoFinanciereFilings,
 } from "../src/adapters/infoFinanciere.js";
 import { infoFinanciereRateLimiter, resetRateLimiters } from "../src/core/rateLimiter.js";
 import type { AdapterOptions } from "../src/core/types.js";
+import { buildFrenchTextPdf } from "./helpers/pdfFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 
 function options(fetchFn: ReturnType<typeof routedFetch>): AdapterOptions {
@@ -197,6 +200,168 @@ describe("getInfoFinanciereOwners", () => {
   test("no threshold notifications returns an empty list", async () => {
     const fetchFn = routedFetch([{ pattern: "records", body: emptyRecords }]);
     expect(await getInfoFinanciereOwners("Some Issuer", options(fetchFn))).toEqual([]);
+  });
+});
+
+// Realistic AMF notification prose, modelled on the live corpus (DBV / TTE /
+// LVMH). A single Tj literal — the extractor still fragments it far less than a
+// real positioned-text PDF, but the parser regexes are the same.
+const NOTIF_HAUSSE_SPLIT =
+  "DBV TECHNOLOGIES (Euronext Paris) 1. Par courrier reçu le 13 août 2026, " +
+  "la société Acme Capital Management (200 rue de Rivoli, 75001 Paris) a déclaré " +
+  "avoir franchi en hausse, le 7 août 2026, indirectement par l'intermédiaire des " +
+  "sociétés qu'elle contrôle, les seuils de 10% du capital et des droits de vote " +
+  "de la société DBV TECHNOLOGIES et détenir, à cette date, 33 025 522 actions " +
+  "DBV TECHNOLOGIES représentant 40 000 000 droits de vote, soit 11,15% du capital " +
+  "et 12,50% des droits de vote de cette société.";
+const NOTIF_HAUSSE_COMBINED =
+  "TOTALENERGIES SE (Euronext Paris) Par courrier reçu le 15 avril 2026, la " +
+  "société The Capital Group Companies, Inc. (333 South Hope Street, Los Angeles) " +
+  "a déclaré avoir franchi en hausse, le 13 avril 2026, les seuils de 5% du " +
+  "capital et des droits de vote de la société TOTALENERGIES SE et détenir " +
+  "111 573 985 actions TOTALENERGIES SE représentant autant de droits de vote, " +
+  "soit 5,10% du capital et des droits de vote de cette société.";
+const NOTIF_BAISSE =
+  "TOTALENERGIES SE (Euronext Paris) Par courrier reçu le 18 juin 2026, la " +
+  "société Amundi Asset Management (91 boulevard Pasteur, 75015 Paris) a déclaré " +
+  "avoir franchi en baisse, le 18 juin 2026, les seuils de 5% du capital et des " +
+  "droits de vote de la société TOTALENERGIES SE et détenir 112 785 377 actions, " +
+  "soit 4,96% du capital et des droits de vote de cette société.";
+// Threshold + direction present, but no resulting "soit N%" clause.
+const NOTIF_PARTIAL =
+  "ACME SA (Euronext Paris) Par courrier reçu le 2 mars 2026, la société " +
+  "Bidco Holdings (10 Downing Street, Londres) a déclaré avoir franchi en hausse, " +
+  "le 1 mars 2026, les seuils de 15% du capital et des droits de vote de la " +
+  "société ACME SA. Les précisions chiffrées figurent dans le tableau annexé.";
+
+describe("parseThresholdCrossing", () => {
+  test("full parse: hausse, holder, date, threshold, distinct capital/voting %", () => {
+    const c = parseThresholdCrossing(NOTIF_HAUSSE_SPLIT);
+    expect(c.direction).toBe("up");
+    expect(c.holderName).toBe("Acme Capital Management");
+    expect(c.crossingDate).toBe("2026-08-07");
+    expect(c.thresholdsCrossed).toEqual(["10%"]);
+    expect(c.pctCapital).toBe(11.15);
+    expect(c.pctVotingRights).toBe(12.5);
+  });
+
+  test("combined 'du capital et des droits de vote' sets both percentages equal", () => {
+    const c = parseThresholdCrossing(NOTIF_HAUSSE_COMBINED);
+    expect(c.direction).toBe("up");
+    expect(c.holderName).toBe("The Capital Group Companies, Inc.");
+    expect(c.pctCapital).toBe(5.1);
+    expect(c.pctVotingRights).toBe(5.1);
+  });
+
+  test("baisse direction is detected", () => {
+    const c = parseThresholdCrossing(NOTIF_BAISSE);
+    expect(c.direction).toBe("down");
+    expect(c.crossingDate).toBe("2026-06-18");
+    expect(c.pctCapital).toBe(4.96);
+  });
+
+  test("French comma decimals are normalized to JS numbers", () => {
+    const c = parseThresholdCrossing(NOTIF_HAUSSE_SPLIT);
+    expect(c.pctCapital).toBeCloseTo(11.15, 5);
+    expect(c.pctVotingRights).toBeCloseTo(12.5, 5);
+  });
+
+  test("multiple thresholds crossed at once are all captured, including fractions", () => {
+    const text =
+      "Par courrier reçu le 6 décembre 2022, la société Christian Dior a déclaré " +
+      "avoir franchi en hausse, le 6 décembre 2022, les seuils de 5%, 10%, 15%, " +
+      "20%, 25%, 30%, 1/3, 50%, 2/3, 90% et 95% du capital et des droits de vote de " +
+      "la société LVMH et détenir 1 actions, soit 97,50% du capital et 98,37% des " +
+      "droits de vote de cette société.";
+    const c = parseThresholdCrossing(text);
+    expect(c.thresholdsCrossed).toEqual([
+      "5%", "10%", "15%", "20%", "25%", "30%", "1/3", "50%", "2/3", "90%", "95%",
+    ]);
+    expect(c.pctCapital).toBe(97.5);
+    expect(c.pctVotingRights).toBe(98.37);
+  });
+
+  test("partial parse: threshold present but no resulting % leaves percentages unset", () => {
+    const c = parseThresholdCrossing(NOTIF_PARTIAL);
+    expect(c.direction).toBe("up");
+    expect(c.thresholdsCrossed).toEqual(["15%"]);
+    expect(c.pctCapital).toBeUndefined();
+    expect(c.pctVotingRights).toBeUndefined();
+  });
+
+  test("non-standard text yields an empty object (never guesses)", () => {
+    expect(parseThresholdCrossing("")).toEqual({});
+    expect(parseThresholdCrossing(
+      "This annual report contains no threshold-crossing declaration language.",
+    )).toEqual({});
+  });
+});
+
+describe("getInfoFinanciereOwners best-effort PDF extraction", () => {
+  function thresholdRecords(count: number) {
+    return {
+      total_count: count,
+      results: Array.from({ length: count }, (_, i) => ({
+        uin_idt_uin: `6400${i}_2026081${i}`,
+        identificationsociete_iso_nom_soc: "DBV TECHNOLOGIES",
+        identificationsociete_iso_cd_isi: "FR0010417345",
+        informationdeposee_inf_dat_emt: `2026-08-1${i}T06:00:00+00:00`,
+        informationdeposee_inf_tit_inf: "Franchissements de seuils",
+        sous_type_d_information: "Décision de franchissement de seuil",
+        url_de_recuperation:
+          `https://fr.ftp.opendatasoft.com/datadila/INFOFI/307/FC30764${i}_2026081${i}.pdf`,
+      })),
+    };
+  }
+
+  test("parses the newest notification's PDF into structured owner fields", async () => {
+    const fetchFn = routedFetch([
+      { pattern: /records/, body: thresholdRecords(1) },
+      { pattern: /opendatasoft\.com/, body: buildFrenchTextPdf(NOTIF_HAUSSE_SPLIT) },
+    ]);
+    const owners = await getInfoFinanciereOwners("DBV Technologies", options(fetchFn));
+    const o = owners[0]!;
+    expect(o.machineReadable).toBe(true);
+    expect(o.holderName).toBe("Acme Capital Management");
+    expect(o.crossingDirection).toBe("up");
+    expect(o.crossingDate).toBe("2026-08-07");
+    expect(o.thresholdsCrossed).toEqual(["10%"]);
+    expect(o.pctCapital).toBe(11.15);
+    expect(o.pct).toBe(11.15);
+    expect(o.pctVotingRights).toBe(12.5);
+  });
+
+  test("caps PDF downloads at the newest INFO_FINANCIERE_OWNERS_PARSE_CAP", async () => {
+    const fetchFn = routedFetch([
+      { pattern: /records/, body: thresholdRecords(6) },
+      { pattern: /opendatasoft\.com/, body: buildFrenchTextPdf(NOTIF_BAISSE) },
+    ]);
+    const owners = await getInfoFinanciereOwners("DBV Technologies", options(fetchFn));
+    expect(owners.length).toBe(6);
+    const pdfRequests = fetchFn.requests.filter((r) => r.url.includes("opendatasoft.com"));
+    expect(pdfRequests.length).toBe(INFO_FINANCIERE_OWNERS_PARSE_CAP);
+    // The 6th (beyond the cap) is untouched — link-only.
+    expect(owners[5]?.machineReadable).toBeUndefined();
+    expect(owners[5]?.holderName).toBe(INFO_FINANCIERE_OWNER_PLACEHOLDER);
+    // The first five were parsed.
+    expect(owners[0]?.machineReadable).toBe(true);
+    expect(owners[4]?.machineReadable).toBe(true);
+  });
+
+  test("a PDF with no standard crossing prose stays an honest link-only row", async () => {
+    const fetchFn = routedFetch([
+      { pattern: /records/, body: thresholdRecords(1) },
+      {
+        pattern: /opendatasoft\.com/,
+        body: buildFrenchTextPdf("Communiqué de presse sans langage de franchissement."),
+      },
+    ]);
+    const owners = await getInfoFinanciereOwners("DBV Technologies", options(fetchFn));
+    // Attempted (within cap) but nothing parsed → false, distinct from a
+    // beyond-cap row which stays undefined.
+    expect(owners[0]?.machineReadable).toBe(false);
+    expect(owners[0]?.holderName).toBe(INFO_FINANCIERE_OWNER_PLACEHOLDER);
+    expect(owners[0]?.pctCapital).toBeUndefined();
   });
 });
 
