@@ -65,14 +65,43 @@ supply the same variables directly. The suite currently covers:
 - SEC latest-annual metadata chained into `CompanyDocument`;
 - Companies House resolution and latest accounts chained into `CompanyDocument`, plus
   the live charges register;
-- OpenDART resolution and a recent filing chained into `CompanyDocument`; and
-- a single bounded EDINET document-index day, avoiding a slow 90-day scan.
+- OpenDART resolution and a recent filing chained into `CompanyDocument`;
+- a single bounded EDINET document-index day, avoiding a slow 90-day scan;
+- keyless **EU** ESEF resolution (Nokia Oyj by LEI) and its latest annual report on
+  filings.xbrl.org (structure, host, `structuredContent` transaction id);
+- keyless **FR** issuer resolution (TotalEnergies → LEI), OAM filings by ISIN
+  (info-financiere/opendatasoft host, `\d+_\d{8}` transaction id), and a `dirigeant`
+  name search;
+- keyless **HK** issuer resolution (Tencent by stock code), HKEXnews filings
+  (`/listedco/…` transaction ids on hkexnews.hk), and `CompanyDocument` metadata
+  (content-type/size) on the first returned filing;
+- keyless **SG** UEN resolution through ACRA open data;
+- keyless **TW** whole-market financials (TSMC) from TWSE open data — all five
+  concepts, NT$ formatting, `structuredContent.concepts`;
+- credentialed **JP** annual financials (Toyota) parsed from EDINET XBRL — JPY
+  formatting and consolidated basis; and
+- keyless **BR** (CVM), **DE** (BaFin), **CN** (cninfo) and **IN** (BSE India)
+  resolution, each guarded by a tolerant skip (see below).
 
 Assertions intentionally target stable invariants (issuer identity, identifier formats,
 source hosts, headings, and response shape), never exact live counts, dates, or amounts.
-Transient network, 429, timeout, and 5xx failures are retried once. Per-call and per-test
-timeouts bound hangs, and error diagnostics redact configured API keys. Missing credentials
-skip only their jurisdiction in `test:live`; `test:live:all` is the strict pre-release mode.
+Where a filings window can legitimately be empty on a quiet day the tool's drift-tolerant
+"no results" notice is accepted in place of a populated table. Transient network, 429,
+timeout, and 5xx failures are retried once. Per-call and per-test timeouts bound hangs, and
+error diagnostics redact configured API keys. Missing credentials skip only their
+jurisdiction in `test:live`; `test:live:all` is the strict pre-release mode.
+
+**Tolerant jurisdictions (BR, DE, CN, IN).** These four keyless sources cannot be relied on
+from an arbitrary datacenter host, so an upstream/runtime *transport* block is logged and
+treated as a SKIP (never a failure) while a genuine assertion mismatch still fails:
+cninfo (CN) and BSE India (IN, Akamai) are anti-bot walled and may answer 403/redirect/
+timeout; and BaFin's portal (DE) emits an obsolete line-folded `Permissions-Policy` response
+header that Node's undici HTTP/1.1 parser rejects (`Invalid header value char`), so the
+built server's global `fetch` can never read it even though `curl` can — DE therefore skips
+on this runtime today. The spawned server also runs with `--dns-result-order=ipv4first
+--no-network-family-autoselection`, because some upstreams (notably Brazil's
+dados.cvm.gov.br) publish AAAA records that are unroutable from hosts with broken IPv6 and
+undici does not reliably fall back to IPv4.
 
 The file uses the non-discoverable `.live.ts` suffix. Do not rename it to `.test.ts` or
 `.spec.ts`: bare `bun test` discovers those names recursively and would violate the offline
