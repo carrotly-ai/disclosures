@@ -31,7 +31,7 @@
 | `CompanyOwners` | **Partial.** Threshold-crossing notifications (*franchissement de seuil*, Art. L233-7 CoMoFi) from the OAM, newest first, each linked to its PDF — a **linked-notification list, not a structured cap table**: the crossing holder and the exact percentage live inside the PDF, not in any machine-readable field. |
 | `CompanyFinancials` | Unsupported — use `jurisdiction: "EU"` (filings.xbrl.org ESEF) for a listed French issuer's annual accounts. |
 | `PrivateRaises` | Unsupported — no Form D-equivalent dataset. |
-| `CompanyDocument` | Given an OAM record id (the `transaction_id` from `CompanyFilings`, e.g. `169110_20260818`) — or a full OAM PDF URL — returns `metadata` (record fields + best-effort size via HEAD), `pdf` (saves the PDF to disk, 25 MB cap, path + bytes + page count), or an honest `xhtml` note (the OAM serves PDFs only, no iXBRL/XHTML rendition). |
+| `CompanyDocument` | Given an OAM record id (the `transaction_id` from `CompanyFilings`, e.g. `169110_20260818`) — or a full OAM PDF URL — returns `metadata` (record fields + best-effort size via HEAD), `pdf` (saves the PDF to disk, 25 MB cap, path + bytes + page count), or `xhtml` (**best-effort text-layer extraction from the filed PDF**, fenced as untrusted and paged via `text_offset`; scanned/image PDFs and documents whose fonts lack a `/ToUnicode` map are reported honestly with no text). |
 | `PersonAppointments` | recherche-entreprises *dirigeants*. `search` (a person name) returns distinct natural persons with a name-based id and a company count; `appointments` (pass the id as `officer_id`) lists every company where that person is a *dirigeant*; `disqualifications` is honestly unsupported. |
 | `OwnershipChain` | Global GLEIF — see the [index](README.md). |
 
@@ -70,6 +70,12 @@ The French registry keys people **by name, not by a stable person id**:
   break out of the literal.
 - **Zero runtime dependencies.** Records are fetched as JSON (no scraping); the document PDF
   path reuses the shared 25 MB cap, page-count, and save-to-disk machinery.
+- **PDF text extraction is zero-dep and best-effort.** `mode: "xhtml"` runs the in-repo
+  `src/core/pdfText.ts` extractor (object-level parse, `/FlateDecode` inflate via the shared
+  `zip.ts` zlib wrapper, `Tj`/`TJ` operator text, WinAnsi + `/ToUnicode` CMap decoding — so
+  French accents round-trip). It is a **text-layer extractor, not a renderer**: table/column
+  layout is not preserved, and scanned PDFs or custom-encoded fonts with no `/ToUnicode` map
+  are surfaced as an honest "no reliable text layer" note rather than garbage.
 - recherche-entreprises calls go through a **7 req/s** rate limiter.
 
 ## Caveats

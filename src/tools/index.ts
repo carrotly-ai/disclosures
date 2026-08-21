@@ -744,8 +744,21 @@ const PDF_TEXT_CAVEAT =
   "may be mis-decoded.";
 
 const PDF_NO_TEXT_MESSAGE =
-  "The PDF has no extractable text layer (likely a scanned or image-only " +
-  "document). Use mode=\"pdf\" to download the original file.";
+  "The PDF has no reliable extractable text layer (it may be a scanned/image " +
+  "document, or use custom-encoded fonts without a /ToUnicode map). Use " +
+  "mode=\"pdf\" to download the original file.";
+
+/**
+ * Honest "no usable text" response for a PDF whose extraction produced nothing
+ * reliable, carrying the extractor's specific reason note when it has one.
+ */
+function pdfNoTextSections(result: ReturnType<typeof extractPdfText>): string[] {
+  const sections = [`_${PDF_NO_TEXT_MESSAGE}_`];
+  if (result.notes.length) {
+    sections.push(`_Extraction notes: ${result.notes.join("; ")}._`);
+  }
+  return sections;
+}
 
 /**
  * Build the "## Extracted text" sections for a PDF whose extraction yielded
@@ -3364,7 +3377,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         if (!extracted.text) {
           return textResult(joinSections(
             `# info-financiere document: ${record.id}`,
-            `_${PDF_NO_TEXT_MESSAGE}_`,
+            ...pdfNoTextSections(extracted),
           ));
         }
         return textResult(joinSections(
@@ -3448,7 +3461,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         if (!extracted.text) {
           return textResult(joinSections(
             `# HKEXnews document: ${transactionId}`,
-            `_${PDF_NO_TEXT_MESSAGE}_`,
+            ...pdfNoTextSections(extracted),
           ));
         }
         return textResult(joinSections(

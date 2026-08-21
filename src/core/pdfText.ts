@@ -698,6 +698,23 @@ function visibleCharCount(text: string): number {
 }
 
 /**
+ * Fraction of visible characters that are letters or digits. Genuine prose (any
+ * script — CJK letters count) sits well above 0.5; a PDF decoded through the
+ * wrong font encoding (a custom-encoded embedded subset with no `/ToUnicode`
+ * map) collapses into punctuation/symbol soup near 0. Used to catch that
+ * "looks like text but is garbage" case so we can be honest instead.
+ */
+function alnumRatio(text: string): number {
+  const visible = visibleCharCount(text);
+  if (visible === 0) return 0;
+  const alnum = (text.match(/[\p{L}\p{N}]/gu) ?? []).length;
+  return alnum / visible;
+}
+
+const MIN_GARBLE_SAMPLE = 200;
+const MIN_ALNUM_RATIO = 0.35;
+
+/**
  * Extract a best-effort text layer from a PDF's raw bytes.
  *
  * @returns `text` (may be empty), an optional `pages` count, and `notes` that
@@ -757,12 +774,22 @@ export function extractPdfText(bytes: Uint8Array): PdfTextResult {
 
   const assembled = normalizeWhitespace(pieces.join(""));
   const pages = pageObjects.length > 0 ? pageObjects.length : undefined;
+  const visible = visibleCharCount(assembled);
 
-  if (
-    visibleCharCount(assembled) < MIN_MEANINGFUL_CHARS &&
-    bytes.byteLength > SCANNED_PDF_SIZE_HINT
-  ) {
+  if (visible < MIN_MEANINGFUL_CHARS && bytes.byteLength > SCANNED_PDF_SIZE_HINT) {
     notes.push("no extractable text layer (likely scanned/image PDF)");
+    return { text: "", ...(pages !== undefined ? { pages } : {}), notes };
+  }
+
+  // Text came out, but if it is dominated by punctuation/symbols it was decoded
+  // through the wrong font encoding — serving it would be emitting garbage. Be
+  // honest and return no text with an explanatory note instead.
+  if (visible >= MIN_GARBLE_SAMPLE && alnumRatio(assembled) < MIN_ALNUM_RATIO) {
+    notes.push(
+      "no reliable text layer — the PDF's fonts use custom encodings with no " +
+        "/ToUnicode map, so glyph codes could not be mapped to characters " +
+        "(the original PDF is readable via mode=\"pdf\")",
+    );
     return { text: "", ...(pages !== undefined ? { pages } : {}), notes };
   }
 

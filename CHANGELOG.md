@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Added
+
+- **Zero-dependency PDF text extraction**, wired into `CompanyDocument` `mode: "xhtml"` for the PDF-only jurisdictions so AI clients can read filing *content*, not just save a file. New `src/core/pdfText.ts` parses a PDF at the object level (linear `N G obj` scan rather than trusting the xref), inflates `/FlateDecode` content streams through a new `inflateZlib` entry point in `src/core/zip.ts` (skips the 2-byte zlib header, reuses the existing `node:zlib` raw-inflate already centralized there — no new runtime dependency), extracts text from the content-stream operators (`Tj`, `TJ` with kerning-to-space heuristics, `'`/`"`, `Td`/`TD`/`T*`/`Tm` line-move heuristics), and decodes strings via literal (`\ddd` octal + escapes) and hex forms. Encoding covers the two dominant real-filing cases: simple fonts via a WinAnsi/Latin-1 table (French OAM accents round-trip) and composite/embedded-subset fonts via their `/ToUnicode` CMap (`beginbfchar`/`beginbfrange`, UTF-16BE — HKEX bilingual EN/中文 round-trips). Output is a `{ text, pages?, notes[] }` contract; `extractPdfText` never throws on malformed input.
+  - **`CompanyDocument` `xhtml`** now serves that extracted text, fenced as untrusted and paged via `text_offset` (the same `documentTextSections` machinery as GB/US/KR), for **FR** (info-financiere OAM) and **HK** (HKEXnews). **JP** (EDINET) `xhtml` now attempts extraction from the type=2 PDF, keeping the honest bundled-XBRL-archive message as its no-text fallback. GB/US/KR are unchanged (they already have real machine-readable text renditions).
+  - **Honest degradation, never garbage.** A PDF with no text layer (scanned/image) returns an explicit "no extractable text layer" note and empty text; a PDF whose fonts use custom encodings with no `/ToUnicode` map (symbol-soup output, detected via an alphanumeric-ratio check) is surfaced as "no reliable text layer" rather than served. Every response labels itself a *best-effort text-layer extraction, not a rendered view* — table/column layout and reading order are explicitly not preserved.
+
 ## 0.4.0 - 2026-08-21
 
 The coverage-expansion release: three new jurisdictions (FR, HK, SG — now 13 total), a new financials market (TW), and three live-verified feasibility findings (AU, CA, HK/SG) recording exactly why the skipped markets were skipped. All changes are backward-compatible: the ten tool names are unchanged and every `jurisdiction` enum widening is additive.

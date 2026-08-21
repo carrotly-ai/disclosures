@@ -63,6 +63,16 @@ describe("extractPdfText", () => {
     expect(result.notes.join(" ")).toContain("scanned/image PDF");
   });
 
+  test("flags punctuation/symbol soup from a mis-decoded font as unreliable", () => {
+    // A large run of non-alphanumeric glyphs (what a custom-encoded subset font
+    // with no /ToUnicode decodes to) must NOT be served as if it were text.
+    const soup = "!\"#$%&'()*+,-./:;<=>?@[]".repeat(40);
+    const pdf = buildSimplePdf(`BT (${soup}) Tj ET`);
+    const result = extractPdfText(pdf);
+    expect(result.text).toBe("");
+    expect(result.notes.join(" ")).toContain("custom encodings");
+  });
+
   test("does not throw on non-PDF input", () => {
     const result = extractPdfText(new TextEncoder().encode("not a pdf at all"));
     expect(result.text).toBe("");
