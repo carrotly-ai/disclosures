@@ -192,8 +192,10 @@ import {
 import {
   getHkexDocumentMetadata,
   getHkexDocumentPdf,
+  getHkexFinancials,
   getLatestHkexAnnualReport,
   HKEXNEWS_DOCUMENT_CONTENT_WARNING,
+  HKEXNEWS_FINANCIAL_CONCEPT_NAMES,
   searchHkexCompanies,
   searchHkexFilings,
 } from "../adapters/hkexNews.js";
@@ -1085,12 +1087,35 @@ const HKEX_INSIDERS_UNSUPPORTED =
   "keyless JSON source. Director details are disclosed inside annual-report " +
   "PDFs — use CompanyFilings with jurisdiction \"HK\".";
 
-const HKEX_FINANCIALS_UNSUPPORTED =
-  "CompanyFinancials is unsupported for jurisdiction \"HK\". HKEXnews figures " +
-  "live only inside annual-report PDFs (Financial Statements/ESG Information " +
-  "category); there is no structured XBRL financial feed. Use CompanyFilings " +
-  "with jurisdiction \"HK\" and mode \"latest_annual\" to locate the annual " +
-  "report PDF.";
+// HK has no structured-XBRL feed; figures are extracted from the standardized
+// results-announcement PDF. When the extraction is not reliable (page shortfall
+// from an undecodable object stream, or no consolidated statement found) the
+// mode degrades to the direct PDF link rather than emitting uncertain numbers.
+function hkexFinancialsFallback(
+  company: string,
+  reason: "no-announcement" | "shortfall" | "no-statements",
+  link?: string,
+): string {
+  if (reason === "no-announcement") {
+    return (
+      `No results announcement found on HKEXnews for "${company}". HK financials ` +
+      "are extracted from the issuer's latest Final Results (annual) or Interim " +
+      "Results announcement; an issuer with none in the search window returns " +
+      "nothing. Use CompanyFilings with jurisdiction \"HK\" to browse its disclosures."
+    );
+  }
+  const why = reason === "shortfall"
+    ? "the announcement's consolidated statements are packed in a compressed " +
+      "object stream this extractor could not fully read (a declared-vs-extracted " +
+      "page shortfall was detected)"
+    : "no consolidated income statement or balance sheet could be matched in the " +
+      "extracted text";
+  return (
+    `HK figures could not be reliably extracted for "${company}" — ${why}. ` +
+    "Rather than serve numbers that may be wrong, open the results announcement " +
+    `directly${link ? `: ${link}` : "."}`
+  );
+}
 
 const SG_RESOLVE_CAVEAT = ACRA_CAVEAT;
 
@@ -2644,7 +2669,13 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "Explicit TW returns the latest-period headline totals (revenue, operating " +
       "income, net income, total assets, total equity, in NT$) from TWSE's " +
       "general-industry financial-statement open data; finance/insurance-sector " +
-      "issuers file a variant format and are explained honestly.",
+      "issuers file a variant format and are explained honestly. Explicit HK " +
+      "extracts headline figures (" +
+      `${HKEXNEWS_FINANCIAL_CONCEPT_NAMES.join(", ")}) from the issuer's latest ` +
+      "HKEXnews results announcement PDF (Final/annual, else Interim), normalized " +
+      "to whole currency units (HK$, RMB, or US$ as the filing states); it is the " +
+      "latest announcement only (no history) and degrades to the PDF link when " +
+      "figures cannot be reliably extracted.",
     {
       ...companyInput,
       concepts: z
@@ -2718,7 +2749,51 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         );
       }
       if (jurisdiction === "HK") {
-        return textResult(HKEX_FINANCIALS_UNSUPPORTED);
+        try {
+          const result = await getHkexFinancials(company, options);
+          if (!result.facts.length) {
+            const link = result.announcement?.filing.sourceUrl;
+            return textResult(
+              hkexFinancialsFallback(
+                company,
+                result.reason ?? "no-statements",
+                link,
+              ),
+            );
+          }
+          const announcement = result.announcement!;
+          const byConcept = new Map<string, typeof result.facts>();
+          for (const fact of result.facts) {
+            const bucket = byConcept.get(fact.concept) ?? [];
+            bucket.push(fact);
+            byConcept.set(fact.concept, bucket);
+          }
+          const sections = [...byConcept.entries()].map(([, rows]) => {
+            const first = rows[0]!;
+            return joinSections(
+              `## ${first.label} (${first.unit})`,
+              markdownTable(
+                ["Period end", "Value"],
+                rows.map((fact) => [fact.periodEnd, formatNumber(fact.value, fact.unit)]),
+              ),
+            );
+          });
+          const resultTypeLabel = announcement.resultType === "Final"
+            ? "Final Results (annual)"
+            : "Interim Results";
+          return textResult(joinSections(
+            `# Latest results announcement figures (HKEXnews): ${company}`,
+            ...sections,
+            `_Extracted from the issuer's ${link(resultTypeLabel, announcement.filing.sourceUrl)} ` +
+              `results announcement (as published — unaudited or audited per the filing), ` +
+              `period end ${result.periodEnd ?? "as stated"}, announced ` +
+              `${announcement.filing.filedDate}. This is the latest announcement only — ` +
+              `no historical series. Figures are normalized to whole ${result.currency} ` +
+              `from the filing's stated unit._`,
+          ), financialsStructured(byConcept, "HK"));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "SG") {
         return textResult(SG_FINANCIALS_UNSUPPORTED);

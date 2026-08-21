@@ -12,7 +12,12 @@ import {
 } from "../src/adapters/acraSg.js";
 import type { ToolResult } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
-import { buildImagePdf, buildSimplePdf } from "./helpers/pdfFixture.js";
+import {
+  buildImagePdf,
+  buildShortfallObjStmPdf,
+  buildSimplePdf,
+  buildTextLayoutPdf,
+} from "./helpers/pdfFixture.js";
 
 function toolByName(tools: ToolDefinition[], name: string): ToolDefinition {
   const tool = tools.find((candidate) => candidate.name === name);
@@ -165,6 +170,86 @@ describe("HK tool dispatch", () => {
     expect(text).toContain("unsupported for jurisdiction \"HK\"");
     expect(text.toLowerCase()).toContain("disclosure of interests");
     expect(result.isError).toBeUndefined();
+  });
+
+  const RESULTS_ROW = {
+    NEWS_ID: "12345678",
+    TITLE: "ANNOUNCEMENT OF THE ANNUAL RESULTS FOR THE YEAR ENDED 31 DECEMBER 2025",
+    LONG_TEXT: "Annual Results",
+    STOCK_NAME: "TENCENT",
+    DATE_TIME: "18/03/2026 08:30",
+    FILE_TYPE: "PDF",
+    FILE_LINK: "/listedco/listconews/sehk/2026/0318/2026031800388.pdf",
+  };
+
+  const RESULTS_PDF = buildTextLayoutPdf([
+    "For the year ended 31 December 2025",
+    "(Expressed in RMB million)",
+    "Revenue 660,257 609,015",
+    "Profit from operations 226,000 210,000",
+    "Profit attributable to owners of the Company 194,073 115,216",
+    "Total assets 2,038,986 1,780,995",
+    "Total equity 1,241,065 1,053,896",
+  ]);
+
+  test("CompanyFinancials HK extracts results-announcement figures + structured payload", async () => {
+    const fetchFn = routedFetch([
+      stockListRoute,
+      { pattern: "titleSearchServlet.do", body: servletBody([RESULTS_ROW]) },
+      { pattern: "2026031800388.pdf", body: RESULTS_PDF },
+    ]);
+    const tools = createTools({ fetchFn, env: {} });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "700",
+      jurisdiction: "HK",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Latest results announcement figures");
+    expect(text).toContain("Profit attributable to owners of the Company");
+    expect(text).toContain("RMB");
+    expect(text).toContain("2025-12-31");
+    // 194,073 RMB million normalized to whole RMB and formatted with grouping.
+    expect(text).toContain("194,073,000,000");
+
+    const structured = result.structuredContent as {
+      sourceJurisdiction: string;
+      concepts: Array<{ concept: string; unit?: string; facts: Array<{ value: number }> }>;
+    };
+    expect(structured.sourceJurisdiction).toBe("HK");
+    const assets = structured.concepts.find((c) => c.concept === "total_assets");
+    expect(assets?.unit).toBe("CNY");
+    expect(assets?.facts[0]?.value).toBe(2_038_986 * 1_000_000);
+  });
+
+  test("CompanyFinancials HK degrades to the PDF link on a page shortfall", async () => {
+    const fetchFn = routedFetch([
+      stockListRoute,
+      { pattern: "titleSearchServlet.do", body: servletBody([RESULTS_ROW]) },
+      { pattern: "2026031800388.pdf", body: buildShortfallObjStmPdf() },
+    ]);
+    const tools = createTools({ fetchFn, env: {} });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "700",
+      jurisdiction: "HK",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("could not be reliably extracted");
+    expect(text).toContain("page shortfall");
+    expect(text).toContain("2026031800388.pdf");
+    expect(result.isError).toBeUndefined();
+  });
+
+  test("CompanyFinancials HK explains when no results announcement exists", async () => {
+    const fetchFn = routedFetch([
+      stockListRoute,
+      { pattern: "titleSearchServlet.do", body: servletBody([]) },
+    ]);
+    const tools = createTools({ fetchFn, env: {} });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "700",
+      jurisdiction: "HK",
+    } as never);
+    expect(resultText(result)).toContain("No results announcement found");
   });
 });
 

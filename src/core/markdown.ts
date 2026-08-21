@@ -36,6 +36,8 @@ const CURRENCY_FORMATS: Record<
   PLN: { symbol: "zł ", maximumFractionDigits: 2 },
   BRL: { symbol: "R$", maximumFractionDigits: 2 },
   TWD: { symbol: "NT$", maximumFractionDigits: 0 },
+  HKD: { symbol: "HK$", maximumFractionDigits: 0 },
+  CNY: { symbol: "RMB ", maximumFractionDigits: 0 },
 };
 
 export function formatNumber(value: number, unit: string): string {

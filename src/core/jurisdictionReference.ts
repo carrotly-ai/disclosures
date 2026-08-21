@@ -191,12 +191,16 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
     intents:
       "CompanyResolve (listed SEHK/GEM issuers), CompanyFilings (title-search " +
       "servlet + latest_annual), CompanyDocument (HKEXnews FILE_LINK path; PDF " +
-      "or metadata)",
+      "or metadata), CompanyFinancials (headline figures extracted from the " +
+      "latest results-announcement PDF — bounded/best-effort)",
     caveat:
       "Listed issuers only (private cos are in the paid Companies Registry). " +
-      "Owners/insiders sit behind the captcha-walled Disclosure of Interests " +
-      "system, and financials live inside annual-report PDFs — all honest " +
-      "unsupported. HKEXnews content is copyrighted (link-first, on-demand fetch).",
+      "CompanyFinancials extracts revenue/operating-profit/net-profit/total-" +
+      "assets/total-equity from the issuer's latest results announcement (latest " +
+      "only, no history); it degrades to the PDF link when a page shortfall or " +
+      "missing statement makes the numbers unreliable. Owners/insiders sit behind " +
+      "the captcha-walled Disclosure of Interests system — honest unsupported. " +
+      "HKEXnews content is copyrighted (link-first, on-demand fetch).",
   },
   {
     code: "SG",

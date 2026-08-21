@@ -31,7 +31,7 @@ requires (for Tencent: code `00700` → `stockId` `7609`, which is *not* the pub
 | `CompanyDocument` | Fetches a filing's PDF by its `FILE_LINK` path (`metadata` for type + size via a HEAD request, `pdf` to download; `xhtml` returns **best-effort text-layer extraction from the PDF**, fenced as untrusted and paged via `text_offset` — bilingual EN/中文 text is decoded via each font's `/ToUnicode` CMap; scanned/image PDFs are reported honestly with no text). |
 | `CompanyInsiders` | Unsupported — no Section 16-equivalent feed; the DI directors'-interests register is captcha-walled and `dirsearch` is session/anti-CSRF-gated HTML. |
 | `CompanyOwners` | Unsupported — substantial-shareholder holdings sit behind the SFO Part XV Disclosure of Interests (DI) system (`di.hkex.com.hk` / `sdinotice.hkex.com.hk`), an ASP.NET WebForms + login-captcha wall with no keyless feed. |
-| `CompanyFinancials` | Unsupported — figures live only inside annual-report PDFs; there is no structured XBRL financial feed. |
+| `CompanyFinancials` | **Bounded/best-effort** — headline figures (`revenue`, `operating_profit`, `profit_before_tax`, `net_profit`, `total_assets`, `total_equity`) extracted from the issuer's **latest results-announcement PDF** (Final/annual, else Interim). No structured XBRL feed exists; see the section below. |
 | `PrivateRaises` | Unsupported — no Form D-equivalent dataset. |
 | `OwnershipChain` | Global GLEIF — see the [index](README.md). |
 
@@ -55,6 +55,46 @@ English/Traditional-Chinese text layer round-trips. It is a **text-layer extract
 renderer** — table/column layout is not preserved — and a scanned/image PDF (or one whose
 fonts carry no `/ToUnicode` map) is surfaced as an honest "no reliable text layer" note.
 
+## `CompanyFinancials` — results-announcement extraction (bounded)
+
+HK issuers file no keyless structured-XBRL financials, but their standardized
+**Results Announcement** PDFs carry the consolidated income statement and balance sheet in a
+form the in-repo `pdfText.ts` extractor recovers with labels adjacent to figures. The adapter
+locates the newest **Final Results** announcement (headline category `10000`, sub-category
+group `t2Gcode 3`, `t2code 13300`), falling back to **Interim Results** (`t2code 13400`),
+downloads the (keyless) PDF, extracts its text, and parses the canonical concept set:
+
+| Concept | Label lexicon (HKFRS/IFRS + REIT/property variants) |
+|---|---|
+| `revenue` | Total revenue / Revenue / Turnover |
+| `operating_profit` | Profit from operations / Operating profit |
+| `profit_before_tax` | Profit before taxation / before tax |
+| `net_profit` | Profit attributable to owners/shareholders of the Company (preferred), else Profit for the year |
+| `total_assets` | Total assets |
+| `total_equity` | Total equity (preferred) / Net assets attributable to unitholders (REIT) |
+
+**Units are carried honestly.** The filing's own declaration sets the currency and scale —
+`HK$'000`, `HK$ million`, `(Expressed in Renminbi … Million)` (China Mobile and Tencent report
+in **RMB/CNY**), or `($m)` with US dollars (HSBC reports in **USD**) — normalized to whole
+currency units. When neither currency nor scale can be pinned down, **no figures are emitted**.
+
+**Honest degradation.** Extraction is anchored to the consolidated-statement region (skipping
+narrative highlights and quarterly tables), takes the **first (current-period) figure column**,
+and emits only confidently-matched concepts (a partial parse serves what matched). Two guards
+degrade to the **PDF link only** rather than serve uncertain numbers:
+
+- **Page shortfall** — the consolidated statements packed inside compressed object streams the
+  extractor cannot reach (declared-vs-reached page shortfall). The `pdfText.ts` ObjStm/xref
+  decompressor now resolves this for most filings (e.g. CK Hutchison's ~270-page announcement),
+  but the guard remains for anything still unreadable.
+- **No statement found** — no consolidated income statement or balance sheet matched.
+
+Output is labelled "extracted from the issuer's results announcement (as published — unaudited
+or audited per the filing)", with the period end and announcement date, and states it is the
+**latest announcement only — no historical series**. Verified live: China Mobile (RMB), HSBC
+(USD), Tencent (RMB) extract cleanly; complex conglomerates with segment-split or multi-column
+statements parse partially or degrade to the link.
+
 ## Licence / redistribution
 
 HKEXnews content is **copyrighted** (not an open-data licence) — the same posture as the
@@ -66,7 +106,9 @@ are used as internal lookups only, never re-published.
 ## Caveats
 
 - Listed SEHK/GEM issuers only; private companies are in the paid Companies Registry.
-- `CompanyFilings` returns real disclosure PDF links; the deeper insider/owner/financial
-  intents degrade honestly rather than scraping captcha- or session-walled sources.
+- `CompanyFilings` returns real disclosure PDF links; `CompanyFinancials` extracts headline
+  figures from the results-announcement PDF (bounded — degrades to the link when unreliable);
+  the insider/owner intents degrade honestly rather than scraping captcha- or session-walled
+  sources.
 - Absence in a filings window is not proof a filing does not exist — adjust
   `start_date`/`end_date`.
