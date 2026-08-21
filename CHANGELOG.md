@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Added
+
+- Hong Kong + Singapore deep-dive finding ([`HKSG-DEEPDIVE.md`](HKSG-DEEPDIVE.md)), re-probing every surface the original HK/SG finding marked blocked, in light of the shipped zero-dep PDF extractor. **Two doors opened for HK:** (1) `CompanyFinancials` via HKEXnews **results-announcement PDF extraction** is feasible-bounded — on a 9-issuer live corpus the consolidated income statement and balance sheet survive text extraction with labels adjacent to figures for standard HKFRS/IFRS issuers (~8/9 reliable headline P&L; ~5/9 balance-sheet clean directly, +3 with a label lexicon), and the one hard failure class (consolidated statements inside compressed `/ObjStm` object streams the linear-scan extractor cannot read — CK Hutchison) is *detectable* via declared-vs-extracted page shortfall, so the mode can degrade to link-only rather than emit wrong numbers; (2) **CCASS shareholding search** is a keyless viewstate POST with no captcha (verified live: 427 participant rows for Tencent), usable as clearly-caveated participant/custodian-level partial owners — not beneficial ownership. Highest-leverage enabler: ObjStm/xref-stream decompression in `pdfText.ts`, which also strengthens every existing PDF-reading path. DI remains captcha-walled, ICRIS paid, data.gov.hk marginal. **SG opened nothing**, but the SGX diagnosis is corrected: the Akamai wall is IP-reputation-based (200 from this box's residential-class egress; 403 from datacenter IPs) and the announcements API is auth-gated even when the wall passes — still not portable, still skip. Finding only — no code change ships with it.
+
 ## 0.6.0 - 2026-08-21
 
 DE (BaFin) works again under the default runtime, and FR `CompanyOwners` graduates from linked PDFs to best-effort structured holder/percentage extraction. All changes backward-compatible.
