@@ -116,6 +116,18 @@ describe("searchBafinCompanies", () => {
       /Unexpected network request/,
     );
   });
+
+  test("an injected fetchFn wins over the lenient node path (issue #42)", async () => {
+    // BaFin reads through a lenient node:https path only when NO fetchFn is
+    // injected (#42). With a stub supplied, every page fetch must go through
+    // the stub — proved here by the stub receiving the request and the parse
+    // succeeding without any real network access.
+    const fetchFn = routedFetch([searchRoute]);
+    const results = await searchBafinCompanies("SAP SE", options(fetchFn));
+    expect(results.length).toBeGreaterThan(0);
+    expect(fetchFn.requests.length).toBe(1);
+    expect(fetchFn.requests[0]?.url).toContain("suche.do");
+  });
 });
 
 describe("getBafinOwners", () => {

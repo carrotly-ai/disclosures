@@ -1,5 +1,5 @@
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
-import { getText, HttpError } from "../core/http.js";
+import { getText, getTextLenient, HttpError } from "../core/http.js";
 import { decodeXmlEntities, plainXmlText, xmlBlocks } from "../core/parsing.js";
 import { bafinRateLimiter } from "../core/rateLimiter.js";
 import type {
@@ -97,13 +97,18 @@ function mapHttpError(error: unknown): unknown {
 
 async function fetchText(url: string, options: AdapterOptions): Promise<string> {
   acquireRequest();
+  const headers = { Accept: "text/html", "Accept-Language": "de,en;q=0.8" };
   try {
-    return await getText(
-      url,
-      { Accept: "text/html", "Accept-Language": "de,en;q=0.8" },
-      BAFIN_REQUEST_TIMEOUT_MS,
-      options.fetchFn ?? fetch,
-    );
+    // An injected fetchFn always wins (that is how the offline suite stubs the
+    // network). Only when the caller supplies no fetchFn do we read BaFin
+    // through the lenient node:https path: BaFin's portal emits an obsolete
+    // line-folded `Permissions-Policy` header that undici's global `fetch`
+    // rejects with "Invalid header value char", so the built server could never
+    // read it under the default fetch. See issue #42 and getTextLenient.
+    if (options.fetchFn) {
+      return await getText(url, headers, BAFIN_REQUEST_TIMEOUT_MS, options.fetchFn);
+    }
+    return await getTextLenient(url, headers, BAFIN_REQUEST_TIMEOUT_MS);
   } catch (error) {
     throw mapHttpError(error);
   }

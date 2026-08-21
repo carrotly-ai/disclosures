@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   HttpError,
   getFollowingRedirects,
   getJson,
   getOptionalJson,
   getText,
+  getTextLenient,
+  isLenientHost,
+  performLenientGet,
 } from "../src/core/http.js";
 import { markdownTable } from "../src/core/markdown.js";
 import { SlidingWindowRateLimiter } from "../src/core/rateLimiter.js";
@@ -91,6 +95,114 @@ describe("HTTP helpers", () => {
     ]);
     expect(await getOptionalJson("https://example.test/missing", {}, 1000, fetchFn)).toBeNull();
     await expect(getOptionalJson("https://example.test/broken", {}, 1000, fetchFn)).rejects.toBeInstanceOf(HttpError);
+  });
+});
+
+// The lenient node:https path (issue #42) exists because BaFin's portal emits
+// an obsolete line-folded `Permissions-Policy` header that undici's fetch
+// rejects. That obs-fold behaviour cannot be reproduced through the injected
+// fetch stub, so these tests cover the routing/scoping and error-shape contract
+// against a real local node server instead.
+describe("lenient HTTP path (issue #42)", () => {
+  interface LocalServer {
+    origin: string;
+    close: () => Promise<void>;
+  }
+
+  async function startServer(
+    handler: (req: IncomingMessage, res: ServerResponse) => void,
+  ): Promise<LocalServer> {
+    const server = createServer(handler);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    return {
+      origin: `http://127.0.0.1:${port}`,
+      close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    };
+  }
+
+  test("isLenientHost gates strictly on the BaFin portal host", () => {
+    expect(isLenientHost("https://portal.mvp.bafin.de/database/AnteileInfo/suche.do")).toBe(true);
+    expect(isLenientHost("https://example.test/whatever")).toBe(false);
+    // A look-alike host must not match.
+    expect(isLenientHost("https://portal.mvp.bafin.de.evil.test/x")).toBe(false);
+    expect(isLenientHost("not a url")).toBe(false);
+  });
+
+  test("getTextLenient refuses a non-allowlisted host before opening a socket", async () => {
+    // No server is listening on example.test; if the gate leaked, this would be
+    // a DNS/connect error rather than the allowlist HttpError below.
+    await expect(getTextLenient("https://example.test/anything", {}, 500))
+      .rejects.toBeInstanceOf(HttpError);
+    await expect(getTextLenient("https://example.test/anything", {}, 500))
+      .rejects.toThrow(/non-allowlisted host/i);
+  });
+
+  test("performLenientGet reads and UTF-8 decodes a 2xx body", async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html" });
+      // Non-ASCII German bytes must round-trip as UTF-8 (BaFin serves UTF-8).
+      res.end("<html>Geschäftsführung – Müller & Söhne</html>");
+    });
+    try {
+      const body = await performLenientGet(`${server.origin}/page`, {}, 2000);
+      expect(body).toContain("Geschäftsführung – Müller & Söhne");
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("performLenientGet throws HttpError with the status on a non-2xx response", async () => {
+    const server = await startServer((_req, res) => {
+      res.writeHead(503, {});
+      res.end("upstream down");
+    });
+    try {
+      const error = await performLenientGet(`${server.origin}/boom`, {}, 2000).catch((e) => e);
+      expect(error).toBeInstanceOf(HttpError);
+      expect((error as HttpError).status).toBe(503);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("performLenientGet respects the timeout when the server never responds", async () => {
+    const server = await startServer(() => {
+      // Intentionally never write a response — force the client-side timeout.
+    });
+    try {
+      const error = await performLenientGet(`${server.origin}/hang`, {}, 150).catch((e) => e);
+      expect(error).toBeInstanceOf(HttpError);
+      expect((error as HttpError).message).toMatch(/timed out/i);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test("performLenientGet follows a same-origin redirect but refuses a cross-origin one", async () => {
+    const server = await startServer((req, res) => {
+      if (req.url === "/start") {
+        res.writeHead(302, { location: "/final" });
+        res.end();
+        return;
+      }
+      if (req.url === "/cross") {
+        res.writeHead(302, { location: "https://example.test/elsewhere" });
+        res.end();
+        return;
+      }
+      res.writeHead(200, {});
+      res.end("landed");
+    });
+    try {
+      expect(await performLenientGet(`${server.origin}/start`, {}, 2000)).toBe("landed");
+      const error = await performLenientGet(`${server.origin}/cross`, {}, 2000).catch((e) => e);
+      expect(error).toBeInstanceOf(HttpError);
+      expect((error as HttpError).message).toMatch(/cross-origin/i);
+    } finally {
+      await server.close();
+    }
   });
 });
 

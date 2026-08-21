@@ -57,10 +57,23 @@ declare module "node:os" {
   export function tmpdir(): string;
 }
 
+// Minimal Buffer surface (a Uint8Array subclass at runtime) for the raw
+// node:http/https client path; @types/node is intentionally not a dependency.
+interface Buffer extends Uint8Array {}
+declare const Buffer: {
+  concat(list: readonly Uint8Array[]): Buffer;
+};
+
 declare module "node:http" {
   export interface IncomingMessage {
     url?: string;
     method?: string;
+    statusCode?: number;
+    statusMessage?: string;
+    headers: Record<string, string | string[] | undefined>;
+    on(event: "data", listener: (chunk: Buffer) => void): this;
+    on(event: "end", listener: () => void): this;
+    on(event: "error", listener: (error: Error) => void): this;
     on(event: string, listener: (...args: unknown[]) => void): this;
   }
   export interface ServerResponse {
@@ -79,4 +92,33 @@ declare module "node:http" {
   export function createServer(
     requestListener: (req: IncomingMessage, res: ServerResponse) => void,
   ): Server;
+  export interface ClientRequestOptions {
+    method?: string;
+    headers?: Record<string, string>;
+    insecureHTTPParser?: boolean;
+  }
+  export interface ClientRequest {
+    on(event: "error", listener: (error: Error) => void): this;
+    on(event: string, listener: (...args: unknown[]) => void): this;
+    destroy(error?: Error): void;
+    end(): void;
+  }
+  export function request(
+    url: string,
+    options: ClientRequestOptions,
+    callback: (res: IncomingMessage) => void,
+  ): ClientRequest;
+}
+
+declare module "node:https" {
+  import type {
+    ClientRequest,
+    ClientRequestOptions,
+    IncomingMessage,
+  } from "node:http";
+  export function request(
+    url: string,
+    options: ClientRequestOptions,
+    callback: (res: IncomingMessage) => void,
+  ): ClientRequest;
 }

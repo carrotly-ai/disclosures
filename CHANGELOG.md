@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Fixed
+
+- **DE (BaFin) is fetchable again under the built server's default `fetch`** (closes #42). BaFin's portal emits an obsolete RFC 7230 line-folded (obs-fold) `Permissions-Policy` response header; undici's global `fetch` rejects the whole response with `Invalid header value char` on every current Node runtime (18/20/22), even though `curl` tolerates it. This silently broke all DE intents (`CompanyResolve`/`CompanyOwners`/`CompanyInsiders`/`PersonAppointments`) unless the caller injected a lenient `fetchFn`. New zero-dependency lenient GET helper in `src/core/http.ts` (`getTextLenient`, engine `performLenientGet`) issues a raw `node:https`/`node:http` request with Node's documented `insecureHTTPParser: true` escape hatch, mirroring `getText`'s timeout/`HttpError` contract and following a small budget of same-origin redirects. It is gated behind an explicit host allowlist (`portal.mvp.bafin.de`) so the lenient parser can never become a general-purpose path, and it is used by `src/adapters/bafin.ts` **only when no `fetchFn` is injected** — an injected stub (how the offline suite fetches) always wins unchanged. Bodies decode as UTF-8, matching the previous fetch path. The live DE E2E case now **asserts** (Siemens resolution through BaFin under the built server's default fetch) instead of tolerant-skipping; CN/IN keep their anti-bot tolerant-skip. New offline coverage exercises the real node path (2xx UTF-8 decode, non-2xx `HttpError`, timeout, same-origin vs refused cross-origin redirect) and the allowlist/injection scoping.
+
 ## 0.5.0 - 2026-08-21
 
 Document content becomes readable: zero-dependency PDF text-layer extraction turns the PDF-only jurisdictions (FR, HK, JP) from save-a-file into read-the-filing, and the live E2E suite now exercises the full 13-jurisdiction surface. All changes backward-compatible and additive.
