@@ -26,7 +26,7 @@ configuration, and library API, see the top-level [README](../../README.md).
 | `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
 | `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — |
 | `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | ⚠️ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | — | ⚠️ | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
 | `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — |
 | `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — |
@@ -52,6 +52,15 @@ else Interim). Standard issuers extract cleanly (verified live: China Mobile in 
 USD, Tencent in RMB); complex segment-split or multi-column statements parse partially, and a
 page shortfall or missing statement **degrades to the PDF link** rather than serve uncertain
 numbers. Latest announcement only — no historical series. See [HK.md](HK.md).
+
+CN `CompanyFinancials` is **bounded/best-effort**: there is no keyless structured-XBRL feed, so
+headline figures (revenue, profit, total assets, net assets) are extracted from the **主要会计数据
+key-data table** of the issuer's **latest periodic-report PDF** (年度报告, else the newest
+interim/quarterly) and normalized to whole RMB from the unit the report declares (元/千元/万元/百万元).
+Verified live on a 10-issuer corpus spanning main board, ChiNext, STAR, a bank (千元) and an
+insurer (百万元 — recovered by the object-stream extractor upgrade). A mojibake report (page/font
+objects in an unreadable object stream), an over-cap PDF, or a missing key-data table **degrades
+to the PDF link**. Latest report only — no history. See [CN.md](CN.md).
 
 `CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
 accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no
