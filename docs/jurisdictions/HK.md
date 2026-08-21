@@ -30,7 +30,7 @@ requires (for Tencent: code `00700` → `stockId` `7609`, which is *not* the pub
 | `CompanyFilings` | Date-filterable title-search feed with direct PDF links; `mode "latest_annual"` filters the Annual Report category (t1code 40000 / t2code 40100). |
 | `CompanyDocument` | Fetches a filing's PDF by its `FILE_LINK` path (`metadata` for type + size via a HEAD request, `pdf` to download; `xhtml` returns **best-effort text-layer extraction from the PDF**, fenced as untrusted and paged via `text_offset` — bilingual EN/中文 text is decoded via each font's `/ToUnicode` CMap; scanned/image PDFs are reported honestly with no text). |
 | `CompanyInsiders` | Unsupported — no Section 16-equivalent feed; the DI directors'-interests register is captcha-walled and `dirsearch` is session/anti-CSRF-gated HTML. |
-| `CompanyOwners` | Unsupported — substantial-shareholder holdings sit behind the SFO Part XV Disclosure of Interests (DI) system (`di.hkex.com.hk` / `sdinotice.hkex.com.hk`), an ASP.NET WebForms + login-captcha wall with no keyless feed. |
+| `CompanyOwners` | **Partial** — the keyless CCASS shareholding search (`www3.hkexnews.hk/sdw/search/searchsdw.aspx`) returns participant/**custodian**-level holdings (custodian banks, brokers, HKSCC Nominees, CSDC). These are **not** beneficial owners; the SFO Part XV Disclosure of Interests (DI) register (`di.hkex.com.hk` / `sdinotice.hkex.com.hk`) is captcha-walled and linked for manual lookup. See below. |
 | `CompanyFinancials` | Unsupported — figures live only inside annual-report PDFs; there is no structured XBRL financial feed. |
 | `PrivateRaises` | Unsupported — no Form D-equivalent dataset. |
 | `OwnershipChain` | Global GLEIF — see the [index](README.md). |
@@ -55,6 +55,31 @@ English/Traditional-Chinese text layer round-trips. It is a **text-layer extract
 renderer** — table/column layout is not preserved — and a scanned/image PDF (or one whose
 fonts carry no `/ToUnicode` map) is surfaced as an honest "no reliable text layer" note.
 
+## `CompanyOwners` — CCASS participant/custodian snapshot (partial)
+
+`CompanyOwners` for HK reads the **CCASS Shareholding Search**
+(`www3.hkexnews.hk/sdw/search/searchsdw.aspx`), a keyless ASP.NET WebForms page with **no
+captcha, no login, no token**. The adapter resolves the issuer to its SEHK stock code, GETs the
+page to read the `__VIEWSTATE` / `__VIEWSTATEGENERATOR` hidden fields, then POSTs the zero-padded
+5-digit code (`__EVENTTARGET=btnSearch`, plus the pre-filled latest shareholding date). It parses
+the participant table (participant ID, name, shares in CCASS, % of issued shares), returns the
+**top N by percentage** (default 20), and adds the CCASS-total summary line and the total issued-
+share base. No session cookie is required (verified live); a Set-Cookie from the GET is echoed
+defensively but is not needed. Rate limited to 30 requests/minute (a polite budget for a form
+endpoint).
+
+**What this is — and isn't.** CCASS shows shareholding at the **CCASS participant** level:
+custodian banks, brokers, HKSCC Nominees, and China's CSDC (for Stock-Connect holdings). It is the
+HK analogue of DTC / "Cede & Co." custodian concentration — **not** the beneficial-owner register.
+The substantial-shareholder / disclosure-of-interests data (SFO Part XV) lives in the DI register,
+which is captcha-walled (`di.hkex.com.hk` → frameset search pages 302 to an error page unless
+entered through the captcha flow; `sdinotice.hkex.com.hk` is hCaptcha + password). The tool output
+carries a prominent caveat to this effect and links the DI register for manual lookup. A large
+custodian holding does **not** identify who beneficially owns those shares. Each row's threshold
+regime is stated as **"HK CCASS participant snapshot (custodian-level)"**.
+
+`CompanyInsiders` remains honestly unsupported for the same DI-wall reason.
+
 ## Licence / redistribution
 
 HKEXnews content is **copyrighted** (not an open-data licence) — the same posture as the
@@ -66,7 +91,10 @@ are used as internal lookups only, never re-published.
 ## Caveats
 
 - Listed SEHK/GEM issuers only; private companies are in the paid Companies Registry.
-- `CompanyFilings` returns real disclosure PDF links; the deeper insider/owner/financial
-  intents degrade honestly rather than scraping captcha- or session-walled sources.
+- `CompanyFilings` returns real disclosure PDF links; the deeper insider/financial intents
+  degrade honestly rather than scraping captcha- or session-walled sources.
+- `CompanyOwners` returns **CCASS participant/custodian** holdings — a partial owners view that
+  is explicitly **not** beneficial ownership. The beneficial-owner (DI) register stays
+  captcha-walled and is linked for manual lookup.
 - Absence in a filings window is not proof a filing does not exist — adjust
   `start_date`/`end_date`.

@@ -25,7 +25,7 @@ configuration, and library API, see the top-level [README](../../README.md).
 | `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
 | `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | — | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | ⚠️ | — |
 | `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | — | — | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
 | `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — |
@@ -38,6 +38,13 @@ configuration, and library API, see the top-level [README](../../README.md).
 FR `CompanyOwners` is **partial**: it returns the *franchissement de seuil*
 threshold-crossing notifications as a linked-PDF list, but the crossing holder and the exact
 percentage live inside each PDF, not in a machine-readable field. See [FR.md](FR.md).
+
+HK `CompanyOwners` is **partial**: it returns the keyless CCASS shareholding search —
+participant/**custodian**-level holdings (custodian banks, brokers, HKSCC Nominees, and China's
+CSDC for Stock-Connect shares), the HK analogue of DTC / "Cede & Co." concentration. These are
+**not** beneficial owners: the SFO Part XV Disclosure of Interests register (the substantial-
+shareholder feed) is captcha-walled, so it is linked for manual lookup rather than parsed. See
+[HK.md](HK.md).
 
 `CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
 accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no

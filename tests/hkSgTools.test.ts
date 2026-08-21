@@ -13,6 +13,35 @@ import {
 import type { ToolResult } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { buildImagePdf, buildSimplePdf } from "./helpers/pdfFixture.js";
+import { loadFixture } from "./helpers/loadFixture.js";
+import type { FetchFn } from "../src/core/types.js";
+
+const ccassSearchPage = loadFixture("ccass", "search-page.html");
+const ccassResult = loadFixture("ccass", "result-00700.html");
+const ccassEmpty = loadFixture("ccass", "result-empty.html");
+
+/**
+ * The CCASS search GET and POST share one URL, so route by method: stock-list
+ * JSON for the resolver, the viewstate page on GET, the result table on POST.
+ */
+function ccassFetch(postBody: string = ccassResult): FetchFn {
+  return (async (url: string, init?: RequestInit) => {
+    if (url.includes("activestock_sehk_e.json")) {
+      return new Response(JSON.stringify(STOCK_LIST), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    if (url.includes("searchsdw.aspx")) {
+      const isPost = (init?.method ?? "GET").toUpperCase() === "POST";
+      return new Response(isPost ? postBody : ccassSearchPage, {
+        status: 200,
+        headers: { "Content-Type": "text/html" },
+      });
+    }
+    throw new Error(`Unexpected request: ${url}`);
+  }) as FetchFn;
+}
 
 function toolByName(tools: ToolDefinition[], name: string): ToolDefinition {
   const tool = tools.find((candidate) => candidate.name === name);
@@ -155,15 +184,47 @@ describe("HK tool dispatch", () => {
     expect(resultText(result)).toContain("no extractable text layer");
   });
 
-  test("CompanyOwners HK explains the DI captcha wall honestly", async () => {
-    const tools = createTools({ fetchFn: routedFetch([]), env: {} });
+  test("CompanyOwners HK returns the CCASS custodian snapshot with a prominent caveat", async () => {
+    const tools = createTools({ fetchFn: ccassFetch(), env: {} });
     const result = await toolByName(tools, "CompanyOwners").handler({
       company: "700",
       jurisdiction: "HK",
     } as never);
     const text = resultText(result);
-    expect(text).toContain("unsupported for jurisdiction \"HK\"");
+    // Resolved issuer + participant rows.
+    expect(text).toContain("CCASS participant holdings: TENCENT (00700)");
+    expect(text).toContain("THE HONGKONG AND SHANGHAI BANKING");
+    expect(text).toContain("32.75%");
+    // Summary line with the CCASS total and issued-share base.
+    expect(text).toContain("77.55%");
+    expect(text).toContain("9,103,125,600");
+    // The prominent caveat: custodian-level, NOT beneficial owners, DI link.
+    expect(text).toContain("NOT beneficial owners");
     expect(text.toLowerCase()).toContain("disclosure of interests");
+    expect(text).toContain("di.hkex.com.hk");
+    expect(text).toContain("HK CCASS participant snapshot (custodian-level)");
+    expect(result.isError).toBeUndefined();
+    // structuredContent rides along via ownersStructured.
+    const structured = result.structuredContent as {
+      owners: Array<{ holderName: string; pct?: number; thresholdRegime: string }>;
+      sourceJurisdiction: string;
+    };
+    expect(structured.sourceJurisdiction).toBe("HK");
+    expect(structured.owners[0]?.holderName).toBe("THE HONGKONG AND SHANGHAI BANKING");
+    expect(structured.owners[0]?.thresholdRegime).toBe(
+      "HK CCASS participant snapshot (custodian-level)",
+    );
+  });
+
+  test("CompanyOwners HK reports an empty CCASS result honestly, still caveated", async () => {
+    const tools = createTools({ fetchFn: ccassFetch(ccassEmpty), env: {} });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "700",
+      jurisdiction: "HK",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("No CCASS participant shareholding");
+    expect(text).toContain("NOT beneficial owners");
     expect(result.isError).toBeUndefined();
   });
 });

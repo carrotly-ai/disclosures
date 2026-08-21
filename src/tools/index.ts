@@ -194,10 +194,18 @@ import {
   getHkexDocumentPdf,
   getLatestHkexAnnualReport,
   HKEXNEWS_DOCUMENT_CONTENT_WARNING,
+  resolveHkexCompany,
   searchHkexCompanies,
   searchHkexFilings,
 } from "../adapters/hkexNews.js";
 import type { HkexDocumentMetadata } from "../adapters/hkexNews.js";
+import {
+  CCASS_OWNERS_CAVEAT,
+  CCASS_SEARCH_URL,
+  CCASS_THRESHOLD_REGIME,
+  getCcassShareholding,
+} from "../adapters/ccass.js";
+import type { CcassParticipant } from "../adapters/ccass.js";
 import {
   ACRA_CAVEAT,
   searchAcraCompanies,
@@ -1069,13 +1077,11 @@ const HKEX_RESOLVE_CAVEAT =
   "name). Private Hong Kong companies live in the paid Companies Registry " +
   "(ICRIS), which is not a free keyless source, so they do not resolve here.";
 
-const HKEX_OWNERS_UNSUPPORTED =
-  "CompanyOwners is unsupported for jurisdiction \"HK\". Substantial-shareholder " +
-  "holdings sit in the SFO Part XV Disclosure of Interests (DI) system " +
-  "(di.hkex.com.hk / sdinotice.hkex.com.hk), which is behind an ASP.NET WebForms " +
-  "wall and a login captcha — no keyless structured feed. Use CompanyFilings " +
-  "with jurisdiction \"HK\" to locate an issuer-side shareholding-change " +
-  "announcement PDF instead.";
+// The SFO Part XV Disclosure of Interests register — the beneficial-owner /
+// substantial-shareholder feed. It is captcha-walled (no keyless structured
+// feed), so CompanyOwners for HK serves the keyless CCASS participant snapshot
+// instead and links the DI register here for manual beneficial-owner lookup.
+const HKEX_DI_REGISTER_URL = "https://di.hkex.com.hk/di/NSSrchMethod.aspx";
 
 const HKEX_INSIDERS_UNSUPPORTED =
   "CompanyInsiders is unsupported for jurisdiction \"HK\". HKEXnews has no " +
@@ -2298,8 +2304,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "register (+ FCA TR-1 when an NSM fetchFn is injected), KR 5% rule, JP " +
       "large-volume holding reports (start_date/end_date bound the JP scan " +
       "window only), TW >10% holders, DE §§33 ff. WpHG voting-rights " +
-      "notifications. Every row states its threshold regime. This reports " +
-      "filed disclosures — not a cap table and not UBO tracing.",
+      "notifications. Explicit HK returns a CCASS participant/custodian " +
+      "shareholding snapshot (custodian banks, brokers, HKSCC Nominees, CSDC) — " +
+      "NOT beneficial owners; the SFO Part XV disclosure-of-interests register " +
+      "is captcha-walled and linked for manual lookup. Every row states its " +
+      "threshold regime. This reports filed disclosures — not a cap table and " +
+      "not UBO tracing.",
     {
       ...companyInput,
       start_date: z
@@ -2342,10 +2352,79 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         ));
       }
       if (jurisdiction === "HK") {
-        return textResult(joinSections(
-          HKEX_OWNERS_UNSUPPORTED,
-          "_Absence of a result here is not evidence that no large holder exists._",
-        ));
+        try {
+          const entity = await resolveHkexCompany(company, options);
+          if (!entity) {
+            return textResult(joinSections(
+              `No listed HK issuer resolved for "${company}" (CompanyOwners for ` +
+                `HK reads the CCASS shareholding search, which is keyed by SEHK ` +
+                `stock code). ${HKEX_RESOLVE_CAVEAT}`,
+              `_${CCASS_OWNERS_CAVEAT}_`,
+            ));
+          }
+          const ccass = await getCcassShareholding(entity.stockCode, {}, options);
+          const diLink = link("HK DI register (manual lookup)", HKEX_DI_REGISTER_URL);
+          if (!ccass.participants.length) {
+            return textResult(joinSections(
+              `# CCASS participant holdings: ${entity.legalName} (${entity.stockCode})`,
+              `No CCASS participant shareholding was returned for stock code ` +
+                `${ccass.stockCode}${ccass.shareholdingDate ? ` at ${ccass.shareholdingDate}` : ""}.`,
+              `> **These are custodian/participant holdings, not beneficial owners.** ` +
+                `${CCASS_OWNERS_CAVEAT} ${diLink}.`,
+              `_Threshold regime: ${CCASS_THRESHOLD_REGIME}._`,
+              "_Absence of a result here is not evidence that no large holder exists._",
+            ));
+          }
+          const isoDate = ccass.shareholdingDate.replace(/\//g, "-");
+          const ownerRecords: OwnerRecord[] = ccass.participants.map((p: CcassParticipant) => ({
+            holderName: p.name,
+            holderType: p.participantId
+              ? `CCASS participant (${p.participantId})`
+              : "CCASS Consenting Investor Participant",
+            pct: p.pct,
+            thresholdRegime: CCASS_THRESHOLD_REGIME,
+            form: "CCASS participant shareholding snapshot",
+            filedDate: isoDate,
+            ...(p.participantId ? { accession: p.participantId } : {}),
+            sourceUrl: ccass.sourceUrl,
+            source: "HKEXnews" as const,
+          }));
+          const totalRow = ccass.summary.find((row) => /^total$/i.test(row.category));
+          const summaryLine = totalRow
+            ? `CCASS holds **${totalRow.pct}%** of issued shares across ` +
+              `${totalRow.participants.toLocaleString("en-US")} participants` +
+              (ccass.totalIssuedShares
+                ? ` (of ${ccass.totalIssuedShares.toLocaleString("en-US")} issued shares` +
+                  "/warrants/units)"
+                : "") +
+              "."
+            : undefined;
+          return textResult(joinSections(
+            `# CCASS participant holdings: ${entity.legalName} (${entity.stockCode})`,
+            `> **Custodian-level snapshot, NOT beneficial owners.** ` +
+              `${CCASS_OWNERS_CAVEAT} ${diLink}.`,
+            `Shareholding date: ${ccass.shareholdingDate || "latest available"}. ` +
+              `Top ${ccass.participants.length} of ${ccass.totalParticipants} ` +
+              "participants by percentage of issued shares.",
+            markdownTable(
+              ["Participant", "Participant ID", "Shares in CCASS", "% of issued", "Threshold regime"],
+              ccass.participants.map((p) => [
+                p.name,
+                p.participantId ?? "—",
+                p.shareholding.toLocaleString("en-US"),
+                `${p.pct}%`,
+                CCASS_THRESHOLD_REGIME,
+              ]),
+            ),
+            summaryLine,
+            `_Threshold regime: ${CCASS_THRESHOLD_REGIME}._`,
+            "_Filing-based custodian snapshot only — not a share register, not " +
+              "beneficial-owner or UBO tracing. Beneficial ownership (SFO Part XV " +
+              "disclosure of interests) is captcha-walled; use the DI register link above._",
+          ), ownersStructured(ownerRecords, "HK"));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "SG") {
         return textResult(joinSections(

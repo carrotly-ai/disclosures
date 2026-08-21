@@ -184,6 +184,13 @@ export const rechercheEntreprisesRateLimiter = new SlidingWindowRateLimiter(7, 1
 // abuse still trips it.
 export const hkexNewsRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
 
+// HKEXnews CCASS Shareholding Search (www3.hkexnews.hk/sdw). A keyless ASP.NET
+// WebForms page: one lookup issues a GET (for the viewstate) plus a single POST.
+// It is a stateful form endpoint, so keep a deliberately modest budget — be
+// polite to the form host — that never self-trips on one bounded lookup while
+// cross-call abuse still trips it.
+export const ccassRateLimiter = new SlidingWindowRateLimiter(30, 60_000);
+
 // Singapore ACRA on data.gov.sg (datastore_search). Keyless CKAN API, no
 // documented limit. One resolve issues at most a consolidated UEN lookup plus a
 // letter-split fetch, so keep a modest budget that never self-trips on one
@@ -206,5 +213,6 @@ export function resetRateLimiters(): void {
   infoFinanciereRateLimiter.reset();
   rechercheEntreprisesRateLimiter.reset();
   hkexNewsRateLimiter.reset();
+  ccassRateLimiter.reset();
   acraRateLimiter.reset();
 }
