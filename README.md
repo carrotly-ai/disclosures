@@ -123,7 +123,7 @@ Restart the client after changing its configuration, then try:
 | `CompanyFilings` | "What has it filed?" — dates, types, descriptions, direct source links; a latest annual/quarterly report mode, plus a GB insolvency-history mode. | US, GB, EU (ESEF/UKSEF annual reports), KR, JP, CN, IN, TW, BR, FR (info-financiere OAM) |
 | `CompanyInsiders` | "Who runs it?" — directors, officers, titles, and 10%+ owners from insider registers. | US, GB (incl. ECCTA identity status), KR, TW, DE (MAR Art. 19) |
 | `CompanyOwners` | "Who owns it?" — major-shareholder filers with thresholds, dates, and filing links. | US (13D/13G), GB (PSC + TR-1), KR (5% rule), JP (5% rule / 大量保有報告書), TW (>10%), DE (§§33 ff. WpHG), FR (franchissement de seuil — best-effort extraction from the newest notification PDFs, else link-only), HK (CCASS participant/custodian snapshot — partial; not beneficial owners) |
-| `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, JP (EDINET XBRL), TW (latest-period general-industry statements, NT$), BR |
+| `CompanyFinancials` | "What are its numbers?" — annual as-filed revenue, income, balance sheet, EPS, cash flow by fiscal period. | US (XBRL), GB/EU (ESEF/UKSEF IFRS), KR, JP (EDINET XBRL), TW (latest-period general-industry statements, NT$), BR, HK (headline figures extracted from the latest results-announcement PDF — bounded) |
 | `OwnershipChain` | "Who consolidates it?" — GLEIF direct/ultimate accounting-consolidation parents and children. | 🌐 Global (any LEI or legal name) |
 | `PrivateRaises` | "Has it raised privately?" — Form D exempt offerings, amounts, investor counts, named related persons. | US only in v1 |
 | `CompanyDocument` | "What does the filing actually say?" — fetches a filed document's content: extracted iXBRL/HTML/DART-XML text or the source PDF saved to disk (image-only / pre-inline / XBRL-archive / PDF-only filings are reported honestly, never faked). | GB (Companies House), US (SEC EDGAR), JP (EDINET), KR (OpenDART), FR (info-financiere OAM) |
@@ -142,11 +142,11 @@ Every `company` input accepts a **name or a local identifier** — ticker, CIK, 
 | `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
 | `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — |
 | `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | ⚠️ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | — | — | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | — | ⚠️ | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 global via GLEIF — jurisdiction-independent |
 
-✅ supported · ⚠️ partial (FR `CompanyOwners`: threshold-crossing notifications with a best-effort structured extraction — holder, direction, threshold(s) and resulting % parsed from the notification PDF's text layer for the newest few; scanned/non-standard PDFs and older notifications stay a link-only list · HK `CompanyOwners`: the keyless CCASS shareholding search returns participant/**custodian**-level holdings (custodian banks, brokers, HKSCC Nominees, CSDC) — **not** beneficial owners; the SFO Part XV Disclosure of Interests register is captcha-walled and linked for manual lookup) · — returns an honest unsupported-jurisdiction explanation, never an empty or fabricated result
+✅ supported · ⚠️ partial (FR `CompanyOwners`: threshold-crossing notifications with a best-effort structured extraction — holder, direction, threshold(s) and resulting % parsed from the notification PDF's text layer for the newest few; scanned/non-standard PDFs and older notifications stay a link-only list · HK `CompanyOwners`: the keyless CCASS shareholding search returns participant/**custodian**-level holdings (custodian banks, brokers, HKSCC Nominees, CSDC) — **not** beneficial owners; the SFO Part XV Disclosure of Interests register is captcha-walled and linked for manual lookup · HK `CompanyFinancials`: headline figures extracted from the issuer's latest results-announcement PDF, latest announcement only — standard issuers extract cleanly, complex segment-split/multi-column statements parse partially, and a page shortfall or missing statement degrades to the PDF link) · — returns an honest unsupported-jurisdiction explanation, never an empty or fabricated result
 
 Each jurisdiction has a full reference page — data source, credentials, accepted identifiers, per-intent behavior, and caveats — under [`docs/jurisdictions/`](docs/jurisdictions/README.md).
 
@@ -170,7 +170,7 @@ US and global lookups work with just the User-Agent. Non-US sources are keyless 
 | [BaFin](https://www.bafin.de/) AnteileInfo + DealingsInfo | `DE` | None | Resolution, §§33 ff. WpHG major holdings, Art. 19 MAR directors' dealings. |
 | [info-financiere.gouv.fr](https://info-financiere.gouv.fr/) (OAM) | `FR` | None | Regulated-filing index with direct PDFs, threshold-crossing notifications, filed documents. |
 | [recherche-entreprises](https://recherche-entreprises.api.gouv.fr/) | `FR` | None | Resolution (SIREN), officers (dirigeants), person→companies. |
-| [HKEXnews](https://www.hkexnews.hk/) | `HK` | None | Resolution, title-search filings with keyless PDFs, `CompanyDocument` by `FILE_LINK` path. |
+| [HKEXnews](https://www.hkexnews.hk/) | `HK` | None | Resolution, title-search filings with keyless PDFs, `CompanyDocument` by `FILE_LINK` path, `CompanyFinancials` (headline figures from the latest results-announcement PDF — bounded). |
 | [ACRA](https://data.gov.sg/) (data.gov.sg) | `SG` | None | Resolution only — UEN, status, incorporation date, former names, auditors (Singapore Open Data Licence). |
 
 ```bash

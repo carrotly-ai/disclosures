@@ -26,7 +26,7 @@ configuration, and library API, see the top-level [README](../../README.md).
 | `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
 | `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — |
 | `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | ⚠️ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | — | — | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | — | — | ✅ | ✅ | — | — | ⚠️ | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
 | `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — |
 | `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — |
@@ -45,6 +45,13 @@ CSDC for Stock-Connect shares), the HK analogue of DTC / "Cede & Co." concentrat
 **not** beneficial owners: the SFO Part XV Disclosure of Interests register (the substantial-
 shareholder feed) is captcha-walled, so it is linked for manual lookup rather than parsed. See
 [HK.md](HK.md).
+
+HK `CompanyFinancials` is **bounded/best-effort**: there is no structured-XBRL feed, so
+headline figures are extracted from the issuer's **latest results-announcement PDF** (Final,
+else Interim). Standard issuers extract cleanly (verified live: China Mobile in RMB, HSBC in
+USD, Tencent in RMB); complex segment-split or multi-column statements parse partially, and a
+page shortfall or missing statement **degrades to the PDF link** rather than serve uncertain
+numbers. Latest announcement only — no historical series. See [HK.md](HK.md).
 
 `CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
 accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no

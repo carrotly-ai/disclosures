@@ -3,8 +3,9 @@ import { rankEntities } from "../core/entityMatching.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
 import { getBinary, getText, HttpError } from "../core/http.js";
 import { asArray, asRecord, asString, countPdfPages } from "../core/parsing.js";
+import { extractPdfText } from "../core/pdfText.js";
 import { hkexNewsRateLimiter } from "../core/rateLimiter.js";
-import type { AdapterOptions, Entity, Filing } from "../core/types.js";
+import type { AdapterOptions, Entity, Filing, FinancialFact } from "../core/types.js";
 
 // HKEXnews is the official electronic-disclosure portal for every Hong Kong
 // listed issuer (SEHK Main Board + GEM). Its Title Search front-end is driven by
@@ -45,6 +46,16 @@ export const HKEXNEWS_TIER_ONE: Record<string, string> = {
 // (t1code 40000) as the "Annual Report" sub-category (t2code 40100, verified).
 export const HKEXNEWS_ANNUAL_T1CODE = "40000";
 export const HKEXNEWS_ANNUAL_T2CODE = "40100";
+
+// Results announcements live under "Announcements and Notices" (t1code 10000),
+// sub-category group t2Gcode 3, as "Final Results" (t2code 13300, annual) and
+// "Interim Results" (t2code 13400). Verified live from tiertwo_e.json. These are
+// the standardized results PDFs whose consolidated income statement + balance
+// sheet the financials extractor parses.
+export const HKEXNEWS_RESULTS_T1CODE = "10000";
+export const HKEXNEWS_RESULTS_T2GCODE = "3";
+export const HKEXNEWS_FINAL_RESULTS_T2CODE = "13300";
+export const HKEXNEWS_INTERIM_RESULTS_T2CODE = "13400";
 
 export const HKEXNEWS_RATE_LIMIT_MESSAGE =
   "HKEXnews request limit reached. Please retry later.";
@@ -316,6 +327,7 @@ interface HkexServletParams {
   fromDate?: string;
   toDate?: string;
   t1code?: string;
+  t2Gcode?: string;
   t2code?: string;
   rowRange: number;
 }
@@ -334,7 +346,7 @@ function buildServletUrl(params: HkexServletParams): string {
   search.set("title", "");
   search.set("searchType", "0");
   search.set("t1code", params.t1code ?? "-2");
-  search.set("t2Gcode", "-2");
+  search.set("t2Gcode", params.t2Gcode ?? "-2");
   search.set("t2code", params.t2code ?? "-2");
   search.set("rowRange", String(params.rowRange));
   search.set("lang", "E");
@@ -441,6 +453,414 @@ export async function getLatestHkexAnnualReport(
     filings.sort((left, right) => right.filedDate.localeCompare(left.filedDate))[0] ??
     null
   );
+}
+
+// --- Results announcements + financials (CompanyFinancials) ----------------
+//
+// HK issuers have no keyless structured-XBRL financial feed, but their
+// standardized Results Announcement PDFs carry the consolidated income statement
+// and balance sheet in a form the shipped `pdfText.ts` extractor recovers with
+// labels adjacent to figures. This is a bounded "latest results announcement
+// figures" mode: it anchors on canonical HKFRS/IFRS labels, takes the first
+// (current-period) figure column, normalizes the declared unit (HK$/RMB/US$,
+// thousands or millions) to whole currency units, and — critically — degrades to
+// a link only when the page-shortfall guard fires (statements locked in an
+// ObjStm the extractor still cannot reach) or no statement is found. It never
+// emits a figure whose unit it could not determine.
+
+export type HkexResultType = "Final" | "Interim";
+
+export interface HkexResultsAnnouncement {
+  filing: Filing;
+  resultType: HkexResultType;
+}
+
+/**
+ * The issuer's newest results announcement: Final Results (annual, t2code 13300)
+ * preferred, else Interim Results (t2code 13400). These are the standardized
+ * results PDFs the financials parser reads.
+ */
+export async function getLatestHkexResultsAnnouncement(
+  company: string,
+  options: AdapterOptions = {},
+): Promise<HkexResultsAnnouncement | null> {
+  const entity = await resolveHkexEntity(company, options);
+  const { fromDate, toDate } = defaultWindow(undefined, undefined);
+  const attempts: ReadonlyArray<readonly [string, HkexResultType]> = [
+    [HKEXNEWS_FINAL_RESULTS_T2CODE, "Final"],
+    [HKEXNEWS_INTERIM_RESULTS_T2CODE, "Interim"],
+  ];
+  for (const [t2code, resultType] of attempts) {
+    const filings = await fetchHkexFilings(
+      {
+        stockId: entity.hkexStockId,
+        fromDate,
+        toDate,
+        t1code: HKEXNEWS_RESULTS_T1CODE,
+        t2Gcode: HKEXNEWS_RESULTS_T2GCODE,
+        t2code,
+        rowRange: 5,
+      },
+      options,
+    );
+    const latest = filings.sort((l, r) => r.filedDate.localeCompare(l.filedDate))[0];
+    if (latest) return { filing: latest, resultType };
+  }
+  return null;
+}
+
+interface HkexLabelPattern {
+  /** Lowercased line-start prefix. */
+  prefix: string;
+  /** Human label used when this prefix is the one that matched. */
+  label: string;
+}
+
+interface HkexConceptSpec {
+  concept: string;
+  /** Label patterns tried in priority order (most-preferred wording first). */
+  patterns: readonly HkexLabelPattern[];
+}
+
+/**
+ * Canonical concepts and their HK label lexicon. Patterns are tried in priority
+ * order — the most specific / most-preferred wording first — so, e.g., net
+ * profit prefers "profit attributable to owners of the Company" over the
+ * whole-group "profit for the year" (and the label carried in the output states
+ * which one actually matched), and total equity prefers the standalone "Total
+ * equity" total over the "attributable to owners" subtotal (rejected
+ * structurally: a letter, not a figure, follows the shorter label). REIT and
+ * HK-property variants are folded in as lower-priority fallbacks.
+ */
+export const HKEXNEWS_FINANCIAL_CONCEPTS: readonly HkexConceptSpec[] = [
+  {
+    concept: "revenue",
+    patterns: [
+      { prefix: "total revenue", label: "Revenue" },
+      { prefix: "revenue from operations", label: "Revenue" },
+      { prefix: "turnover", label: "Turnover" },
+      { prefix: "revenue", label: "Revenue" },
+    ],
+  },
+  {
+    concept: "operating_profit",
+    patterns: [
+      { prefix: "profit from operations", label: "Profit from operations" },
+      { prefix: "operating profit", label: "Operating profit" },
+      { prefix: "profit from operating activities", label: "Profit from operating activities" },
+    ],
+  },
+  {
+    concept: "profit_before_tax",
+    patterns: [
+      { prefix: "profit before taxation", label: "Profit before taxation" },
+      { prefix: "profit before tax", label: "Profit before taxation" },
+      { prefix: "profit before income tax", label: "Profit before taxation" },
+    ],
+  },
+  {
+    concept: "net_profit",
+    patterns: [
+      { prefix: "profit attributable to owners of the company", label: "Profit attributable to owners of the Company" },
+      { prefix: "profit attributable to equity shareholders of the company", label: "Profit attributable to equity shareholders of the Company" },
+      { prefix: "profit attributable to shareholders of the company", label: "Profit attributable to shareholders of the Company" },
+      { prefix: "profit attributable to equity holders of the company", label: "Profit attributable to equity holders of the Company" },
+      { prefix: "profit attributable to owners of the parent", label: "Profit attributable to owners of the parent" },
+      { prefix: "profit for the year", label: "Profit for the year" },
+      { prefix: "profit for the period", label: "Profit for the period" },
+    ],
+  },
+  {
+    concept: "total_assets",
+    patterns: [{ prefix: "total assets", label: "Total assets" }],
+  },
+  {
+    concept: "total_equity",
+    patterns: [
+      { prefix: "total equity", label: "Total equity" },
+      { prefix: "net assets attributable to unitholders", label: "Net assets attributable to unitholders" },
+      { prefix: "net assets attributable to holders of units", label: "Net assets attributable to holders of units" },
+      { prefix: "total equity attributable to owners of the company", label: "Total equity attributable to owners of the Company" },
+      { prefix: "total equity attributable to equity shareholders of the company", label: "Total equity attributable to equity shareholders of the Company" },
+    ],
+  },
+];
+
+export const HKEXNEWS_FINANCIAL_CONCEPT_NAMES = HKEXNEWS_FINANCIAL_CONCEPTS.map(
+  (spec) => spec.concept,
+);
+
+// A figure in these statements is always thousands-grouped (e.g. 895,530), so
+// requiring a grouping comma skips note-reference integers ("Taxation 10 ...")
+// and per-share decimals that would otherwise be mistaken for the value.
+const HKEX_GROUPED_NUMBER = /\(?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?/;
+const HKEX_GROUPED_NUMBER_AT_START = /^\(?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?/;
+
+function parseHkexNumber(token: string): number | undefined {
+  const negative = /^\(.*\)$/.test(token.trim());
+  const digits = token.replace(/[(),\s]/g, "");
+  if (!/^\d+(?:\.\d+)?$/.test(digits)) return undefined;
+  const value = Number.parseFloat(digits);
+  if (!Number.isFinite(value)) return undefined;
+  return negative ? -value : value;
+}
+
+/**
+ * Find one concept's current-period figure. Scans the label patterns in priority
+ * order; for each, finds a line that starts with the prefix and is not merely a
+ * longer line item (a letter following the prefix means a different label). The
+ * figure may sit on the same line (label then columns — take the first) or on
+ * the following lines (a label-only row, one figure per line). Returns the
+ * value together with the pattern's label so the output states which line item
+ * actually matched.
+ */
+function extractConceptValue(
+  lines: readonly string[],
+  patterns: readonly HkexLabelPattern[],
+): { value: number; label: string } | undefined {
+  for (const pattern of patterns) {
+    for (let i = 0; i < lines.length; i += 1) {
+      const trimmed = (lines[i] ?? "").trim();
+      if (!trimmed.toLowerCase().startsWith(pattern.prefix)) continue;
+      const rest = trimmed.slice(pattern.prefix.length).replace(/^\s+/, "");
+      // A longer label (e.g. "Total equity attributable ...") is a different row.
+      if (rest && /^[A-Za-z]/.test(rest)) continue;
+      const sameLine = rest.match(HKEX_GROUPED_NUMBER);
+      if (sameLine) {
+        const value = parseHkexNumber(sameLine[0]);
+        if (value !== undefined) return { value, label: pattern.label };
+      }
+      if (rest === "" || !sameLine) {
+        for (let j = i + 1; j < Math.min(lines.length, i + 6); j += 1) {
+          const next = (lines[j] ?? "").trim();
+          if (!next) continue;
+          const lead = next.match(HKEX_GROUPED_NUMBER_AT_START);
+          if (lead) {
+            const value = parseHkexNumber(lead[0]);
+            if (value !== undefined) return { value, label: pattern.label };
+          }
+          if (/^[A-Za-z]/.test(next)) break; // reached the next label with no figure
+        }
+      }
+    }
+  }
+  return undefined;
+}
+
+export interface HkexUnit {
+  /** ISO currency code carried honestly from the filing's declaration. */
+  currency: string;
+  /** Multiplier to whole currency units (1000 for '000, 1e6 for millions). */
+  scale: number;
+}
+
+function scaleFromWindow(window: string): number | undefined {
+  if (/['’]\s*0{3}\b/.test(window) || /\bthousand/i.test(window)) return 1000;
+  if (/\bmillion/i.test(window) || /\$\s*m\b/i.test(window)) return 1_000_000;
+  return undefined;
+}
+
+/**
+ * Determine the statements' unit-of-account from the filing's own declaration.
+ * Real filings phrase this several ways: "(Expressed in Renminbi …)" with a
+ * "Million" column header (China Mobile), "HK$'000" or "HK$ million" (most SEHK
+ * issuers), or an inline "($m)" alongside "US dollars" (HSBC reports in USD).
+ * Currency is carried honestly (HKD / CNY / USD). Returns undefined when neither
+ * currency nor scale can be pinned down, so NO figures are emitted rather than
+ * risk a 1,000× error.
+ */
+export function detectHkexUnit(text: string): HkexUnit | undefined {
+  const has = (re: RegExp): boolean => re.test(text);
+
+  // 1) Explicit "(Expressed in <currency> …)" — read a window for the scale word
+  //    (which may be a "Million" / "'000" column header a little further on).
+  const expressed = text.match(
+    /expressed in\s+(renminbi|rmb|hong ?kong dollars?|us dollars?|united states dollars?|hk\$|us\$)/i,
+  );
+  if (expressed && expressed.index !== undefined) {
+    const token = expressed[1] ?? "";
+    const currency = /renminbi|rmb/i.test(token)
+      ? "CNY"
+      : /us|united states/i.test(token)
+        ? "USD"
+        : "HKD";
+    const scale = scaleFromWindow(text.slice(expressed.index, expressed.index + 300));
+    if (scale) return { currency, scale };
+  }
+
+  // 2) Currency-symbol + scale tokens.
+  if (has(/RMB\s*['’]?\s*0{3}/i)) return { currency: "CNY", scale: 1000 };
+  if (has(/(?:HK\$|HKD)\s*['’]?\s*0{3}/i)) return { currency: "HKD", scale: 1000 };
+  if (has(/(?:US\$|USD)\s*['’]?\s*0{3}/i)) return { currency: "USD", scale: 1000 };
+  if (has(/RMB[^A-Za-z0-9]{0,4}million/i) || has(/in millions of\s+renminbi/i)) {
+    return { currency: "CNY", scale: 1_000_000 };
+  }
+  if (has(/(?:HK\$|HKD)[^A-Za-z0-9]{0,4}million/i) || has(/in millions of\s+hong kong dollars/i)) {
+    return { currency: "HKD", scale: 1_000_000 };
+  }
+  if (has(/(?:US\$|USD)[^A-Za-z0-9]{0,4}million/i) || has(/US\$\s*m\b/i) || has(/in millions of\s+US dollars/i)) {
+    return { currency: "USD", scale: 1_000_000 };
+  }
+  // 3) An inline "($m)" is ambiguous — accept only when US dollars are referenced.
+  if (has(/\(\s*\$m\s*\)/i) && has(/US dollar/i)) {
+    return { currency: "USD", scale: 1_000_000 };
+  }
+  return undefined;
+}
+
+const HKEX_MONTHS: Record<string, string> = {
+  january: "01", february: "02", march: "03", april: "04",
+  may: "05", june: "06", july: "07", august: "08",
+  september: "09", october: "10", november: "11", december: "12",
+};
+
+/** Parse "for the year ended 31 December 2025" → "2025-12-31" (best effort). */
+export function parseHkexPeriodEnd(text: string): string | undefined {
+  const match = text.match(
+    /(?:year|period|months?|quarter)\s+ended\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/i,
+  );
+  if (!match) return undefined;
+  const day = (match[1] ?? "").padStart(2, "0");
+  const month = HKEX_MONTHS[(match[2] ?? "").toLowerCase()];
+  const year = match[3];
+  if (!month || !year) return undefined;
+  return `${year}-${month}-${day}`;
+}
+
+export interface HkexParsedFinancials {
+  currency: string;
+  scale: number;
+  periodEnd?: string;
+  values: Array<{ concept: string; label: string; value: number }>;
+}
+
+/**
+ * The formal consolidated statements begin at a header like "CONSOLIDATED
+ * STATEMENT OF COMPREHENSIVE INCOME" / "CONSOLIDATED INCOME STATEMENT" /
+ * "CONSOLIDATED STATEMENT OF PROFIT OR LOSS". Anchoring extraction at that point
+ * skips the leading narrative highlights and any fourth-quarter comparison table
+ * (whose figures would otherwise be mistaken for the annual ones), which is what
+ * makes "take the first labelled figure" reliable. Returns the whole text when
+ * no such header is found (e.g. a REIT/property statement of financial position).
+ */
+function statementsRegion(text: string): string {
+  const match = text.match(
+    /consolidated\s+(?:statement\s+of\s+)?(?:comprehensive\s+)?(?:income|profit(?:\s+or\s+loss)?)/i,
+  );
+  return match && match.index !== undefined ? text.slice(match.index) : text;
+}
+
+/**
+ * Parse the canonical concept set out of a results announcement's extracted
+ * text. Returns undefined only when the unit-of-account cannot be determined
+ * (never emit an unscaled figure); an otherwise-empty `values` means no
+ * canonical statement line was matched.
+ */
+export function parseHkexResultsText(text: string): HkexParsedFinancials | undefined {
+  const unit = detectHkexUnit(text);
+  if (!unit) return undefined;
+  const lines = statementsRegion(text).split("\n");
+  const values: Array<{ concept: string; label: string; value: number }> = [];
+  for (const spec of HKEXNEWS_FINANCIAL_CONCEPTS) {
+    const hit = extractConceptValue(lines, spec.patterns);
+    if (!hit) continue;
+    values.push({ concept: spec.concept, label: hit.label, value: hit.value * unit.scale });
+  }
+  const periodEnd = parseHkexPeriodEnd(text);
+  return {
+    currency: unit.currency,
+    scale: unit.scale,
+    ...(periodEnd ? { periodEnd } : {}),
+    values,
+  };
+}
+
+export type HkexFinancialsReason = "no-announcement" | "shortfall" | "no-statements";
+
+export interface HkexFinancialsResult {
+  entity: HkexEntity;
+  announcement: HkexResultsAnnouncement | null;
+  facts: FinancialFact[];
+  currency?: string;
+  periodEnd?: string;
+  declaredPages?: number;
+  extractedPages?: number;
+  reason?: HkexFinancialsReason;
+}
+
+/**
+ * A share of the pages must extract before trusting the parse: below this, the
+ * consolidated statements are presumed locked in an undecodable object stream
+ * (the CK Hutchison class) and the mode degrades to a link only.
+ */
+export const HKEXNEWS_PAGE_SHORTFALL_RATIO = 0.5;
+
+/**
+ * "Latest results announcement figures" for a listed HK issuer: locate the
+ * newest Final (annual) results announcement, else Interim; download its PDF;
+ * extract the text layer; and parse the consolidated income statement + balance
+ * sheet. Degrades honestly — a page shortfall or a missing statement returns no
+ * facts with a `reason`, leaving the caller to serve the link only.
+ */
+export async function getHkexFinancials(
+  company: string,
+  options: AdapterOptions = {},
+): Promise<HkexFinancialsResult> {
+  const entity = await resolveHkexEntity(company, options);
+  const announcement = await getLatestHkexResultsAnnouncement(company, options);
+  if (!announcement || !announcement.filing.accession) {
+    return { entity, announcement: null, facts: [], reason: "no-announcement" };
+  }
+  const pdf = await getHkexDocumentPdf(announcement.filing.accession, options);
+  const extracted = extractPdfText(pdf.bytes);
+  const declaredPages = extracted.declaredPages;
+  const extractedPages = extracted.pagesWithText ?? extracted.pages ?? 0;
+  const base = {
+    entity,
+    announcement,
+    ...(declaredPages !== undefined ? { declaredPages } : {}),
+    extractedPages,
+  };
+
+  if (
+    declaredPages !== undefined &&
+    extractedPages < declaredPages * HKEXNEWS_PAGE_SHORTFALL_RATIO
+  ) {
+    return { ...base, facts: [], reason: "shortfall" };
+  }
+
+  const parsed = parseHkexResultsText(extracted.text);
+  if (!parsed || parsed.values.length === 0) {
+    return { ...base, facts: [], reason: "no-statements" };
+  }
+
+  const periodEnd = parsed.periodEnd ?? announcement.filing.filedDate;
+  const form = `HKEXnews results announcement (${
+    announcement.resultType === "Final" ? "Final Results" : "Interim Results"
+  })`;
+  const facts: FinancialFact[] = parsed.values.map((entry) => ({
+    concept: entry.concept,
+    label: entry.label,
+    periodEnd,
+    value: entry.value,
+    unit: parsed.currency,
+    filedDate: announcement.filing.filedDate,
+    form,
+    sourceUrl: announcement.filing.sourceUrl,
+    source: "HKEXnews",
+    sourceIdentifiers: {
+      stockCode: entity.stockCode,
+      hkexStockId: entity.hkexStockId,
+      jurisdiction: "HK",
+    },
+  }));
+
+  return {
+    ...base,
+    facts,
+    currency: parsed.currency,
+    ...(parsed.periodEnd ? { periodEnd: parsed.periodEnd } : {}),
+  };
 }
 
 // --- Documents (FILE_LINK → keyless PDF) -----------------------------------
@@ -615,5 +1035,6 @@ export function createHkexNewsAdapter(options: AdapterOptions = {}) {
     searchEntities: (query: string) => searchHkexCompanies(query, options),
     searchFilings: (input: string | HkexFilingSearchParams) =>
       searchHkexFilings(input, options),
+    getFinancials: (company: string) => getHkexFinancials(company, options),
   };
 }
