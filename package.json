@@ -1,6 +1,6 @@
 {
   "name": "disclosures",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "mcpName": "io.github.carrotly-ai/disclosures",
   "description": "Corporate-disclosure research across 12 official sources (SEC EDGAR, GLEIF, UK Companies House, DART, EDINET, cninfo, BSE, TWSE, CVM, BaFin, filings.xbrl.org) behind ten intent-based tools, as a TypeScript library and MCP server.",
   "type": "module",
