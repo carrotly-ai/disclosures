@@ -2,7 +2,9 @@
 
 All notable changes to this project will be documented here.
 
-## Unreleased
+## 0.5.0 - 2026-08-21
+
+Document content becomes readable: zero-dependency PDF text-layer extraction turns the PDF-only jurisdictions (FR, HK, JP) from save-a-file into read-the-filing, and the live E2E suite now exercises the full 13-jurisdiction surface. All changes backward-compatible and additive.
 
 ### Changed
 
