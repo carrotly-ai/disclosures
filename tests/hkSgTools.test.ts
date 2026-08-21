@@ -12,6 +12,7 @@ import {
 } from "../src/adapters/acraSg.js";
 import type { ToolResult } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
+import { buildImagePdf, buildSimplePdf } from "./helpers/pdfFixture.js";
 
 function toolByName(tools: ToolDefinition[], name: string): ToolDefinition {
   const tool = tools.find((candidate) => candidate.name === name);
@@ -124,15 +125,34 @@ describe("HK tool dispatch", () => {
     }
   });
 
-  test("CompanyDocument HK xhtml is honestly unavailable (PDF-only source)", async () => {
-    const tools = createTools({ fetchFn: routedFetch([]), env: {} });
+  test("CompanyDocument HK xhtml extracts the filed PDF's text, fenced and paged", async () => {
+    const textPdf = buildSimplePdf(
+      "BT (Tencent Holdings interim results) Tj T* (Board announcement) Tj ET",
+    );
+    const fetchFn = routedFetch([{ pattern: "2026082000673.pdf", body: textPdf }]);
+    const tools = createTools({ fetchFn, env: {} });
     const result = await toolByName(tools, "CompanyDocument").handler({
       company: "TENCENT",
       jurisdiction: "HK",
       transaction_id: "/listedco/listconews/sehk/2026/0820/2026082000673.pdf",
       mode: "xhtml",
     } as never);
-    expect(resultText(result)).toContain("no machine-readable");
+    const text = resultText(result);
+    expect(text).toContain("Extracted text (from PDF)");
+    expect(text).toContain("BEGIN UNTRUSTED DOCUMENT TEXT");
+    expect(text).toContain("Tencent Holdings interim results");
+  });
+
+  test("CompanyDocument HK xhtml reports an image-only PDF honestly", async () => {
+    const fetchFn = routedFetch([{ pattern: "2026082000673.pdf", body: buildImagePdf() }]);
+    const tools = createTools({ fetchFn, env: {} });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "TENCENT",
+      jurisdiction: "HK",
+      transaction_id: "/listedco/listconews/sehk/2026/0820/2026082000673.pdf",
+      mode: "xhtml",
+    } as never);
+    expect(resultText(result)).toContain("no extractable text layer");
   });
 
   test("CompanyOwners HK explains the DI captcha wall honestly", async () => {
