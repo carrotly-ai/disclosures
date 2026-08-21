@@ -17,7 +17,12 @@ import { inflateZlib } from "./zip.js";
 
 export interface PdfTextResult {
   text: string;
+  /** Number of `/Type /Page` objects reached (after object-stream decoding). */
   pages?: number;
+  /** Declared total from the page tree's root `/Count`, when present. */
+  declaredPages?: number;
+  /** How many of the reached pages produced any visible text. */
+  pagesWithText?: number;
   notes: string[];
 }
 
@@ -343,12 +348,181 @@ function buildFontDecoder(
   return { byteWidth: 1, simpleTable: winAnsiChar };
 }
 
-/** Inflate a stream if its dict declares `/FlateDecode`, else return as-is. */
+/**
+ * Inflate a stream if its dict declares `/FlateDecode`, then reverse a
+ * `/DecodeParms` predictor when one is declared. Content and `/ToUnicode`
+ * streams carry no predictor, so the extra step is a no-op for them; it matters
+ * for the object-stream / cross-reference-stream case that modern PDFs use.
+ */
 function inflateMaybe(stream: Uint8Array, dict: string): Uint8Array {
-  if (/\/FlateDecode/.test(dict)) {
-    return inflateZlib(stream, MAX_INFLATED_STREAM_BYTES);
+  let data = /\/FlateDecode/.test(dict)
+    ? inflateZlib(stream, MAX_INFLATED_STREAM_BYTES)
+    : stream;
+  const parms = parseDecodeParms(dict);
+  if (parms) data = applyPredictor(data, parms);
+  return data;
+}
+
+interface PredictorParams {
+  predictor: number;
+  colors: number;
+  bitsPerComponent: number;
+  columns: number;
+}
+
+/**
+ * Read a `/DecodeParms` (or `/DP`) predictor spec off a stream dict. Returns
+ * null when there is no predictor (or `/Predictor 1`, the identity), so the
+ * caller skips predictor handling entirely for the common case.
+ */
+function parseDecodeParms(dict: string): PredictorParams | null {
+  const idx = (() => {
+    const a = dict.indexOf("/DecodeParms");
+    if (a !== -1) return a + "/DecodeParms".length;
+    const b = dict.indexOf("/DP");
+    return b === -1 ? -1 : b + "/DP".length;
+  })();
+  if (idx === -1) return null;
+  let i = idx;
+  while (i < dict.length && isWhitespace(dict.charCodeAt(i))) i += 1;
+  const body = dict[i] === "<" && dict[i + 1] === "<" ? balancedDict(dict, i) : dict;
+  if (body === null) return null;
+  const predictor = Number(body.match(/\/Predictor\s+(\d+)/)?.[1] ?? "1");
+  if (!Number.isInteger(predictor) || predictor <= 1) return null;
+  return {
+    predictor,
+    colors: Number(body.match(/\/Colors\s+(\d+)/)?.[1] ?? "1"),
+    bitsPerComponent: Number(body.match(/\/BitsPerComponent\s+(\d+)/)?.[1] ?? "8"),
+    columns: Number(body.match(/\/Columns\s+(\d+)/)?.[1] ?? "1"),
+  };
+}
+
+function paethPredictor(a: number, b: number, c: number): number {
+  const p = a + b - c;
+  const pa = Math.abs(p - a);
+  const pb = Math.abs(p - b);
+  const pc = Math.abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  return pb <= pc ? b : c;
+}
+
+/**
+ * Reverse a PDF stream predictor (TIFF Predictor 2, or the PNG family 10–15
+ * where each row is prefixed with a filter-type byte). Used for xref streams —
+ * which always predict — and the rare object stream that declares one. Operates
+ * on whole bytes (BitsPerComponent 8, the only width these streams use here).
+ */
+function applyPredictor(data: Uint8Array, p: PredictorParams): Uint8Array {
+  const bpp = Math.max(1, Math.ceil((p.colors * p.bitsPerComponent) / 8));
+  const rowLen = Math.ceil((p.colors * p.bitsPerComponent * p.columns) / 8);
+  if (rowLen <= 0) return data;
+
+  if (p.predictor === 2) {
+    // TIFF predictor 2: no per-row tag; each sample adds the one bpp to its left.
+    const out = new Uint8Array(data);
+    const rows = Math.floor(out.length / rowLen);
+    for (let r = 0; r < rows; r += 1) {
+      const base = r * rowLen;
+      for (let i = bpp; i < rowLen; i += 1) {
+        out[base + i] = ((out[base + i] ?? 0) + (out[base + i - bpp] ?? 0)) & 0xff;
+      }
+    }
+    return out;
   }
-  return stream;
+
+  // PNG predictors: [filterType, ...rowLen bytes] per row.
+  const stride = rowLen + 1;
+  const rows = Math.floor(data.length / stride);
+  const out = new Uint8Array(rows * rowLen);
+  let prev = new Uint8Array(rowLen);
+  for (let r = 0; r < rows; r += 1) {
+    const filterType = data[r * stride] ?? 0;
+    const rowStart = r * stride + 1;
+    const cur = new Uint8Array(rowLen);
+    for (let i = 0; i < rowLen; i += 1) {
+      const raw = data[rowStart + i] ?? 0;
+      const a = i >= bpp ? (cur[i - bpp] ?? 0) : 0;
+      const b = prev[i] ?? 0;
+      const c = i >= bpp ? (prev[i - bpp] ?? 0) : 0;
+      let value: number;
+      switch (filterType) {
+        case 1: value = raw + a; break;
+        case 2: value = raw + b; break;
+        case 3: value = raw + ((a + b) >> 1); break;
+        case 4: value = raw + paethPredictor(a, b, c); break;
+        default: value = raw; break; // 0 = None
+      }
+      cur[i] = value & 0xff;
+    }
+    out.set(cur, r * rowLen);
+    prev = cur;
+  }
+  return out;
+}
+
+/**
+ * PDF 1.5+ compressed object streams (`/Type /ObjStm`) pack many indirect
+ * objects — page nodes and font/`ToUnicode`-referencing dictionaries, though
+ * never stream objects themselves — into one FlateDecode stream that the linear
+ * `N G obj` scan cannot see. A modern "glossy" filing can therefore hide its
+ * consolidated statements inside them (the CK Hutchison case: 33 of 183 pages
+ * reachable). Decode every ObjStm and surface its embedded objects into the
+ * same map, filling only the gaps the linear scan left so linear (and
+ * incrementally-updated) definitions stay authoritative.
+ */
+function mergeObjectStreams(objects: Map<number, PdfObject>): void {
+  for (const container of [...objects.values()]) {
+    if (!container.stream || !/\/Type\s*\/ObjStm/.test(container.dict)) continue;
+    let decoded: Uint8Array;
+    try {
+      decoded = inflateMaybe(container.stream, container.dict);
+    } catch {
+      continue; // an undecodable ObjStm leaves its objects unreachable (detected later)
+    }
+    const count = Number(container.dict.match(/\/N\s+(\d+)/)?.[1] ?? "");
+    const first = Number(container.dict.match(/\/First\s+(\d+)/)?.[1] ?? "");
+    if (
+      !Number.isInteger(count) || count <= 0 ||
+      !Number.isInteger(first) || first < 0 || first > decoded.length
+    ) {
+      continue;
+    }
+    const ints = latin1(decoded.subarray(0, first)).match(/\d+/g);
+    if (!ints || ints.length < count * 2) continue;
+    const entries: Array<{ num: number; offset: number }> = [];
+    for (let i = 0; i < count; i += 1) {
+      entries.push({
+        num: Number(ints[i * 2]),
+        offset: Number(ints[i * 2 + 1]),
+      });
+    }
+    for (let i = 0; i < entries.length; i += 1) {
+      const entry = entries[i];
+      if (!entry) continue;
+      const start = first + entry.offset;
+      const nextEntry = entries[i + 1];
+      const end = nextEntry ? first + nextEntry.offset : decoded.length;
+      if (start < 0 || end > decoded.length || start > end) continue;
+      if (objects.has(entry.num)) continue; // linear scan wins
+      objects.set(entry.num, { num: entry.num, dict: latin1(decoded.subarray(start, end)) });
+    }
+  }
+}
+
+/**
+ * The declared total page count from the page tree's root `/Pages` node (its
+ * `/Count`). Comparing this against the number of page objects actually reached
+ * is the honest guard for a document whose pages remain locked in an ObjStm /
+ * xref stream this extractor still cannot decode.
+ */
+function readDeclaredPageCount(objects: Map<number, PdfObject>): number | undefined {
+  let max: number | undefined;
+  for (const obj of objects.values()) {
+    if (!/\/Type\s*\/Pages(?![a-zA-Z])/.test(obj.dict)) continue;
+    const count = Number(obj.dict.match(/\/Count\s+(\d+)/)?.[1] ?? "");
+    if (Number.isInteger(count) && (max === undefined || count > max)) max = count;
+  }
+  return max;
 }
 
 /**
@@ -732,14 +906,17 @@ export function extractPdfText(bytes: Uint8Array): PdfTextResult {
   let objects: Map<number, PdfObject>;
   try {
     objects = parseObjects(bytes, text);
+    mergeObjectStreams(objects);
   } catch {
     return { text: "", notes: ["could not parse PDF object structure"] };
   }
 
   const fontCache = new Map<number, FontDecoder>();
+  const declaredPages = readDeclaredPageCount(objects);
   const pageObjects = [...objects.values()].filter((o) => isPageObject(o.dict));
   const pieces: string[] = [];
   let total = 0;
+  let pagesWithText = 0;
 
   const renderStreams = (streams: Uint8Array[], fonts: Map<string, FontDecoder>): void => {
     for (const stream of streams) {
@@ -753,7 +930,15 @@ export function extractPdfText(bytes: Uint8Array): PdfTextResult {
   if (pageObjects.length > 0) {
     for (const page of pageObjects) {
       const fonts = buildPageFonts(page.dict, objects, notes, fontCache);
-      renderStreams(collectContentStreams(page.dict, objects), fonts);
+      let pageText = "";
+      for (const stream of collectContentStreams(page.dict, objects)) {
+        if (total > MAX_TOTAL_TEXT_CHARS) break;
+        const rendered = renderContent(tokenize(latin1(stream)), fonts);
+        total += rendered.length;
+        pageText += rendered;
+      }
+      if (visibleCharCount(pageText) > 0) pagesWithText += 1;
+      pieces.push(pageText);
       pieces.push("\n");
     }
   } else {
@@ -775,10 +960,25 @@ export function extractPdfText(bytes: Uint8Array): PdfTextResult {
   const assembled = normalizeWhitespace(pieces.join(""));
   const pages = pageObjects.length > 0 ? pageObjects.length : undefined;
   const visible = visibleCharCount(assembled);
+  const pageMeta = {
+    ...(pages !== undefined ? { pages } : {}),
+    ...(declaredPages !== undefined ? { declaredPages } : {}),
+    ...(pageObjects.length > 0 ? { pagesWithText } : {}),
+  };
+
+  // Honest degradation guard: fewer page objects reached than the page tree
+  // declared means some pages stayed locked in an object/xref stream we could
+  // not decode. Rare after ObjStm support, but it must never pass silently.
+  if (declaredPages !== undefined && pages !== undefined && pages < declaredPages) {
+    notes.push(
+      `reached ${pages} of ${declaredPages} declared pages — the remainder are in ` +
+        "compressed object streams this extractor could not decode",
+    );
+  }
 
   if (visible < MIN_MEANINGFUL_CHARS && bytes.byteLength > SCANNED_PDF_SIZE_HINT) {
     notes.push("no extractable text layer (likely scanned/image PDF)");
-    return { text: "", ...(pages !== undefined ? { pages } : {}), notes };
+    return { text: "", ...pageMeta, notes: [...new Set(notes)] };
   }
 
   // Text came out, but if it is dominated by punctuation/symbols it was decoded
@@ -790,14 +990,14 @@ export function extractPdfText(bytes: Uint8Array): PdfTextResult {
         "/ToUnicode map, so glyph codes could not be mapped to characters " +
         "(the original PDF is readable via mode=\"pdf\")",
     );
-    return { text: "", ...(pages !== undefined ? { pages } : {}), notes };
+    return { text: "", ...pageMeta, notes: [...new Set(notes)] };
   }
 
   // De-duplicate notes while preserving order.
   const uniqueNotes = [...new Set(notes)];
   return {
     text: assembled,
-    ...(pages !== undefined ? { pages } : {}),
+    ...pageMeta,
     notes: uniqueNotes,
   };
 }
