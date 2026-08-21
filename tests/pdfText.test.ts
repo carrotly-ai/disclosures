@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { extractPdfText } from "../src/core/pdfText.js";
 import {
   buildImagePdf,
+  buildObjStmPdf,
+  buildShortfallObjStmPdf,
   buildSimplePdf,
   buildToUnicodePdf,
 } from "./helpers/pdfFixture.js";
@@ -71,6 +73,36 @@ describe("extractPdfText", () => {
     const result = extractPdfText(pdf);
     expect(result.text).toBe("");
     expect(result.notes.join(" ")).toContain("custom encodings");
+  });
+
+  test("recovers a Page + Font packed inside a compressed /ObjStm", () => {
+    // Page node and Type0 font live in the object stream; their content stream
+    // and /ToUnicode CMap are regular objects, referenced from the recovered
+    // page/font. Correct output ("OBJSTM") proves the whole pipeline flows.
+    const pdf = buildObjStmPdf();
+    const result = extractPdfText(pdf);
+    expect(result.text).toBe("OBJSTM");
+    expect(result.pages).toBe(1);
+    expect(result.declaredPages).toBe(1);
+    expect(result.pagesWithText).toBe(1);
+    expect(result.notes).toHaveLength(0);
+  });
+
+  test("reverses a PNG /Predictor 12 on a compressed /ObjStm", () => {
+    const pdf = buildObjStmPdf({ predictor: true });
+    const result = extractPdfText(pdf);
+    expect(result.text).toBe("OBJSTM");
+    expect(result.pages).toBe(1);
+    expect(result.notes).toHaveLength(0);
+  });
+
+  test("flags a declared-vs-reached page shortfall (undecodable object stream)", () => {
+    const pdf = buildShortfallObjStmPdf();
+    const result = extractPdfText(pdf);
+    expect(result.declaredPages).toBe(40);
+    expect(result.pages).toBe(1);
+    expect(result.pagesWithText).toBe(1);
+    expect(result.notes.join(" ")).toContain("reached 1 of 40 declared pages");
   });
 
   test("does not throw on non-PDF input", () => {
