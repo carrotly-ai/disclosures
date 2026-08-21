@@ -191,12 +191,17 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
     intents:
       "CompanyResolve (listed SEHK/GEM issuers), CompanyFilings (title-search " +
       "servlet + latest_annual), CompanyDocument (HKEXnews FILE_LINK path; PDF " +
-      "or metadata)",
+      "or metadata), CompanyOwners (CCASS participant/custodian snapshot — " +
+      "partial, keyless)",
     caveat:
       "Listed issuers only (private cos are in the paid Companies Registry). " +
-      "Owners/insiders sit behind the captcha-walled Disclosure of Interests " +
-      "system, and financials live inside annual-report PDFs — all honest " +
-      "unsupported. HKEXnews content is copyrighted (link-first, on-demand fetch).",
+      "CompanyOwners returns the keyless CCASS shareholding search: " +
+      "participant/custodian-level holdings (custodian banks, brokers, HKSCC " +
+      "Nominees, CSDC), NOT beneficial owners — the SFO Part XV Disclosure of " +
+      "Interests register is captcha-walled and linked for manual lookup. " +
+      "Insiders sit behind that same DI wall, and financials live inside " +
+      "annual-report PDFs — both honest unsupported. HKEXnews content is " +
+      "copyrighted (link-first, on-demand fetch).",
   },
   {
     code: "SG",
