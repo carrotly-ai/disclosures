@@ -1,0 +1,31 @@
+{
+  "recordsTotal": 10279,
+  "recordsFiltered": 10279,
+  "category_message": "",
+  "data": [
+    [
+      1,
+      "<div class='d-lg-none'>28 Aug<br/>2026</div><div class='d-lg-inline-block d-none'>28 Aug 2026</div>",
+      "<a href='/trade/trading_resources/listing_directory/company-profile?stock_code=1155' target=_blank>MALAYAN BANKING BERHAD</a>",
+      "<a href='/market_information/announcements/company_announcement/announcement_details?ann_id=3700039' target=_blank>Changes in Sub. S-hldr's Int (Section 138 of CA 2016) - EMPLOYEES PROVIDENT FUND BOARD</a>"
+    ],
+    [
+      2,
+      "<div class='d-lg-none'>28 Aug<br/>2026</div><div class='d-lg-inline-block d-none'>28 Aug 2026</div>",
+      "<a href='/trade/trading_resources/listing_directory/company-profile?stock_code=1155' target=_blank>MALAYAN BANKING BERHAD</a>",
+      "<a href='/market_information/announcements/company_announcement/announcement_details?ann_id=3700038' target=_blank>Changes in Sub. S-hldr's Int (Section 138 of CA 2016) - KUMPULAN WANG PERSARAAN (DIPERBADANKAN) (\"KWAP\")</a>"
+    ],
+    [
+      5,
+      "<div class='d-lg-none'>27 Aug<br/>2026</div><div class='d-lg-inline-block d-none'>27 Aug 2026</div>",
+      "<a href='/trade/trading_resources/listing_directory/company-profile?stock_code=1155' target=_blank>MALAYAN BANKING BERHAD</a>",
+      "<a href='/market_information/announcements/company_announcement/announcement_details?ann_id=3699011' target=_blank>NEW ISSUE OF SECURITIES (CHAPTER 6 OF LISTING REQUIREMENTS) : OTHER ISSUE OF SECURITIES</a><p>DIVIDEND REINVESTMENT PLAN APPLICABLE TO THE FIRST INTERIM DIVIDEND IN RESPECT OF THE FINANCIAL YEAR ENDING 31 DECEMBER 2026 (\"24th DRP\")</p>"
+    ],
+    [
+      6,
+      "<div class='d-lg-none'>27 Aug<br/>2026</div><div class='d-lg-inline-block d-none'>27 Aug 2026</div>",
+      "<a href='/trade/trading_resources/listing_directory/company-profile?stock_code=1155' target=_blank>MALAYAN BANKING BERHAD</a>",
+      "<a href='/market_information/announcements/company_announcement/announcement_details?ann_id=3698925' target=_blank>Quarterly rpt on consolidated results for the financial period ended 30/06/2026</a>"
+    ]
+  ]
+}
