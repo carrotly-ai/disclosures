@@ -253,6 +253,15 @@ import {
 } from "../adapters/dbdThailand.js";
 import type { DbdEntity } from "../adapters/dbdThailand.js";
 import {
+  getIdxFinancials,
+  IDX_ANTIBOT_NOTE,
+  IDX_FINANCIAL_CONCEPT_NAMES,
+  IDX_FINANCIALS_CAVEAT,
+  IDX_SITE_URL,
+  searchIdxCompanies,
+  searchIdxFilings,
+} from "../adapters/idxIndonesia.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -1584,6 +1593,48 @@ const TH_FINANCIALS_UNSUPPORTED =
   "images/PDFs, not normalized figures), and — " + TH_SET_INCAPSULA_REASON +
   " No keyless normalized financials source exists for Thailand.";
 
+// --- ID (IDX) constants ----------------------------------------------------
+
+// Everything about the ID route is shaped by one fact: www.idx.co.id is
+// anti-bot protected. The library never pretends otherwise — a blocked request
+// surfaces the inject-a-fetchFn guidance, never an empty result.
+const ID_ANTIBOT_NOTE = IDX_ANTIBOT_NOTE;
+
+const ID_RESOLVE_CAVEAT =
+  "IDX listed-company profiles: all ~965 emiten on the Main, Development and " +
+  "Special Monitoring boards. `kodeEmiten` is the 4-letter IDX ticker every " +
+  "other ID intent takes. " + ID_ANTIBOT_NOTE;
+
+const ID_FILINGS_CAVEAT =
+  "IDX per-issuer disclosure announcements (pengumuman). Each row links the " +
+  "announcement letter as filed; multi-part submissions also carry lampiran " +
+  "(annexes) not listed separately here. Titles are the issuer's own English " +
+  "rendering where it filed one. " + ID_ANTIBOT_NOTE;
+
+const ID_INSIDERS_UNSUPPORTED =
+  "CompanyInsiders is unsupported for jurisdiction \"ID\". IDX publishes no " +
+  "structured director/commissioner or insider-dealing feed: that detail sits " +
+  "inside annual-report and monthly-registration PDFs, or in the separate KSEI " +
+  "(depository) channel, neither of which this release parses into normalized " +
+  "insider records. Use CompanyFilings with jurisdiction \"ID\" to locate the " +
+  "underlying announcement, or CompanyResolve for the issuer profile. The AHU " +
+  "national legal-entity registry (ahu.go.id) is a paid per-document PNBP " +
+  "product, and OJK is a regulator/licensing site rather than a filing store.";
+
+const ID_OWNERS_UNSUPPORTED =
+  "CompanyOwners is unsupported for jurisdiction \"ID\". Substantial- and " +
+  "controlling-shareholder disclosure reaches IDX as announcement PDFs " +
+  "(\"Monthly Report of Securities Holders Registration\", \"Changes of " +
+  "controlling shareholder\") and via KSEI, not as a structured holdings feed, " +
+  "so this release does not normalize it. Use CompanyFilings with jurisdiction " +
+  "\"ID\" and a forms filter like [\"shareholder\"] to locate those " +
+  "announcements. The AHU registry (private-company ownership) is a paid PNBP " +
+  "product.";
+
+const ID_NOT_FOUND_HINT =
+  "Try a 4-letter IDX ticker / kode emiten (e.g. BBCA, TLKM) or the issuer's " +
+  "name as IDX spells it. " + IDX_ANTIBOT_NOTE;
+
 // Render the DBD register record for the top resolved TH match: both legal
 // names, juristic type, status, capital, TSIC classification and head office.
 function buildThProfileDetailSection(entity: DbdEntity): string {
@@ -1915,6 +1966,38 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             joinSections(...sections),
             entitiesStructured(results.slice(0, 10)),
           );
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "ID") {
+        try {
+          const results = await searchIdxCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, ID_NOT_FOUND_HINT);
+          }
+          const top = results.slice(0, 10);
+          return textResult(joinSections(
+            `# Company resolution (IDX / Bursa Efek Indonesia): ${company}`,
+            entityRows(top),
+            markdownTable(
+              ["Ticker", "Issuer", "Sector / subsector", "Board", "Listed"],
+              top.map((entity) => [
+                entity.ticker,
+                entity.legalName,
+                entity.sourceIdentifiers?.sector,
+                entity.status?.replace(/^Board: /, ""),
+                entity.sourceIdentifiers?.listingDate,
+              ]),
+            ),
+            `_${ID_RESOLVE_CAVEAT}_`,
+            nextStep(
+              "use the 4-letter ticker (kode emiten) from this table with " +
+                "CompanyFilings (jurisdiction \"ID\") for the issuer's " +
+                "disclosure announcements, or CompanyFinancials (jurisdiction " +
+                "\"ID\") for headline totals parsed from its XBRL instance.",
+            ),
+          ), entitiesStructured(top));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -2363,6 +2446,51 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         if (jurisdiction === "TH") {
           return textResult(TH_FILINGS_UNSUPPORTED);
         }
+        if (jurisdiction === "ID") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            return textResult(
+              `Latest ${mode === "latest_annual" ? "annual" : "quarterly"} mode is unsupported for ID. ` +
+                "IDX exposes a per-issuer announcement feed and a separate " +
+                "financial-report archive, but not a normalized annual/quarterly " +
+                'report-metadata equivalent. Use mode "search" here, or ' +
+                'CompanyFinancials with jurisdiction "ID" for the report itself.',
+            );
+          }
+          const filings = await searchIdxFilings({
+            company,
+            ...(forms ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No IDX announcements found for "${company}" in the scanned window.`,
+              `_${ID_FILINGS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# IDX announcements: ${company}`,
+            markdownTable(
+              ["Announced", "Type", "Ticker", "Title", "Attachment"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            "_Attachment links open the official IDX announcement PDF; this tool never returns document text._",
+            `_${ID_FILINGS_CAVEAT}_`,
+            nextStep(
+              "open an attachment link above for the announcement PDF, or use " +
+                "CompanyFinancials (jurisdiction \"ID\") for headline totals " +
+                "parsed from the issuer's XBRL instance. ID has no " +
+                "CompanyDocument route in this release.",
+            ),
+          ), filingsStructured(filings));
+        }
         if (jurisdiction === "NL") {
           return textResult(AFM_FILINGS_UNSUPPORTED);
         }
@@ -2736,6 +2864,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "TH") {
         return textResult(TH_INSIDERS_UNSUPPORTED);
+      }
+      if (jurisdiction === "ID") {
+        return textResult(ID_INSIDERS_UNSUPPORTED);
       }
       try {
         if (jurisdiction === "DE") {
@@ -3150,6 +3281,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "TH") {
         return textResult(joinSections(
           TH_OWNERS_UNSUPPORTED,
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "ID") {
+        return textResult(joinSections(
+          ID_OWNERS_UNSUPPORTED,
           "_Absence of a result here is not evidence that no large holder exists._",
         ));
       }
@@ -3649,6 +3786,78 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "TH") {
         return textResult(TH_FINANCIALS_UNSUPPORTED);
       }
+      if (jurisdiction === "ID") {
+        try {
+          const requested = concepts?.filter((concept) =>
+            IDX_FINANCIAL_CONCEPT_NAMES.includes(concept)
+          );
+          const result = await getIdxFinancials({
+            company,
+            ...(requested && requested.length ? { concepts: requested } : {}),
+            ...(periods ? { periods } : {}),
+          }, options);
+          // Honest fallback: a report exists but yielded no XBRL facts. Say
+          // exactly why and hand back the official link — never a guessed figure.
+          if (!result.facts.length) {
+            if (result.fallbackUrl) {
+              return textResult(joinSections(
+                `# Financial report (IDX): ${result.entity.legalName}`,
+                `No XBRL facts could be extracted for "${company}". ` +
+                  result.fallbackReason,
+                markdownTable(
+                  ["Issuer", "Ticker", "Report", "Official file"],
+                  [[
+                    result.report?.namaEmiten ?? result.entity.legalName,
+                    result.entity.ticker,
+                    [result.report?.reportYear, result.report?.reportPeriod]
+                      .filter(Boolean).join(" "),
+                    link("open", result.fallbackUrl),
+                  ]],
+                ),
+                `_${IDX_FINANCIALS_CAVEAT}_`,
+              ));
+            }
+            return textResult(joinSections(
+              `No IDX financial-report submission found for "${company}" in the ` +
+                "years scanned. IDX normalized concepts cover: " +
+                `${IDX_FINANCIAL_CONCEPT_NAMES.join(", ")}. An issuer newly ` +
+                "listed, delisted, or with no audited submission in the window " +
+                "legitimately returns nothing.",
+              `_${IDX_FINANCIALS_CAVEAT}_`,
+              `_${ID_ANTIBOT_NOTE}_`,
+            ));
+          }
+          const byConcept = new Map<string, typeof result.facts>();
+          for (const fact of result.facts) {
+            const bucket = byConcept.get(fact.concept) ?? [];
+            bucket.push(fact);
+            byConcept.set(fact.concept, bucket);
+          }
+          const sections = [...byConcept.entries()].map(([concept, rows]) => {
+            const label = rows[0]?.label ?? concept;
+            const unit = rows[0]?.unit ?? "IDR";
+            return joinSections(
+              `## ${label} (${unit})`,
+              markdownTable(
+                ["Period end", "Basis", "Value", "Filed"],
+                rows.map((fact) => [
+                  fact.periodEnd,
+                  fact.basis ?? "—",
+                  formatNumber(fact.value, fact.unit),
+                  fact.filedDate || "—",
+                ]),
+              ),
+            );
+          });
+          return textResult(joinSections(
+            `# Financials (IDX XBRL): ${result.entity.legalName}`,
+            ...sections,
+            `_${IDX_FINANCIALS_CAVEAT}_`,
+          ), financialsStructured(byConcept, "ID"));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
       if (jurisdiction === "NL") {
         return textResult(AFM_FINANCIALS_UNSUPPORTED);
       }
@@ -3994,7 +4203,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
-        jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH"
+        jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
+        jurisdiction === "ID"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -4018,7 +4228,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                             ? "HKEXnews (Hong Kong)"
                             : jurisdiction === "SG"
                               ? "ACRA (Singapore)"
-                              : "DBD (Thailand)";
+                              : jurisdiction === "TH"
+                                ? "DBD (Thailand)"
+                                : "IDX (Indonesia)";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +

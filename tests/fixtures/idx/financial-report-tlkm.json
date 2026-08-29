@@ -1,0 +1,77 @@
+{
+ "Search": {
+  "ReportType": "rdf",
+  "KodeEmiten": "TLKM",
+  "Year": "2024",
+  "SortColumn": "KodeEmiten",
+  "SortOrder": "asc",
+  "EmitenType": "s",
+  "Periode": "audit",
+  "indexfrom": 0,
+  "pagesize": 10
+ },
+ "ResultCount": 1,
+ "Results": [
+  {
+   "KodeEmiten": "TLKM",
+   "File_Modified": "2025-04-18T05:14:52.547",
+   "Report_Period": "Audit",
+   "Report_Year": "2024",
+   "NamaEmiten": "PT Telkom Indonesia (Persero) Tbk",
+   "Attachments": [
+    {
+     "Emiten_Code": "TLKM",
+     "File_ID": "aa11bb22-1111-2222-3333-444455556666",
+     "File_Modified": "2025-04-18T05:14:52.547",
+     "File_Name": "FinancialStatement-2024-Tahunan-TLKM.xlsx",
+     "File_Path": "/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan Keuangan Tahun 2024/Audit/TLKM/FinancialStatement-2024-Tahunan-TLKM.xlsx",
+     "File_Size": 231045,
+     "File_Type": ".xlsx",
+     "Report_Period": "Audit",
+     "Report_Type": "rdf",
+     "Report_Year": "2024",
+     "NamaEmiten": "PT Telkom Indonesia (Persero) Tbk"
+    },
+    {
+     "Emiten_Code": "TLKM",
+     "File_ID": "bb22cc33-1111-2222-3333-444455556666",
+     "File_Modified": "2025-04-18T05:14:52.547",
+     "File_Name": "instance.zip",
+     "File_Path": "/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan Keuangan Tahun 2024/Audit/TLKM/instance.zip",
+     "File_Size": 133370,
+     "File_Type": ".zip",
+     "Report_Period": "Audit",
+     "Report_Type": "rdf",
+     "Report_Year": "2024",
+     "NamaEmiten": "PT Telkom Indonesia (Persero) Tbk"
+    },
+    {
+     "Emiten_Code": "TLKM",
+     "File_ID": "cc33dd44-1111-2222-3333-444455556666",
+     "File_Modified": "2025-04-18T05:14:52.547",
+     "File_Name": "inlineXBRL.zip",
+     "File_Path": "/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan Keuangan Tahun 2024/Audit/TLKM/inlineXBRL.zip",
+     "File_Size": 187221,
+     "File_Type": ".zip",
+     "Report_Period": "Audit",
+     "Report_Type": "rdf",
+     "Report_Year": "2024",
+     "NamaEmiten": "PT Telkom Indonesia (Persero) Tbk"
+    },
+    {
+     "Emiten_Code": "TLKM",
+     "File_ID": "dd44ee55-1111-2222-3333-444455556666",
+     "File_Modified": "2025-04-18T05:14:52.547",
+     "File_Name": "FinancialStatement-2024-Tahunan-TLKM.pdf",
+     "File_Path": "/Portals/0/StaticData/ListedCompanies/Corporate_Actions/New_Info_JSX/Jenis_Informasi/01_Laporan_Keuangan/02_Soft_Copy_Laporan_Keuangan//Laporan Keuangan Tahun 2024/Audit/TLKM/FinancialStatement-2024-Tahunan-TLKM.pdf",
+     "File_Size": 511240,
+     "File_Type": ".pdf",
+     "Report_Period": "Audit",
+     "Report_Type": "rdf",
+     "Report_Year": "2024",
+     "NamaEmiten": "PT Telkom Indonesia (Persero) Tbk"
+    }
+   ]
+  }
+ ]
+}

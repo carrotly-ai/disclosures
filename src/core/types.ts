@@ -20,6 +20,7 @@ export const JURISDICTIONS = {
   SG: "SG",
   TH: "TH",
   NL: "NL",
+  ID: "ID",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -45,6 +46,7 @@ export const DATA_SOURCES = {
   ACRA: "ACRA",
   DBD: "DBD",
   AFM: "AFM",
+  IDX: "IDX",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -88,6 +90,12 @@ export interface IdentifierSet {
   uen?: string;
   /** Thailand DBD 13-digit juristic-person registration number, e.g. 0107544000108 (PTT PCL). */
   juristicId?: string;
+  /** IDX (Indonesia) 4-letter issuer ticker / kode emiten, e.g. BBCA (Bank Central Asia). */
+  kodeEmiten?: string;
+  /** Free-text sector/subsector label, where the register publishes one (IDX). */
+  sector?: string;
+  /** Exchange listing date (ISO), where the register publishes one (IDX). */
+  listingDate?: string;
   jurisdiction?: string;
 }
 

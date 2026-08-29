@@ -1,0 +1,178 @@
+{
+ "ResultCount": 113,
+ "SearchParams": {
+  "DateFrom": "01/01/2025 12:00:00 AM",
+  "DateTo": "29/08/2026 12:00:00 AM",
+  "Query": null,
+  "Language": "en-us",
+  "KodeEmiten": "BBCA",
+  "EmitenType": "s",
+  "SortOrder": null,
+  "SortColumn": null,
+  "indexfrom": 0,
+  "pagesize": 10
+ },
+ "Replies": [
+  {
+   "pengumuman": {
+    "Id2": "20260826173543-008/CSG-IVR/2026_en-us",
+    "EfekEmiten_DIRE": false,
+    "EfekEmiten_DINFRA": false,
+    "Id": 0,
+    "FinalId": null,
+    "OldFinalId": 0,
+    "NoPengumuman": "008/CSG-IVR/2026",
+    "TglPengumuman": "2026-08-26T17:35:43",
+    "JudulPengumuman": "General Announcement Public Expose - Annual",
+    "JenisPengumuman": "STOCK",
+    "Kode_Emiten": "BBCA                                                        ",
+    "CreatedDate": "2026-08-26T17:40:00",
+    "Form_Id": "11000",
+    "PerihalPengumuman": "General Announcement Public Ex",
+    "JMSXGroupID": "f-32132482-0",
+    "Divisi": "",
+    "KodeDivisi": "",
+    "JenisEmiten": null,
+    "EfekEmiten_Saham": true,
+    "EfekEmiten_Obligasi": true,
+    "EfekEmiten_EBA": false,
+    "EfekEmiten_ETF": false,
+    "EfekEmiten_SPEI": false
+   },
+   "attachments": [
+    {
+     "Id": 0,
+     "PDFFilename": "6433054004_401f0d79e3.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202608/6433054004_401f0d79e3.pdf",
+     "JMSXGroupID": null,
+     "CorrelationID": null,
+     "IsAttachment": false,
+     "OriginalFilename": "20260826_BBCA_Public Expose_32132482.pdf"
+    }
+   ]
+  },
+  {
+   "pengumuman": {
+    "Id2": "20260819183103-005/CSG-IVR/2026_en-us",
+    "EfekEmiten_DIRE": false,
+    "EfekEmiten_DINFRA": false,
+    "Id": 0,
+    "FinalId": null,
+    "OldFinalId": 0,
+    "NoPengumuman": "005/CSG-IVR/2026",
+    "TglPengumuman": "2026-08-19T18:31:03",
+    "JudulPengumuman": "Schedule of Corporate Action",
+    "JenisPengumuman": "STOCK",
+    "Kode_Emiten": "BBCA                                                        ",
+    "CreatedDate": "2026-08-19T18:35:00",
+    "Form_Id": "11000",
+    "PerihalPengumuman": "Schedule of Corporate Action",
+    "JMSXGroupID": "f-32121192-0",
+    "Divisi": "",
+    "KodeDivisi": "",
+    "JenisEmiten": null,
+    "EfekEmiten_Saham": true,
+    "EfekEmiten_Obligasi": true,
+    "EfekEmiten_EBA": false,
+    "EfekEmiten_ETF": false,
+    "EfekEmiten_SPEI": false
+   },
+   "attachments": [
+    {
+     "Id": 0,
+     "PDFFilename": "11548b9ab7_c9c532d0c5.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202608/11548b9ab7_c9c532d0c5.pdf",
+     "JMSXGroupID": null,
+     "CorrelationID": null,
+     "IsAttachment": true,
+     "OriginalFilename": "20260818_BBCA_Jadwal Aksi Korporasi_32121192_lamp2.pdf"
+    },
+    {
+     "Id": 0,
+     "PDFFilename": "c3076472a8_e5ca870b61.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202608/c3076472a8_e5ca870b61.pdf",
+     "JMSXGroupID": null,
+     "CorrelationID": null,
+     "IsAttachment": false,
+     "OriginalFilename": "20260818_BBCA_Jadwal Aksi Korporasi_32121192.pdf"
+    }
+   ]
+  },
+  {
+   "pengumuman": {
+    "Id2": "20260731175614-0069/CVG/2026_en-us",
+    "EfekEmiten_DIRE": false,
+    "EfekEmiten_DINFRA": false,
+    "Id": 0,
+    "FinalId": null,
+    "OldFinalId": 0,
+    "NoPengumuman": "0069/CVG/2026",
+    "TglPengumuman": "2026-07-31T17:56:14",
+    "JudulPengumuman": "Changes of controlling shareholder",
+    "JenisPengumuman": "STOCK",
+    "Kode_Emiten": "BBCA                                                        ",
+    "CreatedDate": "2026-07-31T18:00:07",
+    "Form_Id": "11000",
+    "PerihalPengumuman": "Changes of controlling shareho",
+    "JMSXGroupID": "f-32116657-0",
+    "Divisi": "",
+    "KodeDivisi": "",
+    "JenisEmiten": null,
+    "EfekEmiten_Saham": true,
+    "EfekEmiten_Obligasi": true,
+    "EfekEmiten_EBA": false,
+    "EfekEmiten_ETF": false,
+    "EfekEmiten_SPEI": false
+   },
+   "attachments": [
+    {
+     "Id": 0,
+     "PDFFilename": "59c9d62180_96a02df66f.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/59c9d62180_96a02df66f.pdf",
+     "JMSXGroupID": null,
+     "CorrelationID": null,
+     "IsAttachment": false,
+     "OriginalFilename": "20260731_BBCA_Laporan Informasi dan Fakta Material_32116657.pdf"
+    }
+   ]
+  },
+  {
+   "pengumuman": {
+    "Id2": "20260708134806-0063/ESG/2026_en-us",
+    "EfekEmiten_DIRE": false,
+    "EfekEmiten_DINFRA": false,
+    "Id": 0,
+    "FinalId": null,
+    "OldFinalId": 0,
+    "NoPengumuman": "0063/ESG/2026",
+    "TglPengumuman": "2026-07-08T13:48:06",
+    "JudulPengumuman": "Monthly Report of Securities Holders Registration",
+    "JenisPengumuman": "STOCK",
+    "Kode_Emiten": "BBCA                                                        ",
+    "CreatedDate": "2026-07-08T13:50:00",
+    "Form_Id": "11000",
+    "PerihalPengumuman": "Monthly Report of Securities H",
+    "JMSXGroupID": "f-32108629-0",
+    "Divisi": "",
+    "KodeDivisi": "",
+    "JenisEmiten": null,
+    "EfekEmiten_Saham": true,
+    "EfekEmiten_Obligasi": true,
+    "EfekEmiten_EBA": false,
+    "EfekEmiten_ETF": false,
+    "EfekEmiten_SPEI": false
+   },
+   "attachments": [
+    {
+     "Id": 0,
+     "PDFFilename": "79219b9ee1_f357fb3ce5.pdf",
+     "FullSavePath": "https://www.idx.co.id/StaticData/NewsAndAnnouncement/ANNOUNCEMENTSTOCK/From_EREP/202607/79219b9ee1_f357fb3ce5.pdf",
+     "JMSXGroupID": null,
+     "CorrelationID": null,
+     "IsAttachment": false,
+     "OriginalFilename": "20260706_BBCA_Laporan Bulanan Registrasi Pemegang Efek_32108629.pdf"
+    }
+   ]
+  }
+ ]
+}

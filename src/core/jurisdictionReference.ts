@@ -286,6 +286,38 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "subsequent calls are milliseconds. Listed AFM-supervised issuers only " +
       "(KVK is paid); ESAP will eventually overlap this coverage.",
   },
+  {
+    code: "ID",
+    name: "Indonesia",
+    source: "IDX / Bursa Efek Indonesia (keyless /primary JSON + XBRL instances)",
+    credential:
+      "None — but the host is anti-bot protected. Where the default fetch is " +
+      "challenged, supply a browser-backed fetchFn via AdapterOptions.",
+    identifiers:
+      "4-letter IDX ticker / kode emiten (e.g. BBCA, TLKM) or issuer name",
+    intents:
+      "CompanyResolve (all ~965 listed emiten — ticker, legal name, " +
+      "sector/subsector, listing board and listing date), CompanyFilings " +
+      "(per-issuer disclosure announcements with direct attachment PDFs), " +
+      "CompanyFinancials (real XBRL: the filer's instance.zip parsed for " +
+      "revenue, profit from operations, profit attributable to owners, total " +
+      "assets and total equity in IDR)",
+    caveat:
+      "www.idx.co.id sits behind an anti-bot edge that answers a plain " +
+      "request with a 403/503 challenge from some networks. This adapter " +
+      "sends browser-class headers and works wherever that passes; where it " +
+      "does not, every ID intent returns an explicit \"host blocked this " +
+      "request — inject a browser-backed fetchFn via AdapterOptions\" note " +
+      "rather than an empty result that would read as \"this issuer has " +
+      "nothing on file\". CompanyFinancials is XBRL-first and falls back to " +
+      "the official report link (never a guessed figure) when a submission " +
+      "carries no instance.zip or tags none of the headline totals. " +
+      "CompanyInsiders / CompanyOwners are honest-unsupported: director and " +
+      "substantial-shareholder detail sits inside report PDFs or the separate " +
+      "KSEI depository channel, not a clean IDX feed. AHU (the national legal- " +
+      "entity registry) is a paid PNBP per-document product, and OJK is a " +
+      "regulator/licensing site rather than a filing store.",
+  },
 ] as const;
 
 export function renderJurisdictionReference(

@@ -217,6 +217,13 @@ export const dbdRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 // trip immediately rather than repeatedly pulling 100 MB from AFM.
 export const afmRateLimiter = new SlidingWindowRateLimiter(12, 60_000);
 
+// Indonesia IDX (www.idx.co.id) keyless `/primary/…` JSON endpoints plus the
+// static XBRL/report archive on the same origin. No documented limit, and the
+// host sits behind an anti-bot edge, so the budget is deliberately modest: one
+// financials call is a roster load, a report lookup (up to a few years back)
+// and one instance download. Be conspicuously polite to a challenged host.
+export const idxRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -238,4 +245,5 @@ export function resetRateLimiters(): void {
   acraRateLimiter.reset();
   dbdRateLimiter.reset();
   afmRateLimiter.reset();
+  idxRateLimiter.reset();
 }

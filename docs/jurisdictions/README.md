@@ -20,16 +20,16 @@ configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -97,6 +97,19 @@ Shanghai data sits inside a JS-gated credit file), so they fall back to the as-p
 and shareholding cells fragment in extraction. A transaction feed and a roster snapshot answer
 different questions; the response states which one it served. See [CN.md](CN.md).
 
+ID is the **only jurisdiction here whose financials come from a national-exchange XBRL
+instance**: IDX ships an `instance.zip` (plain XBRL, IDX 2020 `idx-cor` taxonomy) with every
+financial-report submission, so ID `CompanyFinancials` is structured rather than PDF-scraped.
+Its host, `www.idx.co.id`, is **anti-bot protected** — the BSE India tier, not the fatal
+SGX/ASX block. The adapter sends browser-class headers and works wherever those pass; where
+the edge refuses, **every ID intent returns an explicit "the host blocked this request —
+inject a browser-backed `fetchFn`" note that states it is _not_ an empty result for the
+issuer**, so a refusal is never mistaken for an absence of disclosure. `CompanyInsiders` and
+`CompanyOwners` are honest unsupported (that detail lives in report PDFs and the KSEI
+depository channel, not a clean IDX feed). Verified live through the built artifact: TLKM and
+BBCA FY2025, consolidated, in IDR — including BBCA's banking revenue variant. See
+[ID.md](ID.md).
+
 `CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, and `CN`;
 `PersonAppointments` accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is
 UK-only and takes no `jurisdiction` parameter.
@@ -135,6 +148,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | SG | ACRA (data.gov.sg) | None | [SG.md](SG.md) |
 | TH | DBD juristic-person register (openapi.dbd.go.th) | None for the by-id lookup; `DBD_API_KEY` for name search | [TH.md](TH.md) |
 | NL | AFM disclosure registers (keyless CSV/XML exports) | None | [NL.md](NL.md) |
+| ID | IDX / Bursa Efek Indonesia (`/primary` JSON + XBRL instances) | None (host is anti-bot; inject a `fetchFn` if blocked) | [ID.md](ID.md) |
 
 ## Honesty invariants (all jurisdictions)
 
