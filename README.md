@@ -1,6 +1,6 @@
 # disclosures
 
-**Corporate-disclosure research for AI agents and TypeScript — filings, insiders, owners, financials, and ownership chains from 16 official sources across 13 jurisdictions.**
+**Corporate-disclosure research for AI agents and TypeScript — filings, insiders, owners, financials, and ownership chains from 17 official sources across 14 jurisdictions.**
 
 [![npm version](https://img.shields.io/npm/v/disclosures?logo=npm&color=cb3837)](https://www.npmjs.com/package/disclosures)
 [![CI](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml/badge.svg)](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml)
@@ -11,8 +11,8 @@
 
 `disclosures` is a free, open-source [Model Context Protocol](https://modelcontextprotocol.io/) server **and** a TypeScript library. It answers questions like *"who are NVIDIA's directors?"*, *"who owns 5% of Samsung Electronics?"*, or *"show me Vale's last three annual results"* — with every answer linked back to the official source document.
 
-- **10 stable tools, 13 jurisdictions** — seven intent tools each route across national sources via one `jurisdiction` parameter; three register tools add filed-document, secured-charge, and person-appointment lookups. Tool names and schemas never change as coverage grows.
-- **Official sources only** — SEC EDGAR, GLEIF, UK Companies House, FCA NSM, filings.xbrl.org, Korea DART, Japan EDINET, China cninfo, India BSE, Taiwan TWSE, Brazil CVM, Germany BaFin, France info-financiere OAM + recherche-entreprises, Hong Kong HKEXnews, Singapore ACRA.
+- **10 stable tools, 14 jurisdictions** — seven intent tools each route across national sources via one `jurisdiction` parameter; three register tools add filed-document, secured-charge, and person-appointment lookups. Tool names and schemas never change as coverage grows.
+- **Official sources only** — SEC EDGAR, GLEIF, UK Companies House, FCA NSM, filings.xbrl.org, Korea DART, Japan EDINET, China cninfo, India BSE, Taiwan TWSE, Brazil CVM, Germany BaFin, France info-financiere OAM + recherche-entreprises, Hong Kong HKEXnews, Singapore ACRA, Thailand DBD.
 - **Honest by design** — real source links only, explicit "unsupported here" answers instead of empty or fabricated results, and clear caveats ("absence of a filing is not proof").
 - **Zero runtime dependencies** — one bundled file, runs anywhere Node 18+ runs.
 
@@ -132,18 +132,18 @@ Restart the client after changing its configuration, then try:
 
 The first seven tools dispatch across jurisdictions via `jurisdiction`. Of the last three, `CompanyDocument` accepts a `jurisdiction` of `GB` (default), `US`, `JP`, `KR`, `FR`, or `HK`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, or `FR`; `CompanyCharges` is Companies House-specific and takes no `jurisdiction` — it always queries the UK register.
 
-Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR), BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), 4/5-digit HKEX stock code (HK), Singapore UEN (SG). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR" | "DE" | "FR" | "HK" | "SG"` (default `US`).
+Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR), BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), 4/5-digit HKEX stock code (HK), Singapore UEN (SG), 13-digit juristic-person registration number (TH). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR" | "DE" | "FR" | "HK" | "SG" | "TH"` (default `US`).
 
 ### Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | — | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 global via GLEIF — jurisdiction-independent |
 
 ✅ supported · ⚠️ partial (FR `CompanyOwners`: threshold-crossing notifications with a best-effort structured extraction — holder, direction, threshold(s) and resulting % parsed from the notification PDF's text layer for the newest few; scanned/non-standard PDFs and older notifications stay a link-only list · HK `CompanyOwners`: the keyless CCASS shareholding search returns participant/**custodian**-level holdings (custodian banks, brokers, HKSCC Nominees, CSDC) — **not** beneficial owners; the SFO Part XV Disclosure of Interests register is captcha-walled and linked for manual lookup · HK `CompanyFinancials`: headline figures extracted from the issuer's latest results-announcement PDF, latest announcement only — standard issuers extract cleanly, complex segment-split/multi-column statements parse partially, and a page shortfall or missing statement degrades to the PDF link · CN `CompanyFinancials`: headline figures extracted from the 主要会计数据 key-data table of the issuer's latest periodic-report PDF, normalized to whole RMB from the report's stated unit (元/千元/万元/百万元), latest report only — a mojibake (object-stream) report, an over-cap PDF, or a missing key-data table degrades to the PDF link) · — returns an honest unsupported-jurisdiction explanation, never an empty or fabricated result
@@ -152,7 +152,7 @@ Each jurisdiction has a full reference page — data source, credentials, accept
 
 ## Data sources and credentials
 
-US and global lookups work with just the User-Agent. Non-US sources are keyless where the upstream allows it; the two that need keys are **free**. Provide only the keys for jurisdictions you query — everything else keeps working without them, and a missing credential produces a readable error naming the exact variable to set.
+US and global lookups work with just the User-Agent. Non-US sources are keyless where the upstream allows it; the few that need keys are **free**. Provide only the keys for jurisdictions you query — everything else keeps working without them, and a missing credential produces a readable error naming the exact variable to set.
 
 | Source | Jurisdiction | Key required | Notes |
 |---|---|---|---|
@@ -172,6 +172,7 @@ US and global lookups work with just the User-Agent. Non-US sources are keyless 
 | [recherche-entreprises](https://recherche-entreprises.api.gouv.fr/) | `FR` | None | Resolution (SIREN), officers (dirigeants), person→companies. |
 | [HKEXnews](https://www.hkexnews.hk/) | `HK` | None | Resolution, title-search filings with keyless PDFs, `CompanyDocument` by `FILE_LINK` path, `CompanyFinancials` (headline figures from the latest results-announcement PDF — bounded). |
 | [ACRA](https://data.gov.sg/) (data.gov.sg) | `SG` | None | Resolution only — UEN, status, incorporation date, former names, auditors (Singapore Open Data Licence). |
+| [DBD](https://openapi.dbd.go.th/) (Thailand) | `TH` | None by juristic number; `DBD_API_KEY` (free) for name search | Resolution only — national register of listed **and** private companies: Thai + English legal name, juristic type, status, registered/paid-up capital, TSIC code, register date. |
 
 ```bash
 # Required (SEC fair-access policy — your name/org and contact email)
@@ -181,6 +182,7 @@ export DISCLOSURES_USER_AGENT="Your Organization your-email@example.com"
 export COMPANIES_HOUSE_API_KEY="..."   # GB
 export OPENDART_API_KEY="..."          # KR
 export EDINET_API_KEY="..."            # JP document search
+export DBD_API_KEY="..."               # TH company-name search (by-number is keyless)
 ```
 
 `SEC_EDGAR_USER_AGENT` is accepted as a fallback for compatibility; `DISCLOSURES_USER_AGENT` wins.
@@ -307,7 +309,7 @@ Live assertions are drift-tolerant (identity, identifier shape, source host, and
 
 ### Roadmap
 
-Existing tool names and schemas stay stable — the collection only ever grows additively. The seven cross-jurisdiction intents absorb new sources and deeper data behind the same shapes; where a register offers primitives with no cross-jurisdiction equivalent (filed-document retrieval, secured-charge registers, person-level appointment history), a focused tool is added rather than contorting an intent. **GB (Companies House)** now goes deep: `CompanyDocument`, `CompanyCharges`, and `PersonAppointments` join `CompanyResolve` previous-name history and a `CompanyFilings` insolvency mode ([GB.md](docs/jurisdictions/GB.md)). **US (SEC EDGAR)** now answers `CompanyDocument` (filing document manifests + inline HTML/XBRL text) and `PersonAppointments` (reporting-owner CIK search, cross-issuer Section 16 role history, and a safe SALI enforcement-lookup link) alongside the seven core intents ([US.md](docs/jurisdictions/US.md)). **JP (EDINET)** and **KR (OpenDART)** now answer `CompanyDocument` too — JP downloads a filing's PDF (with page count) and lists its XBRL archive members by docID; KR lists a filing's DART documents and extracts the main document's text by receipt number ([JP.md](docs/jurisdictions/JP.md), [KR.md](docs/jurisdictions/KR.md)). **DE (Germany)** resolves issuers and returns §§33 ff. WpHG major holdings and Art. 19 MAR directors' dealings over BaFin's free databases, and now answers `PersonAppointments` too — a person-name search over the BaFin DealingsInfo notifying-persons index, then that person's issuers by BaFin `meldepflichtigerId` ([DE.md](docs/jurisdictions/DE.md)). **FR (France)** resolves listed issuers and lists their regulated filings with direct PDFs over the official OAM's keyless OpenDataSoft JSON API, fetches those documents (`CompanyDocument`), returns *franchissement de seuil* threshold-crossing notifications with a best-effort structured extraction from the newest notification PDFs' text layer — holder, crossing direction/date, threshold(s) crossed, and resulting capital/voting-rights % (`CompanyOwners`, partial — scanned/non-standard PDFs and older notifications stay link-only), and resolves non-listed companies and their officers over DINUM's keyless recherche-entreprises registry (`CompanyResolve`, `PersonAppointments`) — implemented from the live-verified [FR-FEASIBILITY.md](FR-FEASIBILITY.md) finding ([FR.md](docs/jurisdictions/FR.md)). **CN (cninfo)** now answers `CompanyFinancials` too — headline figures (revenue, profit, total assets, net assets) extracted from the 主要会计数据 key-data table of the issuer's latest periodic-report PDF, normalized to whole RMB from the report's stated unit and degrading to the PDF link when the report is unreadable ([CN.md](docs/jurisdictions/CN.md)). Secured-charge registers remain a GB-only open-data primitive. Also ahead: CN/IN ownership (前十名股东/董监高) still lives inside report PDFs. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
+Existing tool names and schemas stay stable — the collection only ever grows additively. The seven cross-jurisdiction intents absorb new sources and deeper data behind the same shapes; where a register offers primitives with no cross-jurisdiction equivalent (filed-document retrieval, secured-charge registers, person-level appointment history), a focused tool is added rather than contorting an intent. **GB (Companies House)** now goes deep: `CompanyDocument`, `CompanyCharges`, and `PersonAppointments` join `CompanyResolve` previous-name history and a `CompanyFilings` insolvency mode ([GB.md](docs/jurisdictions/GB.md)). **US (SEC EDGAR)** now answers `CompanyDocument` (filing document manifests + inline HTML/XBRL text) and `PersonAppointments` (reporting-owner CIK search, cross-issuer Section 16 role history, and a safe SALI enforcement-lookup link) alongside the seven core intents ([US.md](docs/jurisdictions/US.md)). **JP (EDINET)** and **KR (OpenDART)** now answer `CompanyDocument` too — JP downloads a filing's PDF (with page count) and lists its XBRL archive members by docID; KR lists a filing's DART documents and extracts the main document's text by receipt number ([JP.md](docs/jurisdictions/JP.md), [KR.md](docs/jurisdictions/KR.md)). **DE (Germany)** resolves issuers and returns §§33 ff. WpHG major holdings and Art. 19 MAR directors' dealings over BaFin's free databases, and now answers `PersonAppointments` too — a person-name search over the BaFin DealingsInfo notifying-persons index, then that person's issuers by BaFin `meldepflichtigerId` ([DE.md](docs/jurisdictions/DE.md)). **FR (France)** resolves listed issuers and lists their regulated filings with direct PDFs over the official OAM's keyless OpenDataSoft JSON API, fetches those documents (`CompanyDocument`), returns *franchissement de seuil* threshold-crossing notifications with a best-effort structured extraction from the newest notification PDFs' text layer — holder, crossing direction/date, threshold(s) crossed, and resulting capital/voting-rights % (`CompanyOwners`, partial — scanned/non-standard PDFs and older notifications stay link-only), and resolves non-listed companies and their officers over DINUM's keyless recherche-entreprises registry (`CompanyResolve`, `PersonAppointments`) — implemented from the live-verified [FR-FEASIBILITY.md](FR-FEASIBILITY.md) finding ([FR.md](docs/jurisdictions/FR.md)). **CN (cninfo)** now answers `CompanyFinancials` too — headline figures (revenue, profit, total assets, net assets) extracted from the 主要会计数据 key-data table of the issuer's latest periodic-report PDF, normalized to whole RMB from the report's stated unit and degrading to the PDF link when the report is unreadable ([CN.md](docs/jurisdictions/CN.md)). **TH (Thailand)** resolves listed **and private** companies over the DBD national juristic-person register — Thai and English legal name, juristic type, status, registered/paid-up capital, TSIC code and register date — keyless by 13-digit juristic number, with company-name search behind a free `DBD_API_KEY`; it is resolve-only because SET is Incapsula-walled and the SEC `idisc` filings API is keyless but brittle ([TH.md](docs/jurisdictions/TH.md)). Secured-charge registers remain a GB-only open-data primitive. Also ahead: CN/IN ownership (前十名股东/董监高) still lives inside report PDFs. Suggestions and issues welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
 
 ## License
 

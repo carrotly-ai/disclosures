@@ -76,6 +76,8 @@ supply the same variables directly. The suite currently covers:
   (`/listedco/…` transaction ids on hkexnews.hk), and `CompanyDocument` metadata
   (content-type/size) on the first returned filing;
 - keyless **SG** UEN resolution through ACRA open data;
+- keyless **TH** juristic-number resolution through the DBD register (PTT PCL — Thai
+  text round-trip and the registered-capital line);
 - keyless **TW** whole-market financials (TSMC) from TWSE open data — all five
   concepts, NT$ formatting, `structuredContent.concepts`;
 - credentialed **JP** annual financials (Toyota) parsed from EDINET XBRL — JPY

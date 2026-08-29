@@ -1,0 +1,55 @@
+{
+    "status": {
+        "code": "1000",
+        "description": "Success"
+    },
+    "data": [
+        {
+            "cd:OrganizationJuristicPerson": {
+                "cd:OrganizationJuristicID": "0107542000011",
+                "cd:OrganizationJuristicNameTH": "บริษัท ซีพี ออลล์ จำกัด (มหาชน)",
+                "cd:OrganizationJuristicNameEN": "CP ALL PUBLIC COMPANY LIMITED",
+                "cd:OrganizationJuristicType": "บริษัทมหาชนจำกัด",
+                "cd:OrganizationJuristicRegisterDate": "19990312",
+                "cd:OrganizationJuristicStatus": "ยังดำเนินกิจการอยู่",
+                "cd:OrganizationJuristicObjective": {
+                    "td:JuristicObjective": {
+                        "td:JuristicObjectiveCode": "56101",
+                        "td:JuristicObjectiveTextTH": "การบริการด้านอาหารในภัตตาคาร/ร้านอาหาร",
+                        "td:JuristicObjectiveTextEN": "Restaurants activities"
+                    }
+                },
+                "cd:OrganizationJuristicRegisterCapital": "8986296048.0",
+                "cd:OrganizationJuristicPaidUpCapital": "8983101348.00",
+                "cd:OrganizationJuristicBranchName": "สำนักงานใหญ่",
+                "cd:OrganizationJuristicAddress": {
+                    "cr:AddressType": {
+                        "cd:Address": "313  อาคารซี.พี.ทาวเวอร์ ชั้นที่ 24 ถนนสีลม",
+                        "cd:Building": "ซี.พี.ทาวเวอร์",
+                        "cd:RoomNo": null,
+                        "cd:Floor": "24",
+                        "cd:AddressNo": "313",
+                        "cd:Moo": null,
+                        "cd:Yaek": null,
+                        "cd:Soi": null,
+                        "cd:Trok": null,
+                        "cd:Village": null,
+                        "cd:Road": "สีลม",
+                        "cd:CitySubDivision": {
+                            "cr:CitySubDivisionCode": "10040200",
+                            "cr:CitySubDivisionTextTH": "สีลม"
+                        },
+                        "cd:City": {
+                            "cr:CityCode": "1004",
+                            "cr:CityTextTH": "เขตบางรัก"
+                        },
+                        "cd:CountrySubDivision": {
+                            "cr:CountrySubDivisionCode": "TH-10",
+                            "cr:CountrySubDivisionTextTH": "กรุงเทพมหานคร"
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}

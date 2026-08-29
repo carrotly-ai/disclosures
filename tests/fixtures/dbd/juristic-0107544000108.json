@@ -1,0 +1,55 @@
+{
+    "status": {
+        "code": "1000",
+        "description": "Success"
+    },
+    "data": [
+        {
+            "cd:OrganizationJuristicPerson": {
+                "cd:OrganizationJuristicID": "0107544000108",
+                "cd:OrganizationJuristicNameTH": "บริษัท ปตท. จำกัด (มหาชน)",
+                "cd:OrganizationJuristicNameEN": "PTT PUBLIC COMPANY LIMITED",
+                "cd:OrganizationJuristicType": "บริษัทมหาชนจำกัด",
+                "cd:OrganizationJuristicRegisterDate": "20011001",
+                "cd:OrganizationJuristicStatus": "ยังดำเนินกิจการอยู่",
+                "cd:OrganizationJuristicObjective": {
+                    "td:JuristicObjective": {
+                        "td:JuristicObjectiveCode": "71209",
+                        "td:JuristicObjectiveTextTH": "การทดสอบและวิเคราะห์ทางเทคนิคอื่นๆซึ่งมิได้จัดประเภท ไว้ในที่อื่น",
+                        "td:JuristicObjectiveTextEN": "Other technical testing and analysis, not elsewhere classified"
+                    }
+                },
+                "cd:OrganizationJuristicRegisterCapital": "28562996250.0",
+                "cd:OrganizationJuristicPaidUpCapital": "28562996250.00",
+                "cd:OrganizationJuristicBranchName": "สำนักงานใหญ่",
+                "cd:OrganizationJuristicAddress": {
+                    "cr:AddressType": {
+                        "cd:Address": "555 ถนนวิภาวดีรังสิต ",
+                        "cd:Building": null,
+                        "cd:RoomNo": null,
+                        "cd:Floor": null,
+                        "cd:AddressNo": "555",
+                        "cd:Moo": null,
+                        "cd:Yaek": null,
+                        "cd:Soi": null,
+                        "cd:Trok": null,
+                        "cd:Village": null,
+                        "cd:Road": "วิภาวดีรังสิต",
+                        "cd:CitySubDivision": {
+                            "cr:CitySubDivisionCode": "10300500",
+                            "cr:CitySubDivisionTextTH": "จตุจักร"
+                        },
+                        "cd:City": {
+                            "cr:CityCode": "1030",
+                            "cr:CityTextTH": "เขตจตุจักร"
+                        },
+                        "cd:CountrySubDivision": {
+                            "cr:CountrySubDivisionCode": "TH-10",
+                            "cr:CountrySubDivisionTextTH": "กรุงเทพมหานคร"
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
