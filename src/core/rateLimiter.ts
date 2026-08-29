@@ -130,6 +130,12 @@ export const edinetRateLimiter = new SlidingWindowRateLimiter(600, 60_000);
 // that one bounded scan never self-trips while cross-call abuse still does.
 export const cninfoRateLimiter = new SlidingWindowRateLimiter(300, 60_000);
 
+// SZSE's disclosure ShowReport JSON API (董监高股份变动 feed) has no published
+// limit. One CompanyInsiders call pages through a few requests; keep the window
+// generous enough that a single bounded scan never self-trips while cross-call
+// abuse still does.
+export const szseRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
+
 // BSE India's api host is aggressively anti-bot; keep our own budget modest so
 // we never contribute to the throttling that plain-fetch callers already hit.
 export const bseRateLimiter = new SlidingWindowRateLimiter(120, 60_000);
@@ -204,6 +210,7 @@ export function resetRateLimiters(): void {
   openDartRateLimiter.reset();
   edinetRateLimiter.reset();
   cninfoRateLimiter.reset();
+  szseRateLimiter.reset();
   bseRateLimiter.reset();
   fcaNsmRateLimiter.reset();
   xbrlFilingsRateLimiter.reset();
