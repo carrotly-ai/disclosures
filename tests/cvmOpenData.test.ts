@@ -4,9 +4,13 @@ import {
   CVM_REGISTRATION_URL,
   CvmRateLimitError,
   dfpYearsToScan,
+  freYearsToScan,
   getCvmFinancials,
+  getCvmInsiders,
+  getCvmOwners,
   ipeYearsForWindow,
   isCvmCode,
+  maskCpf,
   normalizeCvmCode,
   parseCvmCsv,
   parseCvmCsvLine,
@@ -264,5 +268,446 @@ describe("caching and rate limiting", () => {
     await expect(searchCvmCompanies("Vale", options(fetchFn))).rejects.toBeInstanceOf(
       CvmRateLimitError,
     );
+  });
+});
+
+// --- FRE ownership + administrators ----------------------------------------
+
+// Exact live column orders for the two FRE members this release parses.
+const POSICAO_HEADER =
+  "CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Companhia;ID_Acionista;" +
+  "Acionista;Tipo_Pessoa_Acionista;CPF_CNPJ_Acionista;ID_Acionista_Relacionado;" +
+  "Acionista_Relacionado;Tipo_Pessoa_Acionista_Relacionado;CPF_CNPJ_Acionista_Relacionado;" +
+  "Quantidade_Acao_Ordinaria_Circulacao;Percentual_Acao_Ordinaria_Circulacao;" +
+  "Quantidade_Acao_Preferencial_Circulacao;Percentual_Acao_Preferencial_Circulacao;" +
+  "Quantidade_Total_Acoes_Circulacao;Percentual_Total_Acoes_Circulacao;Nacionalidade;" +
+  "Sigla_UF;Residente_Exterior;Representante_Legal;Tipo_Pessoa_Representante_Legal;" +
+  "CPF_CNPJ_Representante_legal;Data_Composicao_Capital_Social;Data_Ultima_Alteracao;" +
+  "Acionista_Controlador;Participante_Acordo_Acionistas";
+
+const ADMIN_HEADER =
+  "CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Companhia;Orgao_Administracao;" +
+  "Nome;CPF;Profissao;Cargo_Eletivo_Ocupado;Complemento_Cargo_Eletivo_Ocupado;Data_Eleicao;" +
+  "Data_Posse;Data_Inicio_Primeiro_Mandato;Prazo_Mandato;Eleito_Controlador;Outro_Cargo_Funcao;" +
+  "Experiencia_Profissional;Data_Nascimento;Numero_Mandatos_Consecutivos;" +
+  "Percentual_Participacao_Reunioes";
+
+/** Build one CSV line from a header + sparse column map (missing cols blank). */
+function csvRow(header: string, values: Record<string, string>): string {
+  return header.split(";").map((col) => values[col] ?? "").join(";");
+}
+
+const VALE = "33.592.510/0001-54";
+
+function posRow(values: Record<string, string>): string {
+  return csvRow(POSICAO_HEADER, {
+    CNPJ_Companhia: VALE,
+    Data_Referencia: "2025-12-31",
+    Versao: "2",
+    ...values,
+  });
+}
+
+// Vale posição acionária: named holders (PJ + a PF to mask), aggregate rows, a
+// golden PN share, a controlling bloc, a superseded version, an older reference
+// date, a related-shareholder chain row, a duplicate, and a fully-zero row.
+const POSICAO_2025 = [
+  POSICAO_HEADER,
+  // Latin-1 accents (Ê) prove the decoder; PJ holder, not the controller.
+  posRow({
+    Acionista: "PREVI - CAIXA DE PREVIDÊNCIA",
+    Tipo_Pessoa_Acionista: "PJ",
+    CPF_CNPJ_Acionista: "33.754.482/0001-24",
+    Percentual_Acao_Ordinaria_Circulacao: "7.650000",
+    Percentual_Total_Acoes_Circulacao: "7.650000",
+    Nacionalidade: "Brasil",
+    Acionista_Controlador: "N",
+    Participante_Acordo_Acionistas: "N",
+  }),
+  // Exact duplicate of PREVI — dedupe must collapse it.
+  posRow({
+    Acionista: "PREVI - CAIXA DE PREVIDÊNCIA",
+    Tipo_Pessoa_Acionista: "PJ",
+    CPF_CNPJ_Acionista: "33.754.482/0001-24",
+    Percentual_Acao_Ordinaria_Circulacao: "7.650000",
+    Percentual_Total_Acoes_Circulacao: "7.650000",
+    Nacionalidade: "Brasil",
+    Acionista_Controlador: "N",
+    Participante_Acordo_Acionistas: "N",
+  }),
+  // Corporate CNPJ placeholder (00.000.000/0000-00) → treated as no doc.
+  posRow({
+    Acionista: "BLACKROCK, INC.",
+    Tipo_Pessoa_Acionista: "PJ",
+    CPF_CNPJ_Acionista: "00.000.000/0000-00",
+    Percentual_Acao_Ordinaria_Circulacao: "6.708000",
+    Percentual_Total_Acoes_Circulacao: "6.708000",
+    Acionista_Controlador: "N",
+    Participante_Acordo_Acionistas: "N",
+  }),
+  // Natural person → CPF middle digits must be masked.
+  posRow({
+    Acionista: "JOÃO DA SILVA",
+    Tipo_Pessoa_Acionista: "PF",
+    CPF_CNPJ_Acionista: "048.556.228-69",
+    Percentual_Acao_Ordinaria_Circulacao: "3.000000",
+    Percentual_Total_Acoes_Circulacao: "3.000000",
+    Acionista_Controlador: "N",
+    Participante_Acordo_Acionistas: "N",
+  }),
+  // Controlling bloc: both controlador and acordo de acionistas flags set.
+  posRow({
+    Acionista: "CONTROLADORA LTDA",
+    Tipo_Pessoa_Acionista: "PJ",
+    CPF_CNPJ_Acionista: "12.345.678/0001-90",
+    Percentual_Acao_Ordinaria_Circulacao: "50.000000",
+    Percentual_Total_Acoes_Circulacao: "40.000000",
+    Acionista_Controlador: "S",
+    Participante_Acordo_Acionistas: "S",
+  }),
+  // Free-float aggregate row — kept, as filed.
+  posRow({
+    Acionista: "Outros",
+    Percentual_Acao_Ordinaria_Circulacao: "43.342000",
+    Percentual_Total_Acoes_Circulacao: "49.342000",
+  }),
+  // Golden PN share: ON 0, PN 100, total 0 — NOT all-zero, must be kept.
+  posRow({
+    Acionista: "GOVERNO FEDERAL",
+    Tipo_Pessoa_Acionista: "PJ",
+    CPF_CNPJ_Acionista: "00.394.460/0001-41",
+    Percentual_Acao_Ordinaria_Circulacao: "0.000000",
+    Percentual_Acao_Preferencial_Circulacao: "100.000000",
+    Percentual_Total_Acoes_Circulacao: "0.000000",
+  }),
+  // Fully-zero treasury padding row — must be dropped.
+  posRow({
+    Acionista: "Ações Tesouraria",
+    Percentual_Acao_Ordinaria_Circulacao: "0.000000",
+    Percentual_Acao_Preferencial_Circulacao: "0.000000",
+    Percentual_Total_Acoes_Circulacao: "0.000000",
+  }),
+  // Related-shareholder chain row (Acionista_Relacionado set) — must be excluded
+  // (its 100% is relative to the intermediary, not the issuer).
+  posRow({
+    Acionista: "UNIÃO FEDERAL",
+    Tipo_Pessoa_Acionista: "PJ",
+    CPF_CNPJ_Acionista: "00.394.460/0409-50",
+    ID_Acionista_Relacionado: "999",
+    Acionista_Relacionado: "BNDES",
+    Percentual_Acao_Ordinaria_Circulacao: "100.000000",
+    Percentual_Total_Acoes_Circulacao: "100.000000",
+  }),
+  // Superseded older version (Versao 1) — must be ignored in favour of v2.
+  posRow({
+    Versao: "1",
+    Acionista: "STALE HOLDER V1",
+    Tipo_Pessoa_Acionista: "PJ",
+    CPF_CNPJ_Acionista: "11.111.111/0001-11",
+    Percentual_Total_Acoes_Circulacao: "99.000000",
+  }),
+  // Older reference date — must be ignored in favour of 2025-12-31.
+  posRow({
+    Data_Referencia: "2024-12-31",
+    Acionista: "STALE HOLDER OLD REF",
+    Tipo_Pessoa_Acionista: "PJ",
+    CPF_CNPJ_Acionista: "22.222.222/0001-22",
+    Percentual_Total_Acoes_Circulacao: "88.000000",
+  }),
+  // A different company that a CNPJ filter must drop.
+  csvRow(POSICAO_HEADER, {
+    CNPJ_Companhia: "00.000.000/0001-91",
+    Data_Referencia: "2025-12-31",
+    Versao: "3",
+    Acionista: "OTHER CO HOLDER",
+    Tipo_Pessoa_Acionista: "PJ",
+    Percentual_Total_Acoes_Circulacao: "77.000000",
+  }),
+].join("\n");
+
+function admRow(values: Record<string, string>): string {
+  return csvRow(ADMIN_HEADER, {
+    CNPJ_Companhia: VALE,
+    Data_Referencia: "2025-12-31",
+    Versao: "2",
+    ...values,
+  });
+}
+
+const ADMIN_2025 = [
+  ADMIN_HEADER,
+  admRow({
+    Orgao_Administracao: "Pertence apenas à Diretoria",
+    Nome: "GUSTAVO DUARTE PIMENTA",
+    CPF: "035.844.246-07",
+    Profissao: "Engenheiro",
+    Cargo_Eletivo_Ocupado: "10 - Diretor Presidente / Superintendente",
+    Data_Eleicao: "2024-08-26",
+    Prazo_Mandato: "31/05/2027",
+    Eleito_Controlador: "N",
+  }),
+  admRow({
+    Orgao_Administracao: "Pertence apenas ao Conselho de Administração",
+    Nome: "DANIEL ANDRÉ STIELER",
+    CPF: "391.145.110-53",
+    Cargo_Eletivo_Ocupado: "20 - Presidente do Conselho de Administração",
+    Data_Eleicao: "2025-04-30",
+    Prazo_Mandato: "Até a realização da AGO de 2027",
+    Eleito_Controlador: "S",
+  }),
+  admRow({
+    Orgao_Administracao: "Conselho Fiscal",
+    Nome: "RAPHAEL MANHÃES MARTINS",
+    CPF: "096.952.607-56",
+    Cargo_Eletivo_Ocupado: "42 - Pres. C.F.Eleito p/Minor.Ordinaristas",
+    Data_Eleicao: "2026-04-30",
+    Prazo_Mandato: "Até a AGO de 2027",
+    Eleito_Controlador: "N",
+  }),
+  // A superseded version — ignored.
+  admRow({
+    Versao: "1",
+    Orgao_Administracao: "Pertence apenas à Diretoria",
+    Nome: "STALE DIRECTOR V1",
+    CPF: "000.000.000-00",
+    Cargo_Eletivo_Ocupado: "19 - Outros Diretores",
+  }),
+  // Another company — dropped by the CNPJ filter.
+  csvRow(ADMIN_HEADER, {
+    CNPJ_Companhia: "00.000.000/0001-91",
+    Data_Referencia: "2025-12-31",
+    Versao: "1",
+    Orgao_Administracao: "Conselho Fiscal",
+    Nome: "OTHER CO DIRECTOR",
+    CPF: "111.111.111-11",
+  }),
+].join("\n");
+
+function freZip(year: number, posicao: string, admin: string): Uint8Array {
+  return makeStoredZipMulti([
+    { name: `fre_cia_aberta_posicao_acionaria_${year}.csv`, content: latin1Bytes(posicao) },
+    // Sibling member the posicao filter must NOT grab; garbage if inflated.
+    {
+      name: `fre_cia_aberta_posicao_acionaria_classe_acao_${year}.csv`,
+      content: "garbage;should;not;parse",
+    },
+    {
+      name: `fre_cia_aberta_administrador_membro_conselho_fiscal_${year}.csv`,
+      content: latin1Bytes(admin),
+    },
+    // Unrelated members the selective reader must skip without inflating.
+    { name: `fre_cia_aberta_${year}.csv`, content: "noise-root-member" },
+    { name: `fre_cia_aberta_auditor_${year}.csv`, content: "noise-auditor-member" },
+  ]);
+}
+
+const fre2025Route: Route = {
+  pattern: "fre_cia_aberta_2025.zip",
+  body: freZip(2025, POSICAO_2025, ADMIN_2025),
+};
+
+describe("maskCpf", () => {
+  test("masks a natural person's CPF middle digits, leaves other ids intact", () => {
+    expect(maskCpf("048.556.228-69")).toBe("048.***.***-69");
+    expect(maskCpf("04855622869")).toBe("048.***.***-69");
+    // A 14-digit CNPJ is not an 11-digit CPF → returned unchanged.
+    expect(maskCpf("33.754.482/0001-24")).toBe("33.754.482/0001-24");
+    expect(maskCpf("")).toBe("");
+  });
+});
+
+describe("freYearsToScan", () => {
+  test("returns three years newest-first, floored at 2010", () => {
+    expect(freYearsToScan(2026)).toEqual([2026, 2025, 2024]);
+    expect(freYearsToScan(2011)).toEqual([2011, 2010]);
+  });
+});
+
+describe("getCvmOwners", () => {
+  test("parses direct holders, masks CPF, keeps ON/PN split and bloc flags", async () => {
+    const fetchFn = routedFetch([registrationRoute, fre2025Route]);
+    const { entity, owners, referenceDate, year } = await getCvmOwners(
+      "Vale",
+      options(fetchFn),
+      2025,
+    );
+    expect(entity.cvmCode).toBe("4170");
+    expect(referenceDate).toBe("2025-12-31");
+    expect(year).toBe(2025);
+
+    const names = owners.map((owner) => owner.holderName);
+    // Sorted by total % desc: Outros 49.342, Controladora 40, Previ 7.65,
+    // BlackRock 6.708, João 3, Governo 0 (golden PN).
+    expect(names).toEqual([
+      "Outros",
+      "CONTROLADORA LTDA",
+      "PREVI - CAIXA DE PREVIDÊNCIA", // Latin-1 Ê decoded
+      "BLACKROCK, INC.",
+      "JOÃO DA SILVA",
+      "GOVERNO FEDERAL",
+    ]);
+    // Duplicate PREVI collapsed, treasury (all-zero) dropped, related-chain and
+    // stale version/reference and other-company rows all excluded.
+    expect(names).not.toContain("Ações Tesouraria");
+    expect(names).not.toContain("UNIÃO FEDERAL");
+    expect(names).not.toContain("STALE HOLDER V1");
+    expect(names).not.toContain("STALE HOLDER OLD REF");
+    expect(names).not.toContain("OTHER CO HOLDER");
+    expect(names.filter((n) => n === "PREVI - CAIXA DE PREVIDÊNCIA")).toHaveLength(1);
+
+    const previ = owners.find((owner) => owner.holderName.startsWith("PREVI"));
+    expect(previ?.documentId).toBe("33.754.482/0001-24"); // CNPJ intact
+    expect(previ?.personType).toBe("PJ");
+    expect(previ?.pctOrdinary).toBe(7.65);
+    expect(previ?.pctTotal).toBe(7.65);
+
+    const joao = owners.find((owner) => owner.holderName === "JOÃO DA SILVA");
+    expect(joao?.documentId).toBe("048.***.***-69"); // CPF middle masked
+    expect(joao?.personType).toBe("PF");
+
+    const blackrock = owners.find((owner) => owner.holderName === "BLACKROCK, INC.");
+    expect(blackrock?.documentId).toBeUndefined(); // 00.000.000/0000-00 → no doc
+
+    const bloc = owners.find((owner) => owner.holderName === "CONTROLADORA LTDA");
+    expect(bloc?.isController).toBe(true);
+    expect(bloc?.inShareholdersAgreement).toBe(true);
+    expect(bloc?.pctOrdinary).toBe(50);
+    expect(bloc?.pctTotal).toBe(40);
+
+    const golden = owners.find((owner) => owner.holderName === "GOVERNO FEDERAL");
+    expect(golden?.pctPreferred).toBe(100);
+    expect(golden?.pctTotal).toBe(0);
+  });
+
+  test("falls back to the prior FRE year when the current lacks the company", async () => {
+    const other = [
+      POSICAO_HEADER,
+      csvRow(POSICAO_HEADER, {
+        CNPJ_Companhia: "00.000.000/0001-91",
+        Data_Referencia: "2026-12-31",
+        Versao: "1",
+        Acionista: "SOMEONE ELSE",
+        Percentual_Total_Acoes_Circulacao: "10.000000",
+      }),
+    ].join("\n");
+    const fetchFn = routedFetch([
+      registrationRoute,
+      { pattern: "fre_cia_aberta_2026.zip", body: freZip(2026, other, ADMIN_HEADER) },
+      fre2025Route,
+    ]);
+    const { owners, year } = await getCvmOwners("Vale", options(fetchFn), 2026);
+    expect(year).toBe(2025);
+    expect(owners.length).toBeGreaterThan(0);
+  });
+
+  test("caps at the top 25 holders by total percentage", async () => {
+    const rows = [POSICAO_HEADER];
+    for (let index = 0; index < 30; index += 1) {
+      rows.push(posRow({
+        Acionista: `HOLDER ${index}`,
+        Tipo_Pessoa_Acionista: "PJ",
+        CPF_CNPJ_Acionista: `10.000.000/00${String(index).padStart(2, "0")}-00`,
+        Percentual_Total_Acoes_Circulacao: `${index + 1}.000000`,
+      }));
+    }
+    const fetchFn = routedFetch([
+      registrationRoute,
+      { pattern: "fre_cia_aberta_2025.zip", body: freZip(2025, rows.join("\n"), ADMIN_HEADER) },
+    ]);
+    const { owners } = await getCvmOwners("Vale", options(fetchFn), 2025);
+    expect(owners).toHaveLength(25);
+    // The largest (HOLDER 29 at 30%) leads; the smallest kept is HOLDER 5 at 6%.
+    expect(owners[0]?.holderName).toBe("HOLDER 29");
+    expect(owners.at(-1)?.holderName).toBe("HOLDER 5");
+  });
+
+  test("returns an empty holder list honestly when the company has no FRE", async () => {
+    const empty = [
+      POSICAO_HEADER,
+      csvRow(POSICAO_HEADER, {
+        CNPJ_Companhia: "00.000.000/0001-91",
+        Data_Referencia: "2025-12-31",
+        Versao: "1",
+        Acionista: "SOMEONE ELSE",
+        Percentual_Total_Acoes_Circulacao: "5.000000",
+      }),
+    ].join("\n");
+    const fetchFn = routedFetch([
+      registrationRoute,
+      { pattern: "fre_cia_aberta_2025.zip", body: freZip(2025, empty, ADMIN_HEADER) },
+      { pattern: "fre_cia_aberta_2024.zip", body: freZip(2024, POSICAO_HEADER, ADMIN_HEADER) },
+      { pattern: "fre_cia_aberta_2023.zip", body: freZip(2023, POSICAO_HEADER, ADMIN_HEADER) },
+    ]);
+    const { entity, owners } = await getCvmOwners("Vale", options(fetchFn), 2025);
+    expect(entity.legalName).toBe("VALE S.A.");
+    expect(owners).toEqual([]);
+  });
+
+  test("propagates an upstream failure", async () => {
+    const fetchFn = routedFetch([
+      registrationRoute,
+      { pattern: "fre_cia_aberta_2025.zip", body: "boom", status: 500 },
+    ]);
+    await expect(getCvmOwners("Vale", options(fetchFn), 2025)).rejects.toBeTruthy();
+  });
+});
+
+describe("getCvmInsiders", () => {
+  test("parses administrators, normalizes órgão + cargo, sorts, keeps accents", async () => {
+    const fetchFn = routedFetch([registrationRoute, fre2025Route]);
+    const { entity, administrators, referenceDate, year } = await getCvmInsiders(
+      "Vale",
+      options(fetchFn),
+      2025,
+    );
+    expect(entity.cvmCode).toBe("4170");
+    expect(referenceDate).toBe("2025-12-31");
+    expect(year).toBe(2025);
+
+    // Sorted: Conselho de Administração, Diretoria, Conselho Fiscal.
+    expect(administrators.map((admin) => admin.name)).toEqual([
+      "DANIEL ANDRÉ STIELER", // accent decoded
+      "GUSTAVO DUARTE PIMENTA",
+      "RAPHAEL MANHÃES MARTINS", // accent decoded
+    ]);
+    expect(administrators.map((admin) => admin.organ)).toEqual([
+      "Conselho de Administração",
+      "Diretoria",
+      "Conselho Fiscal",
+    ]);
+
+    const chair = administrators[0];
+    expect(chair?.role).toBe("Presidente do Conselho de Administração"); // NN- stripped
+    expect(chair?.electionDate).toBe("2025-04-30");
+    expect(chair?.term).toBe("Até a realização da AGO de 2027");
+    expect(chair?.electedByController).toBe(true);
+
+    const ceo = administrators.find((admin) => admin.name === "GUSTAVO DUARTE PIMENTA");
+    expect(ceo?.role).toBe("Diretor Presidente / Superintendente");
+    expect(ceo?.profession).toBe("Engenheiro");
+    expect(ceo?.term).toBe("31/05/2027");
+
+    // Stale version and the other company are excluded.
+    expect(administrators.map((admin) => admin.name)).not.toContain("STALE DIRECTOR V1");
+    expect(administrators.map((admin) => admin.name)).not.toContain("OTHER CO DIRECTOR");
+  });
+
+  test("returns an empty administrator list honestly when the company has no FRE", async () => {
+    const fetchFn = routedFetch([
+      registrationRoute,
+      { pattern: "fre_cia_aberta_2025.zip", body: freZip(2025, POSICAO_HEADER, ADMIN_HEADER) },
+      { pattern: "fre_cia_aberta_2024.zip", body: freZip(2024, POSICAO_HEADER, ADMIN_HEADER) },
+      { pattern: "fre_cia_aberta_2023.zip", body: freZip(2023, POSICAO_HEADER, ADMIN_HEADER) },
+    ]);
+    const { administrators } = await getCvmInsiders("Vale", options(fetchFn), 2025);
+    expect(administrators).toEqual([]);
+  });
+
+  test("propagates an upstream failure", async () => {
+    const fetchFn = routedFetch([
+      registrationRoute,
+      { pattern: "fre_cia_aberta_2025.zip", body: "boom", status: 500 },
+    ]);
+    await expect(getCvmInsiders("Vale", options(fetchFn), 2025)).rejects.toBeTruthy();
   });
 });
