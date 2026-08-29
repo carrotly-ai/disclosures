@@ -519,9 +519,25 @@ export async function searchPseCompanies(
   }
   const entities = [...byId.values()];
   if (!entities.length) return [];
-  return rankEntities(term, entities, {
+  const ranked = rankEntities(term, entities, {
     fallbackReason: "PSE EDGE search result",
   });
+  // An exact ticker match must outrank a name-similarity match: a query of "SM"
+  // means SM Investments (ticker SM), not SM Prime Holdings — which otherwise
+  // wins on "legal name starts with query".
+  const upper = term.toUpperCase();
+  const exactIndex = ranked.findIndex(
+    (entity) => (entity.ticker ?? "").toUpperCase() === upper,
+  );
+  if (exactIndex > 0) {
+    const [exact] = ranked.splice(exactIndex, 1);
+    if (exact) {
+      ranked.unshift({ ...exact, matchReason: "Exact PSE ticker-symbol match" });
+    }
+  } else if (exactIndex === 0 && ranked[0]) {
+    ranked[0] = { ...ranked[0], matchReason: "Exact PSE ticker-symbol match" };
+  }
+  return ranked;
 }
 
 async function fetchPseAutocomplete(
@@ -1678,11 +1694,31 @@ export interface PseFinancialsInput {
 }
 
 /**
+ * How many years back the financial-reports search looks when the caller gives
+ * no window. The endpoint REQUIRES an explicit fromDate/toDate — omitting them
+ * returns `[Total 0]` rather than everything (verified live), so this default
+ * exists to stop a windowless call from silently reporting "no reports".
+ */
+export const PSE_FINANCIALS_DEFAULT_YEARS = 6;
+
+/** The default window's bounds, as ISO dates, ending today. */
+export function pseDefaultFinancialsWindow(
+  now: Date = new Date(),
+): { startDate: string; endDate: string } {
+  const end = new Date(now.getTime());
+  const start = new Date(now.getTime());
+  start.setUTCFullYear(start.getUTCFullYear() - PSE_FINANCIALS_DEFAULT_YEARS);
+  const iso = (date: Date): string => date.toISOString().slice(0, 10);
+  return { startDate: iso(start), endDate: iso(end) };
+}
+
+/**
  * Search the financial-reports index for one issuer.
  *
  * NOTE the parameter asymmetry: this endpoint filters by `companyId`, whereas
  * companyDisclosures filters by `keyword`. Sending the wrong one returns zero
- * rows (verified live), so they are deliberately not shared.
+ * rows (verified live), so they are deliberately not shared. It also requires a
+ * date window — see PSE_FINANCIALS_DEFAULT_YEARS.
  */
 export async function searchPseFinancialReports(
   companyId: string,
@@ -1720,12 +1756,14 @@ export async function getPseFinancials(
   const template = input.kind === "quarterly"
     ? PSE_QUARTERLY_TEMPLATE
     : PSE_ANNUAL_TEMPLATE;
+  // The endpoint returns nothing at all without a window, so supply one.
+  const fallbackWindow = pseDefaultFinancialsWindow();
   const rows = await searchPseFinancialReports(
     companyId,
     {
       template,
-      ...(input.startDate ? { startDate: input.startDate } : {}),
-      ...(input.endDate ? { endDate: input.endDate } : {}),
+      startDate: input.startDate ?? fallbackWindow.startDate,
+      endDate: input.endDate ?? fallbackWindow.endDate,
     },
     options,
   );
