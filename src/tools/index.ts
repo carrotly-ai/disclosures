@@ -271,6 +271,7 @@ import {
   searchBursaCompanies,
   searchBursaFilings,
 } from "../adapters/bursaMalaysia.js";
+import {
   getKapDocumentMetadata,
   getKapDocumentPdf,
   KAP_DOCUMENT_CONTENT_WARNING,
@@ -4612,8 +4613,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
         jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
-        jurisdiction === "ID" || jurisdiction === "MY"
-        jurisdiction === "ID" || jurisdiction === "TR"
+        jurisdiction === "ID" || jurisdiction === "MY" ||
+        jurisdiction === "TR"
       ) {
         if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
         const registry = jurisdiction === "GB"

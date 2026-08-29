@@ -346,6 +346,8 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "rest stay link-only. SSM (Companies Commission e-Info) is a paid " +
       "registry, so private-company resolution, documents and charges are " +
       "unsupported. Exchange copyright (link-first, on-demand fetch).",
+  },
+  {
     code: "TR",
     name: "Türkiye",
     source: "KAP — Kamuyu Aydınlatma Platformu / Public Disclosure Platform (MKK)",
