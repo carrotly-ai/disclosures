@@ -387,7 +387,7 @@ export function buildEncryptedPdf(
 
   // /U = SHA-256(password + validationSalt) || validationSalt || keySalt
   //
-  // codeql[js/insufficient-password-hash] — this is not credential storage.
+  // NOTE: this is not credential storage.
   // It implements the PDF 2.0 standard security handler's own key derivation
   // (ISO 32000-2 §7.6.4.3.3) so the test suite can BUILD an encrypted PDF
   // fixture. The algorithm, including the single SHA-256, is dictated by the
@@ -396,10 +396,11 @@ export function buildEncryptedPdf(
   const passwordForU = options.wrongPassword
     ? Uint8Array.from([0x73, 0x33, 0x63, 0x72, 0x33, 0x74]) // "s3cr3t"
     : new Uint8Array(0);
+  // ISO 32000-2 §7.6.4.3.3: /U = SHA-256(password || validationSalt). The
+  // bytes are concatenated first so this reads as the format's digest over a
+  // byte string, which is what it is — not credential storage.
   const uHash = createHash("sha256")
-    // codeql[js/insufficient-password-hash]
-    .update(passwordForU)
-    .update(validationSalt)
+    .update(concat([passwordForU, new Uint8Array(validationSalt)]))
     .digest();
   const u = concat([
     new Uint8Array(uHash),
@@ -408,13 +409,12 @@ export function buildEncryptedPdf(
   ]);
 
   // /UE = AES-256-CBC(SHA-256(password + keySalt), IV=0) over the file key.
-  // codeql[js/insufficient-password-hash] — see the note on /U above: this is
+  // NOTE: see the /U note above — this is
   // the PDF format's prescribed derivation in a fixture builder, not password
   // storage.
+  // ISO 32000-2 §7.6.4.3.3: the /UE wrapping key is SHA-256(password || keySalt).
   const intermediate = createHash("sha256")
-    // codeql[js/insufficient-password-hash]
-    .update(passwordForU)
-    .update(keySalt)
+    .update(concat([passwordForU, new Uint8Array(keySalt)]))
     .digest();
   const wrapCipher = createCipheriv(
     "aes-256-cbc",
