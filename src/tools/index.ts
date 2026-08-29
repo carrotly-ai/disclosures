@@ -154,10 +154,16 @@ import {
 import type { TwseDirectorHolding } from "../adapters/twseOpenApi.js";
 import {
   CVM_FINANCIAL_CONCEPT_NAMES,
+  CVM_FRE_INSIDER_FORM,
+  CVM_FRE_OWNERS_FORM,
+  CVM_FRE_OWNERS_THRESHOLD_REGIME,
   getCvmFinancials,
+  getCvmInsiders,
+  getCvmOwners,
   searchCvmCompanies,
   searchCvmFilings,
 } from "../adapters/cvmOpenData.js";
+import type { CvmAdministrator, CvmOwner } from "../adapters/cvmOpenData.js";
 import {
   BAFIN_INSIDERS_CAVEAT,
   BAFIN_MAR_REGIME,
@@ -463,6 +469,7 @@ function insidersStructured(
       officerRole: insider.officerRole,
       occupation: insider.occupation,
       status: insider.status,
+      term: insider.term,
       form: insider.form,
       filedDate: insider.filedDate,
       appointedDate: insider.appointedDate,
@@ -514,6 +521,8 @@ function ownersStructured(
       holderName: owner.holderName,
       holderType: owner.holderType,
       pct: owner.pct,
+      pctOrdinary: owner.pctOrdinary,
+      pctPreferred: owner.pctPreferred,
       percentageBand: owner.percentageBand,
       change: owner.change,
       thresholdRegime: owner.thresholdRegime,
@@ -960,18 +969,23 @@ const CVM_FINANCIALS_CAVEAT =
   "(no segment or note detail), and a later restatement in a newer bundle " +
   "supersedes an earlier figure for the same period end.";
 
-const CVM_INSIDER_UNSUPPORTED =
-  "CompanyInsiders is unsupported for jurisdiction \"BR\". CVM discloses officer " +
-  "and administrator data inside the Formulário de Referência and governance " +
-  "filings, but this release does not parse them into a normalized insider feed. " +
-  "Use CompanyFilings with jurisdiction \"BR\" to reach the underlying documents.";
+const CVM_INSIDERS_CAVEAT =
+  "Register of administrators as filed in the company's latest Formulário de " +
+  "Referência (item 12) — órgão (Diretoria / Conselho de Administração / Conselho " +
+  "Fiscal), elective post, election date and mandate term. This is a governance " +
+  "register, not a directors'-dealings feed: it does not report trades. It is the " +
+  "annual as-filed snapshot (a member who left after the filing may still appear); " +
+  "directors' CPFs are omitted (LGPD). Use CompanyFilings with jurisdiction \"BR\" " +
+  "for the underlying governance documents.";
 
-const CVM_OWNER_UNSUPPORTED =
-  "CompanyOwners is unsupported for jurisdiction \"BR\". CVM discloses relevant " +
-  "(5%+) shareholding movements and controlling-block data inside the Formulário " +
-  "de Referência and CVM 44 communications, but this release does not parse them " +
-  "into a normalized ownership feed. Use CompanyFilings with jurisdiction \"BR\" " +
-  "to reach the underlying documents.";
+const CVM_OWNERS_CAVEAT =
+  "Shareholder positions as declared by the issuer in its latest Formulário de " +
+  "Referência (item 15, posição acionária) — an as-filed annual snapshot, not a " +
+  "live cap table. Percentages are reported by share class (ON ordinárias / PN " +
+  "preferenciais) and total; aggregate rows (Outros = free float, Ações " +
+  "Tesouraria = treasury) appear as filed. The controlling-bloc flag reflects the " +
+  "issuer's own controlador / acordo de acionistas marking. Natural persons' CPFs " +
+  "are middle-masked (LGPD); corporate CNPJs are shown in full.";
 
 const BAFIN_FILINGS_UNSUPPORTED =
   "CompanyFilings is unsupported for jurisdiction \"DE\". This release reads only " +
@@ -2163,12 +2177,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
   const companyInsiders = defineTool(
     "CompanyInsiders",
     "List a company's insiders/officers from the jurisdiction's register: US " +
-      "Section 16 filers (default), GB Companies House officers (KR, TW, and " +
-      "DE variants: DART executive ownership, TWSE director/supervisor " +
-      "holdings, BaFin Art.19 MAR directors' dealings). Unsupported " +
-      "jurisdictions (e.g. JP — EDINET has no insider-dealing feed) explain " +
-      "why honestly. Recency and completeness caveats are stated in each " +
-      "response.",
+      "Section 16 filers (default), GB Companies House officers (KR, TW, DE, " +
+      "and BR variants: DART executive ownership, TWSE director/supervisor " +
+      "holdings, BaFin Art.19 MAR directors' dealings, CVM Formulário de " +
+      "Referência administrator register). Unsupported jurisdictions (e.g. JP " +
+      "— EDINET has no insider-dealing feed) explain why honestly. Recency and " +
+      "completeness caveats are stated in each response.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("CompanyInsiders");
@@ -2194,7 +2208,60 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         );
       }
       if (jurisdiction === "BR") {
-        return textResult(CVM_INSIDER_UNSUPPORTED);
+        try {
+          const { entity, administrators, referenceDate, year } =
+            await getCvmInsiders(company, options);
+          const title = `${entity.legalName}${entity.cvmCode ? ` (CVM ${entity.cvmCode})` : ""}`;
+          if (!administrators.length) {
+            return textResult(joinSections(
+              `No CVM Formulário de Referência administrator register found for ` +
+                `"${company}".`,
+              `_${CVM_INSIDERS_CAVEAT}_`,
+            ));
+          }
+          const asOf = [referenceDate, year ? `FRE ${year}` : undefined]
+            .filter(Boolean).join(" · ");
+          const insiders: Insider[] = administrators.map((admin: CvmAdministrator) => ({
+            name: admin.name,
+            roles: [admin.organ],
+            ...(admin.role ? { officerRole: admin.role } : {}),
+            ...(admin.profession ? { occupation: admin.profession } : {}),
+            ...(admin.electedByController
+              ? { status: "Elected by controlling shareholder" }
+              : {}),
+            ...(admin.term ? { term: admin.term } : {}),
+            form: CVM_FRE_INSIDER_FORM,
+            filedDate: referenceDate ?? "",
+            ...(admin.electionDate ? { appointedDate: admin.electionDate } : {}),
+            sourceUrl: admin.sourceUrl,
+            source: "CVM" as const,
+            sourceIdentifiers: {
+              ...(entity.cvmCode ? { cvmCode: entity.cvmCode } : {}),
+              jurisdiction: "BR",
+            },
+          }));
+          return textResult(joinSections(
+            `# Administrators (CVM FRE item 12): ${title}`,
+            asOf ? `Reference: ${asOf}.` : undefined,
+            markdownTable(
+              ["Name", "Órgão", "Elective post", "Elected", "Mandate term"],
+              administrators.map((admin) => [
+                admin.name,
+                admin.organ,
+                admin.role,
+                admin.electionDate,
+                admin.term,
+              ]),
+            ),
+            `_${CVM_INSIDERS_CAVEAT}_`,
+            nextStep(
+              "for the underlying governance documents use CompanyFilings with " +
+                "jurisdiction \"BR\".",
+            ),
+          ), insidersStructured(insiders, "BR"));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "FR") {
         return textResult(INFO_FINANCIERE_INSIDERS_UNSUPPORTED);
@@ -2360,7 +2427,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "register (+ FCA TR-1 when an NSM fetchFn is injected), KR 5% rule, JP " +
       "large-volume holding reports (start_date/end_date bound the JP scan " +
       "window only), TW >10% holders, DE §§33 ff. WpHG voting-rights " +
-      "notifications. Explicit HK returns a CCASS participant/custodian " +
+      "notifications, BR CVM Formulário de Referência posição acionária (item " +
+      "15: ON/PN/total percentages plus the issuer's controlling-bloc " +
+      "marking). Explicit HK returns a CCASS participant/custodian " +
       "shareholding snapshot (custodian banks, brokers, HKSCC Nominees, CSDC) — " +
       "NOT beneficial owners; the SFO Part XV disclosure-of-interests register " +
       "is captcha-walled and linked for manual lookup. Every row states its " +
@@ -2402,10 +2471,79 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         ));
       }
       if (jurisdiction === "BR") {
-        return textResult(joinSections(
-          CVM_OWNER_UNSUPPORTED,
-          "_Absence of a result here is not evidence that no large holder exists._",
-        ));
+        try {
+          const { entity, owners, referenceDate, year } =
+            await getCvmOwners(company, options);
+          const title = `${entity.legalName}${entity.cvmCode ? ` (CVM ${entity.cvmCode})` : ""}`;
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No CVM Formulário de Referência shareholder position (posição ` +
+                `acionária) found for "${company}".`,
+              `_Threshold regime: ${CVM_FRE_OWNERS_THRESHOLD_REGIME}._`,
+              `_${CVM_OWNERS_CAVEAT}_`,
+              "_Absence of a result here is not evidence that no large holder exists._",
+            ));
+          }
+          const asOf = [referenceDate, year ? `FRE ${year}` : undefined]
+            .filter(Boolean).join(" · ");
+          const fmtPct = (n: number | undefined): string | undefined =>
+            n === undefined ? undefined : `${n}%`;
+          const blocFlag = (owner: CvmOwner): string | undefined => {
+            const parts = [
+              owner.isController ? "controlador" : undefined,
+              owner.inShareholdersAgreement ? "acordo de acionistas" : undefined,
+            ].filter((part): part is string => Boolean(part));
+            return parts.length ? parts.join(" + ") : undefined;
+          };
+          const ownerRecords: OwnerRecord[] = owners.map((owner: CvmOwner) => ({
+            holderName: owner.holderName,
+            holderType: [
+              owner.personType === "PF"
+                ? "Individual"
+                : owner.personType === "PJ"
+                ? "Entity"
+                : undefined,
+              owner.documentId,
+            ].filter(Boolean).join(" · ") || "—",
+            ...(owner.pctTotal !== undefined ? { pct: owner.pctTotal } : {}),
+            ...(owner.pctOrdinary !== undefined ? { pctOrdinary: owner.pctOrdinary } : {}),
+            ...(owner.pctPreferred !== undefined ? { pctPreferred: owner.pctPreferred } : {}),
+            thresholdRegime: CVM_FRE_OWNERS_THRESHOLD_REGIME,
+            form: CVM_FRE_OWNERS_FORM,
+            filedDate: referenceDate ?? "",
+            ...(blocFlag(owner) ? { naturesOfControl: [blocFlag(owner)!] } : {}),
+            sourceUrl: owner.sourceUrl,
+            source: "CVM" as const,
+            sourceIdentifiers: {
+              ...(entity.cvmCode ? { cvmCode: entity.cvmCode } : {}),
+              jurisdiction: "BR",
+            },
+          }));
+          return textResult(joinSections(
+            `# Shareholder position (CVM FRE item 15): ${title}`,
+            asOf ? `Reference: ${asOf}. Top ${owners.length} by total %.` : undefined,
+            markdownTable(
+              ["Shareholder", "CPF/CNPJ", "% ON", "% PN", "% total", "Controlling bloc"],
+              owners.map((owner) => [
+                owner.holderName,
+                owner.documentId,
+                fmtPct(owner.pctOrdinary),
+                fmtPct(owner.pctPreferred),
+                fmtPct(owner.pctTotal),
+                blocFlag(owner),
+              ]),
+            ),
+            `_Threshold regime: ${CVM_FRE_OWNERS_THRESHOLD_REGIME}._`,
+            `_${CVM_OWNERS_CAVEAT}_`,
+            "_Absence of a result here is not evidence that no large holder exists._",
+            nextStep(
+              "for the source Formulário de Referência use CompanyFilings with " +
+                "jurisdiction \"BR\".",
+            ),
+          ), ownersStructured(ownerRecords, "BR"));
+        } catch (error) {
+          return failureResult(company, error);
+        }
       }
       if (jurisdiction === "HK") {
         try {

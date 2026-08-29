@@ -126,6 +126,12 @@ export interface Insider extends SourceScopedRecord {
   identityVerification?: string;
   pct?: number;
   change?: number;
+  /**
+   * Free-text mandate term as filed (e.g. the BR FRE administrator register's
+   * "Até a realização da AGO de 2027" or a "DD/MM/YYYY" end date). Only set where
+   * the register carries a term rather than a dealings/transaction feed.
+   */
+  term?: string;
   accession?: string;
   sourceUrl: string;
 }
@@ -134,6 +140,14 @@ export interface OwnerRecord extends SourceScopedRecord {
   holderName: string;
   holderType: string;
   pct?: number;
+  /**
+   * Per-share-class percentages, used by registers that report a holder's stake
+   * split by voting class rather than a single figure (BR FRE posição acionária:
+   * ordinárias/ON vs preferenciais/PN). `pct` carries the total. Both optional and
+   * only set where the source breaks the position out by class.
+   */
+  pctOrdinary?: number;
+  pctPreferred?: number;
   percentageBand?: string;
   change?: number;
   thresholdRegime: string;
