@@ -24,6 +24,7 @@ export const JURISDICTIONS = {
   MY: "MY",
   TR: "TR",
   AE: "AE",
+  AU: "AU",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -53,6 +54,8 @@ export const DATA_SOURCES = {
   BURSA: "Bursa Malaysia",
   KAP: "KAP",
   DFM: "DFM",
+  ASX: "ASX",
+  ASIC: "ASIC",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -108,6 +111,12 @@ export interface IdentifierSet {
   listingDate?: string;
   /** DFM (Dubai) issuer symbol, e.g. EMAAR (Emaar Properties PJSC). */
   dfmSymbol?: string;
+  /** ASX (Australia) listing code, e.g. BHP (BHP Group Limited). */
+  asxCode?: string;
+  /** Australian Company Number (ACN), 9 digits, e.g. 004028077 (BHP Group Limited). */
+  acn?: string;
+  /** Australian Business Number (ABN), 11 digits, e.g. 49004028077 (BHP Group Limited). */
+  abn?: string;
   jurisdiction?: string;
 }
 

@@ -246,6 +246,18 @@ export const kapRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 // lookup while cross-call abuse still trips it.
 export const dfmRateLimiter = new SlidingWindowRateLimiter(90, 60_000);
 
+// Australia. Two very different hosts share one budget-shaped policy but get
+// their own limiter each, because their politeness bars differ:
+//   * ASX markitdigital (asx.api.markitdigital.com) — the exchange's own
+//     front-end API. Keyless, but under ASX Terms of Use that grant only
+//     personal, non-commercial use (see docs/jurisdictions/AU.md), so the
+//     budget is deliberately modest: one filings call is a single request and
+//     one document call is one or two.
+//   * ASIC open data on data.gov.au (CKAN datastore_search) — CC-BY government
+//     open data with no documented limit. One resolve is one or two queries.
+export const asxRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+export const asicRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -271,4 +283,6 @@ export function resetRateLimiters(): void {
   bursaRateLimiter.reset();
   kapRateLimiter.reset();
   dfmRateLimiter.reset();
+  asxRateLimiter.reset();
+  asicRateLimiter.reset();
 }

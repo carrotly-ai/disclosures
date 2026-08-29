@@ -2,9 +2,10 @@ import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { z } from "zod";
-import { defineTool, textResult } from "../core/toolDefs.js";
+import { defineTool, errorResult, textResult } from "../core/toolDefs.js";
 import type { ToolDefinition } from "../core/toolDefs.js";
 import { extractPdfText } from "../core/pdfText.js";
+import { normalizeEntityName } from "../core/entityMatching.js";
 import {
   formatNumber,
   joinSections,
@@ -296,6 +297,25 @@ import {
 } from "../adapters/dfmDubai.js";
 import type { DfmDocumentMetadata, DfmEntity } from "../adapters/dfmDubai.js";
 import {
+  ASIC_BANNED_CAVEAT,
+  ASIC_CC_BY_NOTE,
+  ASIC_COMPANY_CAVEAT,
+  ASX_ANNOUNCEMENT_CAP,
+  ASX_DOCUMENT_CONTENT_WARNING,
+  ASX_FIVE_ITEM_NOTE,
+  ASX_TERMS_NOTE,
+  asicBannedDatasetUrl,
+  asicCompanyDatasetUrl,
+  asxAnnouncementsUrl,
+  getAsxDocumentMetadata,
+  getAsxDocumentPdf,
+  getAsxFilings,
+  searchAsicBannedPersons,
+  searchAsicCompanies,
+  searchAsxCompanies,
+} from "../adapters/asxAsic.js";
+import type { AsicEntity, AsxEntity } from "../adapters/asxAsic.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -445,6 +465,9 @@ function identifierText(entity: Entity): string {
     entity.uen ? `UEN ${entity.uen}` : undefined,
     entity.juristicId ? `juristic ${entity.juristicId}` : undefined,
     entity.dfmSymbol ? `DFM ${entity.dfmSymbol}` : undefined,
+    entity.asxCode ? `ASX ${entity.asxCode}` : undefined,
+    entity.acn ? `ACN ${entity.acn}` : undefined,
+    entity.abn ? `ABN ${entity.abn}` : undefined,
   ].filter((value): value is string => Boolean(value)).join("; ") || "—";
 }
 
@@ -508,6 +531,9 @@ function entitiesStructured(entities: Entity[]): Record<string, unknown> {
       uen: entity.uen,
       juristicId: entity.juristicId,
       dfmSymbol: entity.dfmSymbol,
+      asxCode: entity.asxCode,
+      acn: entity.acn,
+      abn: entity.abn,
       sourceUrl: entity.sourceUrl,
     })),
   };
@@ -1920,6 +1946,222 @@ async function enrichAeCandidatesWithGleif(
   );
 }
 
+// --- AU (ASX + ASIC) constants ---------------------------------------------
+//
+// AU is the one jurisdiction in this library whose two halves carry OPPOSITE
+// licences, so every AU response must make its provenance obvious:
+//
+//   * ASX (asx.api.markitdigital.com) — technically clean, LEGALLY RESTRICTED.
+//     The ASX Terms of Use grant only "personal, non-commercial use" and
+//     prohibit reproducing/downloading/transmitting/distributing site content.
+//     That is a real, unresolved conflict with redistributing ASX content
+//     through this package. The repository owner decided to build it anyway;
+//     every ASX-derived response therefore carries AU_ASX_TERMS_NOTE, which
+//     states the restriction and puts the rights question on the operator.
+//     Full quotes: docs/jurisdictions/AU.md.
+//   * ASIC on data.gov.au — CC BY 3.0 AU, genuinely redistributable with
+//     attribution. Those responses carry AU_ASIC_LICENCE_NOTE instead.
+const AU_ASX_TERMS_NOTE = ASX_TERMS_NOTE;
+const AU_ASIC_LICENCE_NOTE = ASIC_CC_BY_NOTE;
+
+/**
+ * The hardest honesty constraint in the AU route. The ASX announcements feed
+ * returns exactly five rows per company and no parameter changes that, so
+ * CompanyFilings is a "latest five" view and must never read as a filing
+ * history. Stated on every AU filings response, empty or not.
+ */
+const AU_FIVE_ITEM_NOTE = ASX_FIVE_ITEM_NOTE;
+
+const AU_RESOLVE_CAVEAT =
+  "AU resolution reads two registers with different licences. ASX-listed " +
+  "companies come from the exchange's own listed-company directory (code, " +
+  "name, industry, listing date, market cap; ISIN added for the top match) — " +
+  "that half is ASX content under restrictive terms. Any Australian company, " +
+  "listed or not, also resolves from the ASIC Company Dataset on data.gov.au " +
+  "(ACN, ABN, company type/class, status, registration date) — that half is " +
+  "CC-BY open data. " + ASIC_COMPANY_CAVEAT;
+
+const AU_NOT_FOUND_HINT =
+  "Try an ASX listing code (e.g. BHP, CBA, CSL), a 9-digit ACN, an 11-digit " +
+  "ABN, or the company name as the register spells it (the ASIC register uses " +
+  "full legal names like \"BHP GROUP LIMITED\" and \"ATLASSIAN PTY LTD\"). " +
+  "The ASIC Company Dataset covers 4.4 million Australian companies, listed " +
+  "and unlisted, so a genuine Australian company should resolve there even if " +
+  "it is not on the ASX.";
+
+const AU_FILINGS_CAVEAT =
+  "ASX company announcements for one listed entity. " + AU_FIVE_ITEM_NOTE +
+  " Each row links the announcement PDF; ASX states market announcements are " +
+  "the sole responsibility of the listed entity. " + AU_ASX_TERMS_NOTE;
+
+const AU_PAID_REGISTRY_REASON =
+  "ASIC's own directorship and company-document extracts are PAID registry " +
+  "products, not open data, so nothing beyond the CC-BY Company Dataset and " +
+  "the CC-BY Banned and Disqualified Persons register is reachable free.";
+
+const AU_INSIDERS_UNSUPPORTED =
+  "CompanyInsiders is unsupported for jurisdiction \"AU\". Australian " +
+  "director-interest disclosure is the Appendix 3Y \"Change of Director's " +
+  "Interest Notice\", which reaches the market as an ASX announcement whose " +
+  "content is a PDF — there is no structured insider-dealings feed to " +
+  "normalize, and the announcements feed itself is capped at the five most " +
+  "recent items per company, so even the PDFs are not enumerable beyond that. " +
+  AU_PAID_REGISTRY_REASON +
+  " Use CompanyFilings with jurisdiction \"AU\" and forms [\"Appendix 3Y\"] " +
+  "or [\"Director's Interest\"] to catch one in the latest five, then " +
+  "CompanyDocument to read it.";
+
+const AU_OWNERS_UNSUPPORTED =
+  "CompanyOwners is unsupported for jurisdiction \"AU\". Australian " +
+  "substantial-holding disclosure is the Corporations Act Form 603/604/605 " +
+  "notice (5% threshold), which reaches the market as an ASX announcement " +
+  "whose content is a PDF, not a structured holdings register. There is no " +
+  "keyless machine-readable substantial-shareholder feed, and the " +
+  "announcements feed is capped at the five most recent items per company. " +
+  AU_PAID_REGISTRY_REASON +
+  " Use CompanyFilings with jurisdiction \"AU\" and forms [\"substantial\"] " +
+  "to catch a notice in the latest five, or OwnershipChain for GLEIF " +
+  "parent/child relationships where the issuer has an LEI.";
+
+const AU_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"AU\". Australia has no " +
+  "ESEF/inline-XBRL public filing regime: the machine-readable channel (SBR, " +
+  "Standard Business Reporting) is business-to-government, not a public " +
+  "disclosure store, and listed-company annual reports are ASX-announced PDFs. " +
+  "Where an Australian issuer is dual-listed in the US it files a Form 20-F " +
+  "with the SEC — BHP and Rio Tinto both do — so use CompanyFinancials with " +
+  "jurisdiction \"US\" for those, which is public-domain EDGAR XBRL. Same " +
+  "pattern as DE and JP.";
+
+const AU_PRIVATE_RAISES_UNSUPPORTED =
+  "PrivateRaises is unsupported for jurisdiction \"AU\". Australia has no " +
+  "Form D / Regulation D analogue published as open data: placements by " +
+  "listed entities appear as ordinary ASX announcements (use CompanyFilings " +
+  "with jurisdiction \"AU\"), and unlisted-company raises are not publicly " +
+  "disclosed in a queryable dataset. " + AU_PAID_REGISTRY_REASON;
+
+const AU_PERSON_SEARCH_UNSUPPORTED =
+  "PersonAppointments mode \"search\" is unsupported for jurisdiction \"AU\", " +
+  "and so is mode \"appointments\". Australia has no free person→companies " +
+  "directorship index: ASIC's current-and-historical directorship extract " +
+  "(the product that answers \"which companies is this person a director " +
+  "of?\") is a PAID registry product, not open data, and the CC-BY ASIC " +
+  "datasets on data.gov.au carry no officer records at all. What AU CAN " +
+  "answer honestly is mode \"disqualifications\": ASIC's Banned and " +
+  "Disqualified Persons register, published under CC BY 3.0 AU. Call " +
+  "PersonAppointments with jurisdiction \"AU\", mode \"disqualifications\" " +
+  "and a person name.";
+
+/**
+ * Attach an LEI to ASX matches. The exchange directory carries no LEI, so GLEIF
+ * (keyless, CC0, already a dependency) fills the gap by legal name.
+ *
+ * Deliberately conservative, following the KAP (TR) precedent: a hit is
+ * accepted only when GLEIF places the entity in Australia AND its normalized
+ * legal name matches the exchange's. Withholding an identifier is always
+ * better than attaching a near-match — "BHP Billiton Group Limited" (GB) and
+ * "BHP Trading Group Limited" (NZ) both sit next to "BHP GROUP LIMITED" (AU)
+ * in GLEIF's own results, and only the AU one is the issuer.
+ */
+const AU_GLEIF_ENRICH_LIMIT = 3;
+
+/**
+ * Australian entity names carry trailing legal forms the sources abbreviate
+ * inconsistently ("LIMITED" vs "LTD", "PROPRIETARY LIMITED" vs "PTY LTD"), so
+ * the comparison key drops them before matching.
+ */
+const AU_LEGAL_FORM =
+  /[\s,.]*(?:\b(?:PROPRIETARY|PTY|PUBLIC)\b[\s.]*)?\b(?:LIMITED|LTD|NL|INCORPORATED|INC)\b[\s.]*$/i;
+
+function australianNameKey(name: string): string {
+  let result = name.trim();
+  for (let index = 0; index < 3; index += 1) {
+    const next = result.replace(AU_LEGAL_FORM, "").trim();
+    if (!next || next === result) break;
+    result = next;
+  }
+  return normalizeEntityName(result);
+}
+
+async function enrichAuCandidatesWithGleif(
+  candidates: AsxEntity[],
+  runtime: AdapterOptions,
+): Promise<AsxEntity[]> {
+  return Promise.all(
+    candidates.map(async (candidate, index) => {
+      if (candidate.lei || index >= AU_GLEIF_ENRICH_LIMIT) return candidate;
+      try {
+        const wanted = australianNameKey(candidate.legalName);
+        if (!wanted) return candidate;
+        const matches = await searchGleifEntities(candidate.legalName, runtime);
+        const match = matches.find(
+          (entity) =>
+            entity.lei &&
+            entity.jurisdiction === "AU" &&
+            australianNameKey(entity.legalName) === wanted,
+        );
+        if (!match?.lei) return candidate;
+        return {
+          ...candidate,
+          lei: match.lei,
+          matchReason: `${candidate.matchReason ?? "ASX directory match"}; LEI via GLEIF`,
+          sourceIdentifiers: { ...candidate.sourceIdentifiers, lei: match.lei },
+        } satisfies AsxEntity;
+      } catch {
+        // GLEIF is supplementary here — the ASX directory match still stands.
+        return candidate;
+      }
+    }),
+  );
+}
+
+/** ASX-listed rows and ASIC register rows, rendered as separate tables. */
+function buildAuResolveSections(
+  listed: AsxEntity[],
+  register: AsicEntity[],
+): string[] {
+  const sections: string[] = [];
+  if (listed.length) {
+    sections.push(
+      "## ASX-listed companies",
+      markdownTable(
+        ["Code", "Company", "Industry", "Listed", "Market cap (AUD)", "ISIN"],
+        listed.map((entity) => [
+          entity.asxCode,
+          entity.legalName,
+          entity.industry,
+          entity.dateListed,
+          entity.marketCap !== undefined
+            ? entity.marketCap.toLocaleString("en-AU")
+            : undefined,
+          entity.isin,
+        ]),
+      ),
+      `_${AU_ASX_TERMS_NOTE}_`,
+    );
+  }
+  if (register.length) {
+    sections.push(
+      "## ASIC company register (CC-BY open data)",
+      markdownTable(
+        ["ACN", "Company", "Status", "Type", "Registered", "ABN", "Current name"],
+        register.map((entity) => [
+          entity.acn,
+          entity.legalName,
+          entity.status,
+          [entity.companyType, entity.companyClass, entity.companySubClass]
+            .filter(Boolean).join("/"),
+          entity.registrationDate,
+          entity.abn,
+          entity.currentName,
+        ]),
+      ),
+      `_${AU_ASIC_LICENCE_NOTE}_`,
+    );
+  }
+  return sections;
+}
+
 // Render the DBD register record for the top resolved TH match: both legal
 // names, juristic type, status, capital, TSIC classification and head office.
 function buildThProfileDetailSection(entity: DbdEntity): string {
@@ -2367,6 +2609,86 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "text. An LEI here also works with OwnershipChain.",
             ),
           ), entitiesStructured(top));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "AU") {
+        try {
+          // Both AU halves are queried in parallel and rendered as SEPARATE,
+          // separately-labelled tables, because they carry opposite licences:
+          // the ASX directory is restricted exchange content, the ASIC register
+          // is CC-BY open data. One half failing must not lose the other, so
+          // each is caught independently.
+          const [listedResult, registerResult] = await Promise.allSettled([
+            searchAsxCompanies(company, options),
+            searchAsicCompanies(company, options),
+          ]);
+          const listedRaw = listedResult.status === "fulfilled"
+            ? listedResult.value
+            : [];
+          const register = registerResult.status === "fulfilled"
+            ? registerResult.value
+            : [];
+          const warnings: string[] = [];
+          if (listedResult.status === "rejected") {
+            warnings.push(
+              "ASX listed-directory lookup was unavailable for this request: " +
+                (listedResult.reason instanceof Error
+                  ? listedResult.reason.message
+                  : String(listedResult.reason)) +
+                ". The ASIC register results below are unaffected.",
+            );
+          }
+          if (registerResult.status === "rejected") {
+            warnings.push(
+              "ASIC (data.gov.au) register lookup was unavailable for this " +
+                "request: " +
+                (registerResult.reason instanceof Error
+                  ? registerResult.reason.message
+                  : String(registerResult.reason)) +
+                ". Any ASX results below are unaffected.",
+            );
+          }
+          if (!listedRaw.length && !register.length) {
+            if (warnings.length) {
+              return errorResult(
+                `Could not resolve "${company}" for jurisdiction "AU": ` +
+                  warnings.join(" "),
+              );
+            }
+            return notFoundResult(company, AU_NOT_FOUND_HINT);
+          }
+          // The ASX directory carries no LEI, so top listed matches are
+          // enriched from GLEIF (keyless, CC0) — conservatively, withholding
+          // rather than attaching a near-match.
+          const listed = await enrichAuCandidatesWithGleif(
+            listedRaw.slice(0, 10),
+            options,
+          );
+          const combined: Entity[] = [...listed, ...register.slice(0, 10)];
+          return textResult(joinSections(
+            `# Company resolution (ASX + ASIC): ${company}`,
+            entityRows(combined),
+            ...buildAuResolveSections(listed, register.slice(0, 10)),
+            warnings.map((warning) => `_${warning}_`).join("\n") || undefined,
+            `_${AU_RESOLVE_CAVEAT}_`,
+            nextStep(
+              listed.length
+                ? "use the ASX code from this table with CompanyFilings " +
+                  "(jurisdiction \"AU\") for the issuer's five most recent " +
+                  "announcements — that feed is capped at five and is NOT a " +
+                  "filing history — then CompanyDocument (jurisdiction \"AU\") " +
+                  "for an announcement's PDF or text. An LEI here also works " +
+                  "with OwnershipChain."
+                : "this company resolved from the ASIC register only, so it is " +
+                  "not ASX-listed and has no announcements feed. AU filings, " +
+                  "owners, insiders and financials are unsupported for " +
+                  "unlisted companies — the remaining free AU surface is " +
+                  "PersonAppointments mode \"disqualifications\" (ASIC's " +
+                  "banned-persons register) and OwnershipChain via GLEIF.",
+            ),
+          ), entitiesStructured(combined));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -2946,6 +3268,81 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             FILINGS_NEXT_STEP,
           ), filingsStructured(filings));
         }
+        if (jurisdiction === "AU") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            return textResult(
+              `Mode "${mode}" is unsupported for AU. The ASX announcements ` +
+                "feed publishes no normalized annual/quarterly report-metadata " +
+                "record, and — more decisively — it is capped at the five most " +
+                "recent announcements per company, so an issuer's annual report " +
+                "is only reachable here if it happens to be one of those five. " +
+                "Use mode \"search\" with forms [\"annual\"] and check the " +
+                "result, or CompanyFinancials with jurisdiction \"US\" where the " +
+                "issuer is dual-listed and files a Form 20-F.",
+            );
+          }
+          const {
+            entity,
+            filings,
+            limitExceedsUpstreamCap,
+            requestedLimit,
+          } = await getAsxFilings({
+            company,
+            ...(forms?.length ? { forms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            ...(limit !== undefined ? { limit } : {}),
+          }, options);
+          // The upstream cap is unconditional, so a caller asking for more must
+          // be told plainly that it cannot be honoured — not quietly given five.
+          const capNote = limitExceedsUpstreamCap
+            ? `**limit=${requestedLimit} CANNOT BE HONOURED UPSTREAM.** The ASX ` +
+              `announcements feed returns at most ${ASX_ANNOUNCEMENT_CAP} items ` +
+              "per company and ignores every count/page/timescale parameter, so " +
+              `at most ${ASX_ANNOUNCEMENT_CAP} rows can ever be returned here — ` +
+              "this is a hard upstream limit, not a truncation this tool chose."
+            : undefined;
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No ASX announcements matched "${company}"` +
+                (forms?.length || start_date || end_date
+                  ? " with the requested filters"
+                  : "") +
+                `, within the ${ASX_ANNOUNCEMENT_CAP} most recent announcements ` +
+                `for ${entity.legalName} (${entity.asxCode}).`,
+              capNote ? `_${capNote}_` : undefined,
+              `_${AU_FILINGS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# ASX announcements: ${entity.legalName} (${entity.asxCode})`,
+            `Showing the **${filings.length} most recent** ASX announcement` +
+              (filings.length === 1 ? "" : "s") +
+              ` for ${entity.asxCode}. This is **not** a complete filing ` +
+              "history — see the note below.",
+            markdownTable(
+              ["Released", "Headline", "Type", "Detail", "Transaction id", "PDF"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description,
+                filing.accession,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            capNote ? `_${capNote}_` : undefined,
+            `_${AU_FILINGS_CAVEAT}_`,
+            `_Feed: ${link("ASX announcements", asxAnnouncementsUrl(entity.asxCode))}._`,
+            nextStep(
+              "read one of these with CompanyDocument (jurisdiction \"AU\") " +
+                "using its transaction id (the ASX documentKey). Anything older " +
+                `than these ${ASX_ANNOUNCEMENT_CAP} announcements is not ` +
+                "reachable keylessly — browse the issuer's ASX announcements " +
+                "page or ASX's paid Historical Announcements product instead.",
+            ),
+          ), filingsStructured(filings));
+        }
         if (jurisdiction === "NL") {
           return textResult(AFM_FILINGS_UNSUPPORTED);
         }
@@ -3392,6 +3789,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "AE") {
         return textResult(AE_INSIDERS_UNSUPPORTED);
+      }
+      if (jurisdiction === "AU") {
+        return textResult(AU_INSIDERS_UNSUPPORTED);
       }
       try {
         if (jurisdiction === "DE") {
@@ -3873,6 +4273,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "AE") {
         return textResult(joinSections(
           AE_OWNERS_UNSUPPORTED,
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "AU") {
+        return textResult(joinSections(
+          AU_OWNERS_UNSUPPORTED,
           "_Absence of a result here is not evidence that no large holder exists._",
         ));
       }
@@ -4437,6 +4843,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "AE") {
         return textResult(AE_FINANCIALS_UNSUPPORTED);
       }
+      if (jurisdiction === "AU") {
+        return textResult(AU_FINANCIALS_UNSUPPORTED);
+      }
       if (jurisdiction === "ID") {
         try {
           const requested = concepts?.filter((concept) =>
@@ -4859,9 +5268,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
         jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
         jurisdiction === "ID" || jurisdiction === "MY" ||
-        jurisdiction === "TR" || jurisdiction === "AE"
+        jurisdiction === "TR" || jurisdiction === "AE" || jurisdiction === "AU"
       ) {
         if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
+        if (jurisdiction === "AU") return textResult(AU_PRIVATE_RAISES_UNSUPPORTED);
         const registry = jurisdiction === "GB"
           ? "Companies House"
           : jurisdiction === "KR"
@@ -5475,6 +5885,103 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  /**
+   * AU (ASX). transaction_id is the announcement `documentKey` CompanyFilings
+   * returned, e.g. `2924-03122554-3A699070`. A full
+   * https://asx.api.markitdigital.com/asx-research/1.0/file/… URL is also
+   * accepted; the rebuilt URL's host is validated to stay on the markitdigital
+   * / asx.com.au hosts before any fetch (SSRF guard).
+   *
+   * Every response repeats the ASX terms note — the document itself is ASX
+   * content under terms that permit only personal, non-commercial use.
+   */
+  async function companyDocumentAu(
+    transactionId: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!transactionId) {
+      return textResult(
+        "Provide a transaction_id (the ASX announcement documentKey from " +
+          "CompanyFilings with jurisdiction \"AU\", e.g. " +
+          "2924-03122554-3A699070) to fetch an Australian announcement's " +
+          "document. " + AU_ASX_TERMS_NOTE,
+      );
+    }
+    try {
+      if (mode === "xhtml") {
+        const pdf = await getAsxDocumentPdf(transactionId, options);
+        const extracted = extractPdfText(pdf.bytes);
+        if (!extracted.text) {
+          return textResult(joinSections(
+            `# ASX announcement: ${pdf.documentKey}`,
+            ...pdfNoTextSections(extracted),
+            `_Announcement: ${link("open", pdf.sourceUrl)}._`,
+            `_${AU_ASX_TERMS_NOTE}_`,
+          ));
+        }
+        return textResult(joinSections(
+          `# ASX announcement: ${pdf.documentKey}`,
+          ...pdfExtractionSections(
+            extracted,
+            ASX_DOCUMENT_CONTENT_WARNING,
+            textOffset ?? 0,
+          ),
+          `_Announcement: ${link("open", pdf.sourceUrl)}._`,
+          `_${AU_ASX_TERMS_NOTE}_`,
+        ));
+      }
+
+      if (mode === "pdf") {
+        const pdf = await getAsxDocumentPdf(transactionId, options);
+        const target = outputPath
+          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
+          : join(tmpdir(), pdf.suggestedFilename);
+        await writeFile(target, pdf.bytes);
+        return textResult(joinSections(
+          `# ASX announcement: ${pdf.documentKey}`,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
+              ["Announcement", link("view", pdf.sourceUrl)],
+            ],
+          ),
+          `_${ASX_DOCUMENT_CONTENT_WARNING} The file was written to disk; its bytes are not inlined here._`,
+          `_${AU_ASX_TERMS_NOTE}_`,
+        ));
+      }
+
+      const metadata = await getAsxDocumentMetadata(transactionId, options);
+      return textResult(joinSections(
+        `# ASX announcement: ${metadata.documentKey}`,
+        markdownTable(
+          ["Field", "Value"],
+          [
+            ["Transaction id", metadata.transactionId],
+            ["Document key", metadata.documentKey],
+            ["Content type", metadata.contentType ?? "—"],
+            ["Size (bytes)", metadata.byteLength !== undefined ? String(metadata.byteLength) : "—"],
+            ["Announcement", link("view", metadata.sourceUrl)],
+          ],
+        ),
+        "_ASX's document route answers 404 to HEAD while serving the PDF to " +
+          "GET, so size and type here are measured from a real fetch rather " +
+          "than advertised headers._",
+        "_Use mode=\"xhtml\" for the PDF's best-effort extracted text (paged " +
+          "via text_offset), or mode=\"pdf\" to download the PDF (saved to " +
+          "disk, 25 MB cap). " + ASX_DOCUMENT_CONTENT_WARNING + "_",
+        `_${AU_ASX_TERMS_NOTE}_`,
+      ));
+    } catch (error) {
+      return failureResult(transactionId, error);
+    }
+  }
+
   async function companyDocumentCn(
     company: string,
     transactionId: string | undefined,
@@ -5670,13 +6177,14 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .min(1)
         .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR/CN)"),
       jurisdiction: z
-        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE"])
+        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE", "AU"])
         .optional()
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
             "\"KR\" (OpenDART), \"FR\" (info-financiere OAM), \"HK\" (HKEXnews), " +
             "\"CN\" (cninfo SSE/SZSE), \"TR\" (KAP, by numeric disclosure id), " +
-            "or \"AE\" (DFM Dubai — Dubai only)",
+            "\"AE\" (DFM Dubai — Dubai only), or \"AU\" (ASX announcement " +
+            "PDFs by documentKey — ASX content under restrictive terms of use)",
         ),
       transaction_id: z
         .string()
@@ -5690,7 +6198,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             "URL / adjunctUrl path (finalpage/YYYY-MM-DD/ID.PDF) — all from " +
             "CompanyFilings; for TR, the numeric KAP disclosure id (e.g. 1446919), " +
             "which comes from the issuer's KAP page rather than CompanyFilings; " +
-            "for AE, the DFM efsah r_path (/YYYY/Mon/D/<uuid>/<name>.pdf)",
+            "for AE, the DFM efsah r_path (/YYYY/Mon/D/<uuid>/<name>.pdf); " +
+            "for AU, the ASX announcement documentKey (e.g. 2924-03122554-3A699070)",
         ),
       document_id: z
         .string()
@@ -5745,6 +6254,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "AE") {
         return companyDocumentAe(company, transaction_id, mode, text_offset, output_path);
+      }
+      if (jurisdiction === "AU") {
+        return companyDocumentAu(transaction_id, mode, text_offset, output_path);
       }
       try {
         let documentId = document_id;
@@ -6271,13 +6783,95 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  /**
+   * AU (ASIC). Only mode "disqualifications" is answerable: ASIC's Banned and
+   * Disqualified Persons register is CC-BY open data on data.gov.au and says
+   * whether a person is banned and for what period. It is a BAN LIST, not a
+   * directorships index — ASIC's person→companies directorship extract is a
+   * PAID registry product — so "search" and "appointments" return an honest
+   * unsupported explanation naming that reason rather than an empty table.
+   */
+  async function personAppointmentsAu(
+    mode: "search" | "appointments" | "disqualifications" | undefined,
+    query: string | undefined,
+    limit: number | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    const resolvedMode = mode ?? "search";
+    if (resolvedMode !== "disqualifications") {
+      return textResult(AU_PERSON_SEARCH_UNSUPPORTED);
+    }
+    if (!query) {
+      return textResult(
+        "AU mode \"disqualifications\" requires a query (person name). ASIC " +
+          "spells names \"SURNAME, GIVEN NAMES\" but the search matches either " +
+          "order.",
+      );
+    }
+    try {
+      const people = await searchAsicBannedPersons(query, options, limit ?? 35);
+      if (!people.length) {
+        return textResult(joinSections(
+          `No entries in ASIC's Banned and Disqualified Persons register ` +
+            `matched "${query}".`,
+          "_Absence here is not proof the person has never been the subject of " +
+            "any ASIC action: the dataset is a weekly point-in-time snapshot, " +
+            "legislation limits what ASIC may publish, and this register covers " +
+            "bans and disqualifications only — not every enforcement outcome._",
+          `_${ASIC_BANNED_CAVEAT}_`,
+          `_${AU_ASIC_LICENCE_NOTE}_`,
+        ));
+      }
+      return textResult(joinSections(
+        `# ASIC banned & disqualified persons: ${query}`,
+        markdownTable(
+          ["Name", "Ban type", "From", "Until", "Location", "ASIC doc no.", "Comments"],
+          people.map((person) => [
+            person.name,
+            person.banType,
+            person.startDate,
+            person.endDate ?? "no end date recorded",
+            [person.locality, person.state, person.postcode]
+              .filter(Boolean).join(" ") || person.country,
+            person.documentNumber,
+            person.comments,
+          ]),
+        ),
+        `_${ASIC_BANNED_CAVEAT}_`,
+        `_${AU_ASIC_LICENCE_NOTE}_`,
+        `_Register: ${link("ASIC Banned and Disqualified Persons on data.gov.au", asicBannedDatasetUrl())}._`,
+        nextStep(
+          "AU has no free person→companies directorship lookup (ASIC's " +
+            "directorship extract is a paid registry product), so there is no " +
+            "\"appointments\" follow-up here. To check a company instead, use " +
+            "CompanyResolve with jurisdiction \"AU\" — the ASIC Company " +
+            "Dataset it reads is CC-BY open data covering listed and unlisted " +
+            "Australian companies.",
+        ),
+      ), {
+        people: people.map((person) => definedProps({
+          name: person.name,
+          banType: person.banType,
+          startDate: person.startDate,
+          endDate: person.endDate,
+          documentNumber: person.documentNumber,
+          state: person.state,
+          sourceUrl: person.sourceUrl,
+        })),
+      });
+    } catch (error) {
+      return failureResult(query, error);
+    }
+  }
+
   const personAppointments = defineTool(
     "PersonAppointments",
     "Look up a person (not a company): cross-company roles and " +
       "disqualification/enforcement lookups. jurisdiction: GB (Companies " +
       "House, default), US (SEC reporting owners — surfaces private issuers " +
       "too), DE (BaFin dealings persons), FR (recherche-entreprises " +
-      "dirigeants). Mode \"search\" finds people by name " +
+      "dirigeants), AU (ASIC banned/disqualified persons — " +
+      "\"disqualifications\" mode only; AU has no free person→companies " +
+      "directorship index). Mode \"search\" finds people by name " +
       "and returns their person ids; \"appointments\" takes one of those ids " +
       "as officer_id (GB officer id, US person CIK, DE meldepflichtigerId, FR " +
       "surname/\"surname|first names\") and lists every company/issuer the " +
@@ -6288,12 +6882,15 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "context, not a single id.",
     {
       jurisdiction: z
-        .enum(["US", "GB", "DE", "FR"])
+        .enum(["US", "GB", "DE", "FR", "AU"])
         .optional()
         .describe(
           '"GB" (Companies House, default), "US" (SEC EDGAR reporting owners), ' +
-            '"DE" (BaFin Directors\' Dealings persons), or "FR" ' +
-            "(recherche-entreprises dirigeants)",
+            '"DE" (BaFin Directors\' Dealings persons), "FR" ' +
+            "(recherche-entreprises dirigeants), or \"AU\" (ASIC's CC-BY " +
+            "Banned and Disqualified Persons register — mode " +
+            "\"disqualifications\" only; Australia has no free " +
+            "person\u2192companies directorship index)",
         ),
       mode: z
         .enum(["search", "appointments", "disqualifications"])
@@ -6330,6 +6927,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "FR") {
         return personAppointmentsFr(mode, query, officer_id, limit);
+      }
+      if (jurisdiction === "AU") {
+        return personAppointmentsAu(mode, query, limit);
       }
       const resolvedMode = mode ?? "search";
       const label = query ?? officer_id ?? resolvedMode;
