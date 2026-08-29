@@ -246,6 +246,14 @@ export const kapRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 // lookup while cross-call abuse still trips it.
 export const dfmRateLimiter = new SlidingWindowRateLimiter(90, 60_000);
 
+// Philippine Stock Exchange EDGE (edge.pse.com.ph). Fully keyless server-rendered
+// HTML/JSON, no documented limit and no bot wall. One filings call is up to 5
+// search pages; one insiders/owners call adds up to 10 two-hop document reads, so
+// a single bounded call can legitimately spend ~25 requests. Keep a budget that
+// never self-trips on one lookup while cross-call abuse still trips it — be
+// polite to a statutory disclosure platform.
+export const pseRateLimiter = new SlidingWindowRateLimiter(90, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -271,4 +279,5 @@ export function resetRateLimiters(): void {
   bursaRateLimiter.reset();
   kapRateLimiter.reset();
   dfmRateLimiter.reset();
+  pseRateLimiter.reset();
 }

@@ -24,6 +24,7 @@ export const JURISDICTIONS = {
   MY: "MY",
   TR: "TR",
   AE: "AE",
+  PH: "PH",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -53,6 +54,7 @@ export const DATA_SOURCES = {
   BURSA: "Bursa Malaysia",
   KAP: "KAP",
   DFM: "DFM",
+  PSE: "PSE",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -108,6 +110,12 @@ export interface IdentifierSet {
   listingDate?: string;
   /** DFM (Dubai) issuer symbol, e.g. EMAAR (Emaar Properties PJSC). */
   dfmSymbol?: string;
+  /** PSE EDGE (Philippines) numeric company id (cmpyId), e.g. 599 (SM Investments Corporation). */
+  pseCompanyId?: string;
+  /** PSE EDGE security id, as the directory's cmDetail() handler carries it, e.g. 520 (SM). */
+  pseSecurityId?: string;
+  /** PSE EDGE disclosure hash (edge_no) identifying one filed disclosure document. */
+  pseEdgeNo?: string;
   jurisdiction?: string;
 }
 
