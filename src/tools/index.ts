@@ -261,6 +261,7 @@ import {
   searchIdxCompanies,
   searchIdxFilings,
 } from "../adapters/idxIndonesia.js";
+import {
   BURSA_ANNOUNCEMENT_CATEGORIES,
   BURSA_CAVEAT,
   BURSA_SHAREHOLDING_CATEGORY,
@@ -4448,9 +4449,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
         jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
-        jurisdiction === "ID"
-        jurisdiction === "HK" || jurisdiction === "SG" ||
-        jurisdiction === "TH" || jurisdiction === "MY"
+        jurisdiction === "ID" || jurisdiction === "MY"
       ) {
         if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
         const registry = jurisdiction === "GB"

@@ -317,6 +317,8 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "KSEI depository channel, not a clean IDX feed. AHU (the national legal- " +
       "entity registry) is a paid PNBP per-document product, and OJK is a " +
       "regulator/licensing site rather than a filing store.",
+  },
+  {
     code: "MY",
     name: "Malaysia",
     source: "Bursa Malaysia company announcements (api/v1/announcements/search)",
