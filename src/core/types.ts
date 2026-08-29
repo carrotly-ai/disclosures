@@ -19,6 +19,7 @@ export const JURISDICTIONS = {
   HK: "HK",
   SG: "SG",
   TH: "TH",
+  NL: "NL",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -43,6 +44,7 @@ export const DATA_SOURCES = {
   HKEX: "HKEXnews",
   ACRA: "ACRA",
   DBD: "DBD",
+  AFM: "AFM",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
