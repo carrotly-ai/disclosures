@@ -600,6 +600,60 @@ describe("live end-to-end MCP suite", () => {
     expect(resolved).toMatch(/THB [\d,]+/);
   }, testTimeoutMs);
 
+  test("resolves a live AE issuer and chains a DFM disclosure to its PDF", async () => {
+    const resolved = await callLiveTool("CompanyResolve", {
+      company: "EMAAR",
+      jurisdiction: "AE",
+    });
+    expect(resolved).toMatch(/Emaar Properties/i);
+    expect(resolved).toMatch(/DFM|Dubai Financial Market/i);
+    // The Arabic issuer name must survive the round-trip intact.
+    expect(resolved).toContain("إعمار العقارية ش.م.ع");
+    // Every AE response states the Dubai-only scope limit.
+    expect(resolved).toContain("DUBAI ONLY");
+    expect(resolved).toMatch(/ADX/);
+
+    const filings = await callLiveToolFull("CompanyFilings", {
+      company: "EMAAR",
+      jurisdiction: "AE",
+      limit: 5,
+    });
+    expect(filings.text).toMatch(/DFM disclosures/i);
+    expect(filings.text).toMatch(/feeds\.dfm\.ae/);
+    const transactionId = structuredFilings(filings)
+      .map((filing) => filing.transactionId)
+      .find((id): id is string => Boolean(id));
+    expect(transactionId).toBeDefined();
+
+    // The transaction_id scheme is the efsah r_path, chained straight through.
+    const document = await callLiveTool("CompanyDocument", {
+      company: "EMAAR",
+      jurisdiction: "AE",
+      transaction_id: transactionId,
+      mode: "metadata",
+    });
+    expect(document).toMatch(/DFM document/i);
+    expect(document).toMatch(/Content type/i);
+    expect(document).toMatch(/feeds\.dfm\.ae/);
+  }, testTimeoutMs);
+
+  test("refuses an off-host AE document id without fetching it", async () => {
+    const result = await client.callTool(
+      {
+        name: "CompanyDocument",
+        arguments: {
+          company: "EMAAR",
+          jurisdiction: "AE",
+          transaction_id: "https://evil.example.com/documents/efsah/x.pdf",
+        },
+      },
+      CallToolResultSchema,
+      { timeout: callTimeoutMs },
+    );
+    expect(result.isError).toBe(true);
+    expect(firstText(result)).toMatch(/Refusing to fetch/i);
+  }, testTimeoutMs);
+
   test("returns live TW financial statements for TSMC from TWSE open data", async () => {
     const financials = await callLiveToolFull("CompanyFinancials", {
       company: "2330",

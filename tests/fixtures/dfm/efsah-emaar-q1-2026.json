@@ -1,0 +1,220 @@
+﻿{"root" :
+[
+{
+"id" : "c2ede98b-9e85-4c08-9f2a-4d92fb7f5a57",
+"publication_date" : "2026-03-25 17:47:00",
+"headline" : "Resolutions of General Assembly",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EP AGM Minutes 25 Ma",
+"c_date" : "2026-03-26 10:06:10",
+"r_path" : "/2026/Mar/26/c2ede98b-9e85-4c08-9f2a-4d92fb7f5a57/EP AGM Minutes 25 Ma.pdf",
+"id" : "47f94d38-b227-46ef-bea5-d2ec696497cf",
+"category" : "cap",
+"language" : "en",
+"type" : "general_meetings"
+}]
+},
+{
+"id" : "32866abb-3299-459c-970b-277f10a11956",
+"publication_date" : "2026-03-12 15:53:30",
+"headline" : "Integrated report for the year 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : 2025,
+"integrated_language" : "English,Arabic",
+"integrated_report_type" : "Annual financial statements,Auditors report,Board of directors report,Governance report,Sustainability report",
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties IR ",
+"c_date" : "2026-03-12 15:52:54",
+"r_path" : "/2026/Mar/12/32866abb-3299-459c-970b-277f10a11956/Emaar Properties IR .pdf",
+"id" : "63201521-cc43-4f87-a26a-9ff7dd04650b",
+"category" : "cap",
+"language" : "en",
+"type" : "integrated_reports"
+}]
+},
+{
+"id" : "267d99fa-4a3c-4332-8089-2676bd9162ec",
+"publication_date" : "2026-03-04 08:54:05",
+"headline" : "Strong 2026 Momentum Positions Emaar for Continued Growth Following Record Year",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Strong 2026 Momentum",
+"c_date" : "2026-03-04 08:53:21",
+"r_path" : "/2026/Mar/4/267d99fa-4a3c-4332-8089-2676bd9162ec/Strong 2026 Momentum.pdf",
+"id" : "525951f6-0052-4fbc-892d-b8a964ceda09",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "728c9835-0afe-4ee1-80f1-87954e6e440a",
+"publication_date" : "2026-02-18 15:30:35",
+"headline" : "Invitation to the Annual General Meeting and clarifying disclosure regarding approval of proxies",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Disclosure Re AGM 20",
+"c_date" : "2026-02-18 15:29:40",
+"r_path" : "/2026/Feb/18/728c9835-0afe-4ee1-80f1-87954e6e440a/Disclosure Re AGM 20.pdf",
+"id" : "0c29d585-18e0-415e-a381-524c8818423f",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "9e0de168-d6ee-4ebe-a343-58b56a84ab2f",
+"publication_date" : "2026-02-12 16:48:46",
+"headline" : "Financial statements for the year of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Yearly",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2026-02-12 16:47:54",
+"r_path" : "/2026/Feb/12/9e0de168-d6ee-4ebe-a343-58b56a84ab2f/Emaar Properties PJS.pdf",
+"id" : "4c6aa060-5a70-4f8b-ae4c-a23669544609",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "1d6603d9-8de4-40b5-bd1c-690c84b1a4cb",
+"publication_date" : "2026-02-12 15:09:00",
+"headline" : "Press release regarding financial results for the year of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties Q4 ",
+"c_date" : "2026-02-12 15:00:52",
+"r_path" : "/2026/Feb/12/1d6603d9-8de4-40b5-bd1c-690c84b1a4cb/Emaar Properties Q4 .pdf",
+"id" : "f40a1989-8651-4bcc-bfe2-58d082c4a2aa",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "294386c4-1598-4a0e-a774-a4bb33ba7ce2",
+"publication_date" : "2026-02-12 15:08:03",
+"headline" : "Results of BOD Meeting",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "BOD meeting results",
+"c_date" : "2026-02-12 15:06:00",
+"r_path" : "/2026/Feb/12/294386c4-1598-4a0e-a774-a4bb33ba7ce2/EP Board Meeting Res.pdf",
+"id" : "02c49399-e5ea-43f8-a124-cf9c73c2362e",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "ceb6270a-7e38-40a3-88e3-c861ca359901",
+"publication_date" : "2026-02-09 15:24:17",
+"headline" : "Analysts' Earnings Call",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EP Disclosure To DFM",
+"c_date" : "2026-02-09 15:23:21",
+"r_path" : "/2026/Feb/9/ceb6270a-7e38-40a3-88e3-c861ca359901/EP Disclosure To DFM.pdf",
+"id" : "320bdba1-d0ae-4f67-a7d9-045925900452",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "cc599edb-8244-442a-a3dc-b409d024e36c",
+"publication_date" : "2026-02-09 15:13:00",
+"headline" : "BOD meeting",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "BOD meeting",
+"c_date" : "2026-02-11 09:41:27",
+"r_path" : "/2026/Feb/11/cc599edb-8244-442a-a3dc-b409d024e36c/EP Board Meeting Dis.pdf",
+"id" : "de645967-e024-4e8e-86b1-0eea203ee563",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+}
+]
+}
