@@ -228,6 +228,27 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "is Akamai + auth walled and BizFile extracts are paid, so every other SG " +
       "intent is honest unsupported.",
   },
+  {
+    code: "TH",
+    name: "Thailand",
+    source: "DBD juristic-person register (openapi.dbd.go.th)",
+    credential:
+      "None for the by-id lookup (keyless). DBD_API_KEY (free DGA GDX " +
+      "registration key) required only for company-name search.",
+    identifiers:
+      "13-digit juristic-person registration number (keyless), or company " +
+      "name in Thai or English (needs DBD_API_KEY)",
+    intents:
+      "CompanyResolve only (TH/EN legal name, juristic type, status, " +
+      "registered + paid-up capital, TSIC objective code, register date, head " +
+      "office). Listed and private companies both resolve.",
+    caveat:
+      "A company register, not a disclosure feed — no filings, officers, " +
+      "shareholders or financial statements, so every other TH intent is " +
+      "honest unsupported. The keyless endpoint is keyed by exact 13-digit " +
+      "juristic number only; name search needs DBD_API_KEY. SET is " +
+      "Incapsula-walled and the SEC idisc filings API is keyless but brittle.",
+  },
 ] as const;
 
 export function renderJurisdictionReference(

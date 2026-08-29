@@ -216,6 +216,11 @@ import {
 } from "../adapters/acraSg.js";
 import type { AcraEntity } from "../adapters/acraSg.js";
 import {
+  DBD_CAVEAT,
+  searchDbdCompanies,
+} from "../adapters/dbdThailand.js";
+import type { DbdEntity } from "../adapters/dbdThailand.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -363,6 +368,7 @@ function identifierText(entity: Entity): string {
     entity.siren ? `SIREN ${entity.siren}` : undefined,
     entity.hkexStockId ? `HKEX stockId ${entity.hkexStockId}` : undefined,
     entity.uen ? `UEN ${entity.uen}` : undefined,
+    entity.juristicId ? `juristic ${entity.juristicId}` : undefined,
   ].filter((value): value is string => Boolean(value)).join("; ") || "—";
 }
 
@@ -424,6 +430,7 @@ function entitiesStructured(entities: Entity[]): Record<string, unknown> {
       siren: entity.siren,
       hkexStockId: entity.hkexStockId,
       uen: entity.uen,
+      juristicId: entity.juristicId,
       sourceUrl: entity.sourceUrl,
     })),
   };
@@ -1218,6 +1225,88 @@ function buildSgProfileDetailSection(entity: AcraEntity): string {
   return joinSections(...sections);
 }
 
+// --- TH (DBD) constants ----------------------------------------------------
+
+const TH_RESOLVE_CAVEAT = DBD_CAVEAT;
+
+// Thailand's listed-disclosure side is walled or brittle, which is why every
+// TH intent beyond CompanyResolve is honest-unsupported. SET (www.set.or.th)
+// serves the Imperva/Incapsula shell on plain requests; the SEC's idisc Web API
+// is reachable keyless but throws internally on every parameter shape probed;
+// and the SEC APIM gateway behind a free key carries mutual-fund data, not
+// listed-company disclosure.
+const TH_SET_INCAPSULA_REASON =
+  "SET (www.set.or.th/api/set/...) is Imperva/Incapsula-walled (403 to plain " +
+  "requests), and the SEC idisc filings Web API (market.sec.or.th/public/idisc) " +
+  "is keyless but brittle — its methods throw internally on every parameter " +
+  "shape probed, so it is a reverse-engineering project, not a turnkey source. " +
+  "The keyed SEC APIM gateway (api.sec.or.th) carries predominantly " +
+  "mutual-fund/AMC data, not listed-company disclosure.";
+
+const TH_FILINGS_UNSUPPORTED =
+  "CompanyFilings is unsupported for jurisdiction \"TH\". " +
+  TH_SET_INCAPSULA_REASON +
+  " DBD (jurisdiction \"TH\", CompanyResolve) is the only feasible TH intent: " +
+  "it is a company register, which carries no filing index.";
+
+const TH_INSIDERS_UNSUPPORTED =
+  "CompanyInsiders is unsupported for jurisdiction \"TH\". DBD publishes no " +
+  "director or officer list on the keyless juristic-person endpoint (the " +
+  "committee-search and shareholder endpoints live on the key-gated DGA GDX " +
+  "gateway), and there is no Section 16-equivalent per-insider dealing feed " +
+  "reachable here — " + TH_SET_INCAPSULA_REASON +
+  " Use jurisdiction \"TH\" with CompanyResolve for the DBD register record.";
+
+const TH_OWNERS_UNSUPPORTED =
+  "CompanyOwners is unsupported for jurisdiction \"TH\". The DBD shareholder " +
+  "list is a key-gated DGA GDX endpoint, not part of the keyless " +
+  "juristic-person register, and major-shareholder disclosure for listed " +
+  "issuers sits behind the same walls — " + TH_SET_INCAPSULA_REASON +
+  " Use jurisdiction \"TH\" with CompanyResolve for the DBD register record.";
+
+const TH_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"TH\". The keyless DBD " +
+  "juristic-person endpoint carries registered and paid-up capital but no " +
+  "financial statements (DBD's statement endpoints are key-gated DGA GDX " +
+  "images/PDFs, not normalized figures), and — " + TH_SET_INCAPSULA_REASON +
+  " No keyless normalized financials source exists for Thailand.";
+
+// Render the DBD register record for the top resolved TH match: both legal
+// names, juristic type, status, capital, TSIC classification and head office.
+function buildThProfileDetailSection(entity: DbdEntity): string {
+  const rows: [string, string | undefined][] = [
+    ["Juristic number", entity.juristicId],
+    ["Legal name (TH)", entity.legalNameTh],
+    ["Legal name (EN)", entity.legalNameEn],
+    ["Juristic type", entity.entityType],
+    ["Status", entity.status],
+    ["Registered", entity.incorporationDate],
+    [
+      "Registered capital",
+      entity.registeredCapital ? `THB ${entity.registeredCapital}` : undefined,
+    ],
+    [
+      "Paid-up capital",
+      entity.paidUpCapital ? `THB ${entity.paidUpCapital}` : undefined,
+    ],
+    [
+      "TSIC objective",
+      [entity.tsicCode, entity.tsicDescription ?? entity.tsicDescriptionTh]
+        .filter(Boolean)
+        .join(" — ") || undefined,
+    ],
+    ["Branch", entity.branchName],
+    ["Head office", entity.address],
+  ];
+  const detailTable = markdownTable(
+    ["Field", "Value"],
+    rows
+      .filter((row): row is [string, string] => Boolean(row[1]))
+      .map(([field, value]) => [field, value]),
+  );
+  return joinSections(`## Company profile: ${entity.legalName}`, detailTable);
+}
+
 function describeParent(parent: OwnershipParent | undefined): string {
   if (!parent) return "No parent information reported";
   if (parent.entity) {
@@ -1238,9 +1327,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "Resolve a company name, ticker, or register identifier (CIK, LEI, ISIN, " +
       "company number, corp code…) to canonical candidates with identifier " +
       "sets and match reasons. US/default combines SEC EDGAR and GLEIF; other " +
-      "jurisdictions (GB, KR, JP, CN, IN, TW, BR, DE) search their national " +
-      "register. Ambiguous matches are listed, never silently merged. Start " +
-      "here to get the identifiers the other tools accept.",
+      "jurisdictions (GB, KR, JP, CN, IN, TW, BR, DE, HK, SG, TH) search their " +
+      "national register. Ambiguous matches are listed, never silently merged. " +
+      "Start here to get the identifiers the other tools accept.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") {
@@ -1471,6 +1560,44 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           const top = results[0];
           if (top) sections.push(buildSgProfileDetailSection(top));
           sections.push(`_${SG_RESOLVE_CAVEAT}_`);
+          return textResult(
+            joinSections(...sections),
+            entitiesStructured(results.slice(0, 10)),
+          );
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "TH") {
+        try {
+          const results = await searchDbdCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(
+              company,
+              "Try an exact 13-digit juristic-person registration number " +
+                "(e.g. 0107544000108 for PTT PCL). DBD's keyless endpoint is " +
+                "keyed by that number; name search additionally needs DBD_API_KEY.",
+            );
+          }
+          const sections = [
+            `# Company resolution (DBD / openapi.dbd.go.th): ${company}`,
+            entityRows(results.slice(0, 10)),
+          ];
+          const top = results[0];
+          if (top) sections.push(buildThProfileDetailSection(top));
+          sections.push(`_${TH_RESOLVE_CAVEAT}_`);
+          // TH is resolve-only: there is no TH filings/insiders/owners/
+          // financials route to hand a caller on to, so say so rather than
+          // suggest a next tool that will answer "unsupported".
+          sections.push(
+            nextStep(
+              "TH is resolve-only in this release — DBD is a company register " +
+                "with no filing, officer, shareholder or financial-statement " +
+                "feed, so there is no TH follow-on tool. Use the juristic " +
+                "number above for your own DBD lookups, or OwnershipChain if " +
+                "the entity has an LEI.",
+            ),
+          );
           return textResult(
             joinSections(...sections),
             entitiesStructured(results.slice(0, 10)),
@@ -1891,6 +2018,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         if (jurisdiction === "SG") {
           return textResult(SG_FILINGS_UNSUPPORTED);
         }
+        if (jurisdiction === "TH") {
+          return textResult(TH_FILINGS_UNSUPPORTED);
+        }
         if (jurisdiction === "HK") {
           if (mode === "latest_quarterly") {
             return textResult(
@@ -2205,6 +2335,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "SG") {
         return textResult(SG_INSIDERS_UNSUPPORTED);
       }
+      if (jurisdiction === "TH") {
+        return textResult(TH_INSIDERS_UNSUPPORTED);
+      }
       try {
         if (jurisdiction === "DE") {
           const dealings = await getBafinDirectorsDealings(company, options);
@@ -2485,6 +2618,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "SG") {
         return textResult(joinSections(
           SG_OWNERS_UNSUPPORTED,
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "TH") {
+        return textResult(joinSections(
+          TH_OWNERS_UNSUPPORTED,
           "_Absence of a result here is not evidence that no large holder exists._",
         ));
       }
@@ -2946,6 +3085,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "SG") {
         return textResult(SG_FINANCIALS_UNSUPPORTED);
       }
+      if (jurisdiction === "TH") {
+        return textResult(TH_FINANCIALS_UNSUPPORTED);
+      }
       if (jurisdiction === "IN") {
         return textResult(
           "CompanyFinancials is unsupported for jurisdiction \"IN\". BSE financial " +
@@ -3288,7 +3430,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
-        jurisdiction === "HK" || jurisdiction === "SG"
+        jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -3310,7 +3452,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                           ? "the French OAM / recherche-entreprises"
                           : jurisdiction === "HK"
                             ? "HKEXnews (Hong Kong)"
-                            : "ACRA (Singapore)";
+                            : jurisdiction === "SG"
+                              ? "ACRA (Singapore)"
+                              : "DBD (Thailand)";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +
