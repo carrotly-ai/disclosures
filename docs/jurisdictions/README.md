@@ -24,8 +24,8 @@ configuration, and library API, see the top-level [README](../../README.md).
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | ⚠️ | — |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — |
 | `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
 | `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — |
@@ -45,6 +45,16 @@ CSDC for Stock-Connect shares), the HK analogue of DTC / "Cede & Co." concentrat
 **not** beneficial owners: the SFO Part XV Disclosure of Interests register (the substantial-
 shareholder feed) is captcha-walled, so it is linked for manual lookup rather than parsed. See
 [HK.md](HK.md).
+
+BR `CompanyOwners` and `CompanyInsiders` read the **Formulário de Referência (FRE)**
+structured open data — no PDF extraction. Owners come from item 15 (posição acionária:
+holder, CPF/CNPJ, % ON / % PN / % total, and the issuer's controlador / acordo de acionistas
+marking); insiders from the item-12 administrator register (órgão, elective post, election
+date, mandate term). Both are the **annual as-filed snapshot**, not a live cap table and not
+a dealings feed, and only direct holdings are surfaced — rows describing a holder's own
+ownership chain report percentages relative to the intermediary. Verified live: Vale (PREVI
+7.016%, BlackRock 6.708%, Mitsui 6.45%) and Petrobras (União Federal 50.26% ON, flagged
+controlador). See [BR.md](BR.md).
 
 HK `CompanyFinancials` is **bounded/best-effort**: there is no structured-XBRL feed, so
 headline figures are extracted from the issuer's **latest results-announcement PDF** (Final,

@@ -2177,12 +2177,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
   const companyInsiders = defineTool(
     "CompanyInsiders",
     "List a company's insiders/officers from the jurisdiction's register: US " +
-      "Section 16 filers (default), GB Companies House officers (KR, TW, and " +
-      "DE variants: DART executive ownership, TWSE director/supervisor " +
-      "holdings, BaFin Art.19 MAR directors' dealings). Unsupported " +
-      "jurisdictions (e.g. JP — EDINET has no insider-dealing feed) explain " +
-      "why honestly. Recency and completeness caveats are stated in each " +
-      "response.",
+      "Section 16 filers (default), GB Companies House officers (KR, TW, DE, " +
+      "and BR variants: DART executive ownership, TWSE director/supervisor " +
+      "holdings, BaFin Art.19 MAR directors' dealings, CVM Formulário de " +
+      "Referência administrator register). Unsupported jurisdictions (e.g. JP " +
+      "— EDINET has no insider-dealing feed) explain why honestly. Recency and " +
+      "completeness caveats are stated in each response.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("CompanyInsiders");
@@ -2427,7 +2427,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "register (+ FCA TR-1 when an NSM fetchFn is injected), KR 5% rule, JP " +
       "large-volume holding reports (start_date/end_date bound the JP scan " +
       "window only), TW >10% holders, DE §§33 ff. WpHG voting-rights " +
-      "notifications. Explicit HK returns a CCASS participant/custodian " +
+      "notifications, BR CVM Formulário de Referência posição acionária (item " +
+      "15: ON/PN/total percentages plus the issuer's controlling-bloc " +
+      "marking). Explicit HK returns a CCASS participant/custodian " +
       "shareholding snapshot (custodian banks, brokers, HKSCC Nominees, CSDC) — " +
       "NOT beneficial owners; the SFO Part XV disclosure-of-interests register " +
       "is captcha-walled and linked for manual lookup. Every row states its " +
