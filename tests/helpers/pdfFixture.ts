@@ -393,14 +393,14 @@ export function buildEncryptedPdf(
   // fixture. The algorithm, including the single SHA-256, is dictated by the
   // file format; the "password" here is the empty string every ASX
   // announcement uses. Nothing user-supplied is hashed or stored.
-  const passwordForU = options.wrongPassword
+  const userPasswordBytes = options.wrongPassword
     ? Uint8Array.from([0x73, 0x33, 0x63, 0x72, 0x33, 0x74]) // "s3cr3t"
     : new Uint8Array(0);
   // ISO 32000-2 §7.6.4.3.3: /U = SHA-256(password || validationSalt). The
   // bytes are concatenated first so this reads as the format's digest over a
   // byte string, which is what it is — not credential storage.
   const uHash = createHash("sha256")
-    .update(concat([passwordForU, new Uint8Array(validationSalt)]))
+    .update(concat([userPasswordBytes, new Uint8Array(validationSalt)]))
     .digest();
   const u = concat([
     new Uint8Array(uHash),
@@ -414,7 +414,7 @@ export function buildEncryptedPdf(
   // storage.
   // ISO 32000-2 §7.6.4.3.3: the /UE wrapping key is SHA-256(password || keySalt).
   const intermediate = createHash("sha256")
-    .update(concat([passwordForU, new Uint8Array(keySalt)]))
+    .update(concat([userPasswordBytes, new Uint8Array(keySalt)]))
     .digest();
   const wrapCipher = createCipheriv(
     "aes-256-cbc",
