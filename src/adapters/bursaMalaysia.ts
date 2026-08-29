@@ -613,7 +613,7 @@ function labelledCells(html: string): LabelledCell[] {
     // Some rows lead with a rowspan "No" counter cell whose content is a
     // <script>; drop leading cells that carry no text.
     const textual = cells.map((cell) =>
-      stripTags(cell.replace(/<script[\s\S]*?<\/script\s*>/gi, "")),
+      stripTags(cell.replace(/<script[\s\S]*?<\/script\b[^>]*>/gi, "")),
     );
     const start = textual[0] === "" && textual.length > 2 ? 1 : 0;
     const label = textual[start];
@@ -650,7 +650,7 @@ function parseTransactions(html: string): BursaDocumentTransaction[] {
     const cells = Array.from(raw.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)).map(
       (cell) => ({
         html: cell[0] ?? "",
-        text: stripTags((cell[1] ?? "").replace(/<script[\s\S]*?<\/script\s*>/gi, "")),
+        text: stripTags((cell[1] ?? "").replace(/<script[\s\S]*?<\/script\b[^>]*>/gi, "")),
       }),
     );
     if (!cells.length) continue;
