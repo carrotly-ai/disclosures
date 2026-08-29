@@ -22,17 +22,17 @@ configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID | MY | TR | AE | PH |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ✅ | — | ✅ | ✅ |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | ✅ | — | — | ✅ |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — | ✅ | — | — | ✅ |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ | — | — | — | ⚠️ |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | ✅ |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID | MY | TR | AE | PH | AU |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ✅ | — | ✅ | ✅ | ⚠️ |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | ✅ | — | — | ✅ | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — | ✅ | — | — | ✅ | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ | — | — | — | ⚠️ | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | ⚠️ |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -113,9 +113,10 @@ depository channel, not a clean IDX feed). Verified live through the built artif
 BBCA FY2025, consolidated, in IDR — including BBCA's banking revenue variant. See
 [ID.md](ID.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, and `TR`;
-`PersonAppointments` accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is
-UK-only and takes no `jurisdiction` parameter.
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, `TR`, `AE`, and
+`AU`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, `FR`, and `AU`
+(`disqualifications` mode only); `CompanyCharges` is UK-only and takes no `jurisdiction`
+parameter.
 
 NL `CompanyOwners` / `CompanyInsiders` come from the AFM's **keyless whole-file register
 exports**, which support **no server-side filtering** (an `?issuer=` parameter is ignored and

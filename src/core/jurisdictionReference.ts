@@ -436,6 +436,48 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "rows but parse per-document detail for a capped number per call, the " +
       "rest staying honestly link-only; many 17-7 filings carry their " +
       "substance in a PDF attachment rather than the HTML body.",
+    code: "AU",
+    name: "Australia",
+    source:
+      "ASX company announcements (asx.api.markitdigital.com — RESTRICTED " +
+      "terms) + ASIC registers on data.gov.au (CC BY 3.0 AU)",
+    credential: "None — both sources are keyless.",
+    identifiers:
+      "ASX listing code (e.g. BHP, CBA, CSL), 9-digit ACN, 11-digit ABN, or " +
+      "company name; for CompanyDocument, the ASX announcement documentKey " +
+      "(e.g. 2924-03122554-3A699070)",
+    intents:
+      "CompanyResolve (ASX listed directory — code, name, industry, listing " +
+      "date, market cap, ISIN, plus GLEIF LEI where a confident AU match " +
+      "exists — AND the CC-BY ASIC Company Dataset, which covers 4.4M listed " +
+      "and unlisted Australian companies by ACN/ABN/name), CompanyFilings " +
+      "(the 5 most recent ASX announcements only), CompanyDocument (an " +
+      "announcement PDF by documentKey: metadata, extracted text, or " +
+      "download), PersonAppointments mode \"disqualifications\" (ASIC's CC-BY " +
+      "Banned and Disqualified Persons register). CompanyInsiders, " +
+      "CompanyOwners, CompanyFinancials, CompanyCharges, PrivateRaises and " +
+      "PersonAppointments modes \"search\"/\"appointments\" return an honest " +
+      "unsupported explanation.",
+    caveat:
+      "TWO SOURCES, OPPOSITE LICENCES. The ASX half is NOT open data: ASX's " +
+      "Terms of Use permit only \"personal, non-commercial use\" and prohibit " +
+      "reproducing, downloading, transmitting or distributing site content, " +
+      "and prohibit using any \"spider, screen scraper, robot ... or other " +
+      "similar process\" to access the site — which conflicts with " +
+      "redistributing ASX content through this package, and with programmatic " +
+      "access generally — " +
+      "the operator is responsible for having rights to use ASX data (full " +
+      "quotes in docs/jurisdictions/AU.md). The ASIC half on data.gov.au IS " +
+      "CC BY 3.0 AU and freely redistributable with attribution. Separately, " +
+      "the ASX announcements feed is HARD-CAPPED at exactly the 5 most recent " +
+      "items per company — every count/page/timescale parameter is ignored — " +
+      "so CompanyFilings is a latest-five view, NOT a filing history, and a " +
+      "limit above 5 cannot be honoured. Appendix 3Y director-interest and " +
+      "Form 603/604/605 substantial-holder notices exist only as announcement " +
+      "PDFs inside that capped feed, ASIC's directorship and company-document " +
+      "extracts are paid, the PPSR (charges) is pay-per-search, and Australia " +
+      "has no ESEF/XBRL regime — dual-listed issuers file Form 20-F, so use " +
+      "jurisdiction \"US\" for their financials.",
   },
 ] as const;
 

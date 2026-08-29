@@ -1,4 +1,5 @@
 import { deflateSync } from "node:zlib";
+import { createCipheriv, createHash, randomBytes } from "node:crypto";
 
 // Test-only PDF builders. `node:zlib` is imported HERE (a test helper) purely to
 // COMPRESS a FlateDecode fixture stream — the production extractor never imports
@@ -360,6 +361,94 @@ export function buildImagePdf(imageBytes = 30_000): Uint8Array {
       " /Type /XObject /Subtype /Image /Width 100 /Height 100 /Filter /DCTDecode",
       image,
     ),
+    enc.encode("%%EOF"),
+  ]);
+}
+
+/**
+ * A one-page PDF encrypted with **AES-256 standard security and an EMPTY user
+ * password** — the shape Australia's ASX publishes every announcement in
+ * (owner-password protection: any reader opens it without prompting, the
+ * "protection" only restricts editing). Built with the same Algorithm 2.A key
+ * wrapping a real producer uses, so the extractor's decryption path is
+ * exercised end-to-end rather than against a hand-waved fixture.
+ *
+ * Pass `wrongPassword: true` to produce a genuinely password-protected file:
+ * the /U validation salt no longer matches the empty password, so the extractor
+ * must report "password-protected" rather than "no text layer".
+ */
+export function buildEncryptedPdf(
+  content: string,
+  options: { wrongPassword?: boolean } = {},
+): Uint8Array {
+  const fileKey = randomBytes(32);
+  const validationSalt = randomBytes(8);
+  const keySalt = randomBytes(8);
+
+  // /U = SHA-256(password + validationSalt) || validationSalt || keySalt
+  const passwordForU = options.wrongPassword
+    ? Uint8Array.from([0x73, 0x33, 0x63, 0x72, 0x33, 0x74]) // "s3cr3t"
+    : new Uint8Array(0);
+  const uHash = createHash("sha256")
+    .update(passwordForU)
+    .update(validationSalt)
+    .digest();
+  const u = concat([
+    new Uint8Array(uHash),
+    new Uint8Array(validationSalt),
+    new Uint8Array(keySalt),
+  ]);
+
+  // /UE = AES-256-CBC(SHA-256(password + keySalt), IV=0) over the file key.
+  const intermediate = createHash("sha256")
+    .update(passwordForU)
+    .update(keySalt)
+    .digest();
+  const wrapCipher = createCipheriv(
+    "aes-256-cbc",
+    intermediate,
+    new Uint8Array(16),
+  );
+  wrapCipher.setAutoPadding(false);
+  const ue = concat([
+    new Uint8Array(wrapCipher.update(fileKey)),
+    new Uint8Array(wrapCipher.final()),
+  ]);
+
+  const encryptBody = (body: Uint8Array): Uint8Array => {
+    const iv = randomBytes(16);
+    const cipher = createCipheriv("aes-256-cbc", fileKey, iv);
+    return concat([
+      new Uint8Array(iv),
+      new Uint8Array(cipher.update(body)),
+      new Uint8Array(cipher.final()),
+    ]);
+  };
+
+  const hex = (bytes: Uint8Array): string =>
+    [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  const encrypted = encryptBody(enc.encode(content));
+  // /O and /OE are structurally required but never exercised by the empty-user-
+  // password path, so they are filled with well-formed placeholder bytes.
+  const filler = hex(new Uint8Array(randomBytes(48)));
+  const oe = hex(new Uint8Array(randomBytes(32)));
+
+  return concat([
+    enc.encode("%PDF-1.7\n"),
+    enc.encode("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"),
+    enc.encode("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"),
+    enc.encode(
+      "3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R /Resources << >> >>\nendobj\n",
+    ),
+    streamObject(4, "", encrypted),
+    enc.encode(
+      `5 0 obj\n<< /Filter /Standard /V 5 /R 5 /Length 256 /P -540` +
+        ` /O <${filler}> /U <${hex(u)}> /OE <${oe}> /UE <${hex(ue)}>` +
+        ` /StrF /StdCF /StmF /StdCF` +
+        ` /CF << /StdCF << /CFM /AESV3 /Length 32 >> >> >>\nendobj\n`,
+    ),
+    enc.encode("trailer\n<< /Size 6 /Root 1 0 R /Encrypt 5 0 R >>\n"),
     enc.encode("%%EOF"),
   ]);
 }
