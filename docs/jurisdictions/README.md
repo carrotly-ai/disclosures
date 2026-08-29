@@ -20,17 +20,17 @@ configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | ⚠️ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | ⚠️ | — | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — | — |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -62,6 +62,15 @@ insurer (百万元 — recovered by the object-stream extractor upgrade). A moji
 objects in an unreadable object stream), an over-cap PDF, or a missing key-data table **degrades
 to the PDF link**. Latest report only — no history. See [CN.md](CN.md).
 
+TH is **resolve-only**: DBD is a national company register covering listed *and* private
+companies (Thai + English legal name, juristic type, status, registered/paid-up capital, TSIC
+code, register date), but it carries no filing, officer, shareholder or financial-statement
+feed. The by-id lookup is keyless; **name search needs `DBD_API_KEY`** (a free DGA GDX key)
+because the keyless host has no name-search endpoint. Thailand's listed-disclosure side is
+walled or brittle — SET is Incapsula-walled and the SEC `idisc` filings API throws internally
+on every parameter shape probed — so every other TH intent is honest unsupported. See
+[TH.md](TH.md).
+
 `CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
 accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no
 `jurisdiction` parameter.
@@ -87,6 +96,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | FR | info-financiere.gouv.fr (OAM) + recherche-entreprises | None | [FR.md](FR.md) |
 | HK | HKEXnews | None | [HK.md](HK.md) |
 | SG | ACRA (data.gov.sg) | None | [SG.md](SG.md) |
+| TH | DBD juristic-person register (openapi.dbd.go.th) | None for the by-id lookup; `DBD_API_KEY` for name search | [TH.md](TH.md) |
 
 ## Honesty invariants (all jurisdictions)
 

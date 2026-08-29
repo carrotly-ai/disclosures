@@ -586,6 +586,20 @@ describe("live end-to-end MCP suite", () => {
     expect(resolved).toMatch(/ACRA|data\.gov\.sg/i);
   }, testTimeoutMs);
 
+  test("resolves a live TH company by juristic number through the DBD register", async () => {
+    const resolved = await callLiveTool("CompanyResolve", {
+      company: "0107544000108",
+      jurisdiction: "TH",
+    });
+    expect(resolved).toMatch(/PTT PUBLIC COMPANY LIMITED/i);
+    expect(resolved).toContain("0107544000108");
+    expect(resolved).toMatch(/DBD|dbd\.go\.th/i);
+    // Thai text must survive the round-trip intact.
+    expect(resolved).toContain("บริษัท ปตท. จำกัด (มหาชน)");
+    // The register carries capital, which is what makes DBD richer than ACRA.
+    expect(resolved).toMatch(/THB [\d,]+/);
+  }, testTimeoutMs);
+
   test("returns live TW financial statements for TSMC from TWSE open data", async () => {
     const financials = await callLiveToolFull("CompanyFinancials", {
       company: "2330",
