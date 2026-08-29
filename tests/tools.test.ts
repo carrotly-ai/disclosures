@@ -3927,3 +3927,208 @@ describe("FR (info-financiere OAM + recherche-entreprises)", () => {
     expect((structured?.candidates ?? []).length).toBe(2);
   });
 });
+
+describe("explicit MY routing (Bursa Malaysia)", () => {
+  // Same verbatim live captures the adapter suite uses (2026-08-29).
+  const myFeed = loadFixture("bursa", "search-company-1155.json");
+  const myDirectorFeed = loadFixture("bursa", "search-director-interest.json");
+  const myDirectorDoc = loadFixture("bursa", "doc-director-3700853.html");
+  const mySubshldrDoc = loadFixture("bursa", "doc-subshldr-3700039.html");
+  const myChallenge =
+    '<!DOCTYPE html><html><head><title>Just a moment...</title></head>' +
+    "<body><script>window._cf_chl_opt = {};</script></body></html>";
+
+  const mySearch = (body: string, pattern: string | RegExp = "announcements/search"): Route => ({
+    pattern,
+    body,
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  });
+  const myDocument = (body: string): Route => ({
+    pattern: "FileAccess/viewHtml",
+    body,
+    headers: { "Content-Type": "text/html; charset=UTF-8" },
+  });
+  const myChallengeRoutes: Route[] = [
+    { pattern: "bursamalaysia.com", body: myChallenge, status: 403 },
+  ];
+
+  test("CompanyResolve returns the issuer and points at the MY follow-on tools", async () => {
+    const fetchFn = routedFetch([mySearch(myFeed)]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "1155",
+      jurisdiction: "MY",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Company resolution (Bursa Malaysia)");
+    expect(text).toContain("MALAYAN BANKING BERHAD");
+    expect(text).toContain("CompanyInsiders");
+    expect(text).toContain("CompanyOwners");
+    const structured = result.structuredContent as { candidates: Array<Record<string, unknown>> };
+    expect(structured.candidates[0]?.stockCode).toBe("1155");
+    expect(structured.candidates[0]?.jurisdiction).toBe("MY");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyFilings renders the announcements feed with the category taxonomy", async () => {
+    const fetchFn = routedFetch([mySearch(myFeed)]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "1155",
+      jurisdiction: "MY",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Bursa Malaysia announcements: MALAYAN BANKING BERHAD (1155)");
+    expect(text).toContain("10,279 announcements match this query");
+    expect(text).toContain("Quarterly rpt on consolidated results");
+    // Bursa's own category values are offered for the forms filter.
+    expect(text).toContain("`FA,FRCO`");
+    expect(text).toContain("`SH,CHSH`");
+    const structured = result.structuredContent as { filings: Array<Record<string, unknown>> };
+    expect(structured.filings.length).toBe(4);
+  });
+
+  test("CompanyFilings maps a taxonomy forms value onto the server-side category", async () => {
+    const fetchFn = routedFetch([mySearch(myFeed)]);
+    const tools = createTools({ fetchFn, env: ENV });
+    await toolByName(tools, "CompanyFilings").handler({
+      company: "1155",
+      jurisdiction: "MY",
+      forms: ["SH,CHSH"],
+      start_date: "2026-01-01",
+      end_date: "2026-03-31",
+    } as never);
+    const filingsRequest = fetchFn.requests[1]?.url ?? "";
+    expect(filingsRequest).toContain(`cat=${encodeURIComponent("SH,CHSH")}`);
+    expect(filingsRequest).toContain(`dt_ht=${encodeURIComponent("01/01/2026")}`);
+    expect(filingsRequest).toContain(`dt_lt=${encodeURIComponent("31/03/2026")}`);
+  });
+
+  test("CompanyFilings explains that MY has no latest-report mode", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "1155",
+      jurisdiction: "MY",
+      mode: "latest_annual",
+    } as never);
+    expect(resultText(result)).toContain('unsupported for MY');
+    expect(resultText(result)).toContain("AR,ARCO");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyInsiders renders s.219 director-interest transactions", async () => {
+    const fetchFn = routedFetch([mySearch(myDirectorFeed), myDocument(myDirectorDoc)]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "7854",
+      jurisdiction: "MY",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Directors' interest changes (s.219 CA 2016, Bursa Malaysia)");
+    expect(text).toContain("MR WONG WAI FOO");
+    expect(text).toContain("Acquired (Direct Interest)");
+    expect(text).toContain("51.482%");
+    expect(text).toContain("Companies Act 2016 s.219");
+    expect(text).toContain("© Bursa Malaysia");
+    const structured = result.structuredContent as {
+      insiders: Array<Record<string, unknown>>;
+      sourceJurisdiction: string;
+    };
+    expect(structured.sourceJurisdiction).toBe("MY");
+    expect(structured.insiders.some((insider) => insider.name === "MR WONG WAI FOO")).toBe(true);
+  });
+
+  test("CompanyOwners renders s.138 substantial-shareholder changes", async () => {
+    const fetchFn = routedFetch([mySearch(myFeed), myDocument(mySubshldrDoc)]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "1155",
+      jurisdiction: "MY",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Substantial shareholders' interest changes (s.138 CA 2016");
+    expect(text).toContain("EMPLOYEES PROVIDENT FUND BOARD");
+    expect(text).toContain("Disposed");
+    expect(text).toContain("12.494%");
+    expect(text).toContain(
+      "MY Companies Act 2016 s.137/138 substantial shareholding",
+    );
+    // The dealings-feed caveat must be stated, not implied.
+    expect(text).toContain("not a current cap table");
+    const structured = result.structuredContent as {
+      owners: Array<Record<string, unknown>>;
+      sourceJurisdiction: string;
+    };
+    expect(structured.sourceJurisdiction).toBe("MY");
+    expect(structured.owners[0]?.thresholdRegime).toBe(
+      "MY Companies Act 2016 s.137/138 substantial shareholding",
+    );
+    expect(structured.owners[0]?.crossingDirection).toBe("down");
+  });
+
+  test("CompanyFinancials and PrivateRaises explain MY honestly without a request", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const financials = await toolByName(tools, "CompanyFinancials").handler({
+      company: "1155",
+      jurisdiction: "MY",
+    } as never);
+    expect(resultText(financials)).toContain('unsupported for jurisdiction "MY"');
+    expect(resultText(financials)).toContain("FA,FRCO");
+    const raises = await toolByName(tools, "PrivateRaises").handler({
+      company: "1155",
+      jurisdiction: "MY",
+    } as never);
+    expect(resultText(raises)).toContain('unsupported for jurisdiction "MY"');
+    // SSM being paid is the honest reason, stated rather than glossed.
+    expect(resultText(raises)).toContain("SSM");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("a Cloudflare challenge surfaces the fetchFn escape hatch on every MY intent", async () => {
+    for (const [tool, args] of [
+      ["CompanyResolve", { company: "1155", jurisdiction: "MY" }],
+      ["CompanyFilings", { company: "1155", jurisdiction: "MY" }],
+      ["CompanyInsiders", { company: "1155", jurisdiction: "MY" }],
+      ["CompanyOwners", { company: "1155", jurisdiction: "MY" }],
+    ] as const) {
+      resetRateLimiters();
+      const fetchFn = routedFetch([...myChallengeRoutes]);
+      const tools = createTools({ fetchFn, env: ENV });
+      const result = await toolByName(tools, tool).handler(args as never);
+      const text = resultText(result);
+      expect(text).toContain("Cloudflare");
+      expect(text).toContain("AdapterOptions.fetchFn");
+      // Never a fabricated or silently-empty answer.
+      expect(text).toContain("will not fabricate");
+    }
+  });
+
+  test("an empty MY result is reported as empty, not as an error", async () => {
+    const emptyFeed = JSON.stringify({
+      recordsTotal: 0,
+      recordsFiltered: 0,
+      category_message: "",
+      data: [],
+    });
+    const fetchFn = routedFetch([
+      mySearch(myFeed, /company=1155(?!.*cat=)/),
+      mySearch(emptyFeed, "cat="),
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "1155",
+      jurisdiction: "MY",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain("No Bursa");
+    expect(resultText(result)).toContain(
+      "MY Companies Act 2016 s.137/138 substantial shareholding",
+    );
+  });
+});
