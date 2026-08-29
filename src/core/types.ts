@@ -25,6 +25,7 @@ export const JURISDICTIONS = {
   TR: "TR",
   AE: "AE",
   PH: "PH",
+  AU: "AU",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -55,6 +56,8 @@ export const DATA_SOURCES = {
   KAP: "KAP",
   DFM: "DFM",
   PSE: "PSE",
+  ASX: "ASX",
+  ASIC: "ASIC",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -116,6 +119,12 @@ export interface IdentifierSet {
   pseSecurityId?: string;
   /** PSE EDGE disclosure hash (edge_no) identifying one filed disclosure document. */
   pseEdgeNo?: string;
+  /** ASX (Australia) listing code, e.g. BHP (BHP Group Limited). */
+  asxCode?: string;
+  /** Australian Company Number (ACN), 9 digits, e.g. 004028077 (BHP Group Limited). */
+  acn?: string;
+  /** Australian Business Number (ABN), 11 digits, e.g. 49004028077 (BHP Group Limited). */
+  abn?: string;
   jurisdiction?: string;
 }
 

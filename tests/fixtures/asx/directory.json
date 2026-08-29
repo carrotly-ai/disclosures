@@ -1,0 +1,117 @@
+{
+ "data": {
+  "items": [
+   {
+    "symbol": "ANZ",
+    "displayName": "ANZ GROUP HOLDINGS LIMITED",
+    "industry": "Banks",
+    "dateListed": "1969-09-30",
+    "marketCap": 109960439445,
+    "xid": "46090",
+    "priceChangeFiveDayPercent": -1.0772959870724443,
+    "isRecentListing": false,
+    "statusCode": ""
+   },
+   {
+    "symbol": "BHP",
+    "displayName": "BHP GROUP LIMITED",
+    "industry": "Materials",
+    "dateListed": "1885-08-13",
+    "marketCap": 337589712024,
+    "xid": "60947",
+    "statusCode": "CD",
+    "priceChangeFiveDayPercent": 3.2842234499693075,
+    "isRecentListing": false
+   },
+   {
+    "symbol": "CBA",
+    "displayName": "COMMONWEALTH BANK OF AUSTRALIA.",
+    "industry": "Banks",
+    "dateListed": "1991-09-12",
+    "marketCap": 259319726996,
+    "xid": "70547",
+    "statusCode": "XD",
+    "priceChangeFiveDayPercent": -0.46838407494145773,
+    "isRecentListing": false
+   },
+   {
+    "symbol": "CSL",
+    "displayName": "CSL LIMITED",
+    "industry": "Pharmaceuticals, Biotechnology & Life Sciences",
+    "dateListed": "1994-06-08",
+    "marketCap": 83273214909,
+    "xid": "82193",
+    "statusCode": "CD",
+    "priceChangeFiveDayPercent": 2.388591800356495,
+    "isRecentListing": false
+   },
+   {
+    "symbol": "FMG",
+    "displayName": "FORTESCUE LTD",
+    "industry": "Materials",
+    "dateListed": "1987-03-19",
+    "marketCap": 54497679049,
+    "xid": "108355",
+    "statusCode": "CD",
+    "priceChangeFiveDayPercent": 1.8028169014084523,
+    "isRecentListing": false
+   },
+   {
+    "symbol": "NAB",
+    "displayName": "NATIONAL AUSTRALIA BANK LIMITED",
+    "industry": "Banks",
+    "dateListed": "1962-01-31",
+    "marketCap": 118397903943,
+    "xid": "208940",
+    "priceChangeFiveDayPercent": 0.3143830233167342,
+    "isRecentListing": false,
+    "statusCode": ""
+   },
+   {
+    "symbol": "RIO",
+    "displayName": "RIO TINTO LIMITED",
+    "industry": "Materials",
+    "dateListed": "1962-09-19",
+    "marketCap": 66444451299,
+    "xid": "242302",
+    "statusCode": "XD",
+    "priceChangeFiveDayPercent": 1.5167065799977173,
+    "isRecentListing": false
+   },
+   {
+    "symbol": "TLS",
+    "displayName": "TELSTRA GROUP LIMITED",
+    "industry": "Telecommunication Services",
+    "dateListed": "1997-11-17",
+    "marketCap": 51017244011,
+    "xid": "269616",
+    "statusCode": "XD",
+    "priceChangeFiveDayPercent": -2.536997885835097,
+    "isRecentListing": false
+   },
+   {
+    "symbol": "WES",
+    "displayName": "WESFARMERS LIMITED",
+    "industry": "Consumer Discretionary Distribution & Retail",
+    "dateListed": "1984-11-15",
+    "marketCap": 90209565567,
+    "xid": "284705",
+    "statusCode": "CD",
+    "priceChangeFiveDayPercent": -3.132208328274855,
+    "isRecentListing": false
+   },
+   {
+    "symbol": "WBC",
+    "displayName": "WESTPAC BANKING CORPORATION",
+    "industry": "Banks",
+    "dateListed": "1970-07-18",
+    "marketCap": 115195815312,
+    "xid": "283907",
+    "priceChangeFiveDayPercent": 0.20691693762932395,
+    "isRecentListing": false,
+    "statusCode": ""
+   }
+  ],
+  "count": 10
+ }
+}
