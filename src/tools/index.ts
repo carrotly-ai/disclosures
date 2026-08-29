@@ -5688,13 +5688,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
         jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
         jurisdiction === "ID" || jurisdiction === "MY" ||
-        jurisdiction === "TR" || jurisdiction === "AE" || jurisdiction === "PH"
+        jurisdiction === "TR" || jurisdiction === "AE" || jurisdiction === "PH" ||
+        jurisdiction === "AU"
       ) {
         if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
         if (jurisdiction === "PH") return textResult(PH_PRIVATE_RAISES_UNSUPPORTED);
-        jurisdiction === "TR" || jurisdiction === "AE" || jurisdiction === "AU"
-      ) {
-        if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
         if (jurisdiction === "AU") return textResult(AU_PRIVATE_RAISES_UNSUPPORTED);
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -6324,16 +6322,6 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
    * edge.pse.com.ph before any fetch (SSRF guard).
    */
   async function companyDocumentPh(
-   * AU (ASX). transaction_id is the announcement `documentKey` CompanyFilings
-   * returned, e.g. `2924-03122554-3A699070`. A full
-   * https://asx.api.markitdigital.com/asx-research/1.0/file/… URL is also
-   * accepted; the rebuilt URL's host is validated to stay on the markitdigital
-   * / asx.com.au hosts before any fetch (SSRF guard).
-   *
-   * Every response repeats the ASX terms note — the document itself is ASX
-   * content under terms that permit only personal, non-commercial use.
-   */
-  async function companyDocumentAu(
     transactionId: string | undefined,
     mode: "metadata" | "xhtml" | "pdf" | undefined,
     textOffset: number | undefined,
@@ -6351,46 +6339,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     try {
       if (mode === "pdf") {
         const pdf = await getPseDocumentPdf(transactionId, options);
-      return textResult(
-        "Provide a transaction_id (the ASX announcement documentKey from " +
-          "CompanyFilings with jurisdiction \"AU\", e.g. " +
-          "2924-03122554-3A699070) to fetch an Australian announcement's " +
-          "document. " + AU_ASX_TERMS_NOTE,
-      );
-    }
-    try {
-      if (mode === "xhtml") {
-        const pdf = await getAsxDocumentPdf(transactionId, options);
-        const extracted = extractPdfText(pdf.bytes);
-        if (!extracted.text) {
-          return textResult(joinSections(
-            `# ASX announcement: ${pdf.documentKey}`,
-            ...pdfNoTextSections(extracted),
-            `_Announcement: ${link("open", pdf.sourceUrl)}._`,
-            `_${AU_ASX_TERMS_NOTE}_`,
-          ));
-        }
-        return textResult(joinSections(
-          `# ASX announcement: ${pdf.documentKey}`,
-          ...pdfExtractionSections(
-            extracted,
-            ASX_DOCUMENT_CONTENT_WARNING,
-            textOffset ?? 0,
-          ),
-          `_Announcement: ${link("open", pdf.sourceUrl)}._`,
-          `_${AU_ASX_TERMS_NOTE}_`,
-        ));
-      }
-
-      if (mode === "pdf") {
-        const pdf = await getAsxDocumentPdf(transactionId, options);
         const target = outputPath
           ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
           : join(tmpdir(), pdf.suggestedFilename);
         await writeFile(target, pdf.bytes);
         return textResult(joinSections(
           `# PSE EDGE document: ${pdf.suggestedFilename}`,
-          `# ASX announcement: ${pdf.documentKey}`,
           "## Downloaded PDF",
           markdownTable(
             ["Field", "Value"],
@@ -6476,6 +6430,65 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           "text_offset), or mode=\"pdf\" to download the first PDF attachment " +
           "(saved to disk, 25 MB cap). " + PSE_DOCUMENT_CONTENT_WARNING + "_",
         PH_SOURCE_NOTE,
+      ));
+    } catch (error) {
+      return failureResult(transactionId, error);
+    }
+  }
+
+  async function companyDocumentAu(
+    transactionId: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!transactionId) {
+      return textResult(
+        "Provide a transaction_id (the ASX announcement documentKey from " +
+          "CompanyFilings with jurisdiction \"AU\", e.g. " +
+          "2924-03122554-3A699070) to fetch an Australian announcement's " +
+          "document. " + AU_ASX_TERMS_NOTE,
+      );
+    }
+    try {
+      if (mode === "xhtml") {
+        const pdf = await getAsxDocumentPdf(transactionId, options);
+        const extracted = extractPdfText(pdf.bytes);
+        if (!extracted.text) {
+          return textResult(joinSections(
+            `# ASX announcement: ${pdf.documentKey}`,
+            ...pdfNoTextSections(extracted),
+            `_Announcement: ${link("open", pdf.sourceUrl)}._`,
+            `_${AU_ASX_TERMS_NOTE}_`,
+          ));
+        }
+        return textResult(joinSections(
+          `# ASX announcement: ${pdf.documentKey}`,
+          ...pdfExtractionSections(
+            extracted,
+            ASX_DOCUMENT_CONTENT_WARNING,
+            textOffset ?? 0,
+          ),
+          `_Announcement: ${link("open", pdf.sourceUrl)}._`,
+          `_${AU_ASX_TERMS_NOTE}_`,
+        ));
+      }
+
+      if (mode === "pdf") {
+        const pdf = await getAsxDocumentPdf(transactionId, options);
+        const target = outputPath
+          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
+          : join(tmpdir(), pdf.suggestedFilename);
+        await writeFile(target, pdf.bytes);
+        return textResult(joinSections(
+          `# ASX announcement: ${pdf.documentKey}`,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
               ["Announcement", link("view", pdf.sourceUrl)],
             ],
           ),
@@ -6705,16 +6718,15 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .min(1)
         .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR/CN)"),
       jurisdiction: z
-        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE", "PH"])
-        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE", "AU"])
+        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE", "PH", "AU"])
         .optional()
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
             "\"KR\" (OpenDART), \"FR\" (info-financiere OAM), \"HK\" (HKEXnews), " +
             "\"CN\" (cninfo SSE/SZSE), \"TR\" (KAP, by numeric disclosure id), " +
-            "\"AE\" (DFM Dubai — Dubai only), or \"PH\" (PSE EDGE, by edge_no)",
-            "\"AE\" (DFM Dubai — Dubai only), or \"AU\" (ASX announcement " +
-            "PDFs by documentKey — ASX content under restrictive terms of use)",
+            "\"AE\" (DFM Dubai — Dubai only), \"PH\" (PSE EDGE, by edge_no), " +
+            "or \"AU\" (ASX announcement PDFs by documentKey — ASX content " +
+            "under restrictive terms of use)",
         ),
       transaction_id: z
         .string()
@@ -6787,6 +6799,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "PH") {
         return companyDocumentPh(transaction_id, mode, text_offset, output_path);
+      }
       if (jurisdiction === "AU") {
         return companyDocumentAu(transaction_id, mode, text_offset, output_path);
       }

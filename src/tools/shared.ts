@@ -22,8 +22,8 @@ export const companyInput = {
         "registration number (TH), AFM-register issuer name or LEI (NL), " +
         "4-letter IDX ticker / kode emiten (ID), 4-digit Bursa stock code or " +
         "issuer name (MY), BIST stock code (TR), DFM issuer symbol (AE), PSE " +
-        "ticker symbol or numeric PSE company id (PH), "ASX listing code / 9-digit ACN / 11-digit ABN (AU), or " +
-        "or 20-character LEI",
+        "ticker symbol or numeric PSE company id (PH), ASX listing code / " +
+        "9-digit ACN / 11-digit ABN (AU), or 20-character LEI",
     ),
   jurisdiction: z
     .enum([

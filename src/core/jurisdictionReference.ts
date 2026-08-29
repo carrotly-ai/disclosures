@@ -436,6 +436,8 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "rows but parse per-document detail for a capped number per call, the " +
       "rest staying honestly link-only; many 17-7 filings carry their " +
       "substance in a PDF attachment rather than the HTML body.",
+  },
+  {
     code: "AU",
     name: "Australia",
     source:
