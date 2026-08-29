@@ -1,0 +1,76 @@
+<span class="count">
+
+[1 /
+1]
+[Total 4]
+</span>
+<p class="sort">
+  <a href="#sort"  onclick="goSort('/companyDirectory/search.ax','cmpy','ASC');return false;"><span>company</span></a>
+  <a href="#sort"  onclick="goSort('/companyDirectory/search.ax','symbol','ASC');return false;"><span>symbol</span></a>
+</p>
+<form id="listForm" name="listForm">
+  <input type="hidden" name="pageNo" id="pageNo" value=""/>
+  <input type="hidden" name="companyId" id="companyId" value=""/>
+  <input type="hidden" name="keyword" id="keyword" value="SM"/>
+  <input type="hidden" name="sortType" id="sortMode" value="cmpy"/>
+  <input type="hidden" name="dateSortType" id="dateSortType" value="DESC"/>
+  <input type="hidden" name="cmpySortType" id="cmpySortType" value="ASC"/>
+  <input type="hidden" name="symbolSortType" id="symbolSortType" value="ASC"/>
+  <input type="hidden" name="sector" id="sector" value="ALL"/>
+  <input type="hidden" name="subsector" id="subsector" value="ALL"/>
+</form>
+<table class="list">
+<colgroup>
+  <col width="35%"/>
+  <col width="10%"/>
+  <col width="15%"/>
+  <col width="30%"/>
+  <col width="10%"/>
+</colgroup>
+<thead>
+  <tr>
+    <th>Company Name</th>
+    <th>Stock Symbol</th>
+    <th>Sector</th>
+    <th>Subsector</th>
+    <th>Listing Date</th>
+  </tr>
+</thead>
+
+<tbody>
+  <tr>
+      <td><a href="#company" onclick="cmDetail('94','160');return false;">Ginebra San Miguel,  Inc.</a></td>
+      <td class="alignC"><a href="#company" onclick="cmDetail('94','160');return false;">GSMI</a></td>
+      <td>Industrial</td>
+      <td>Food, Beverage &amp; Tobacco</td>
+      <td class="alignC">Apr 18, 1995</td>
+    </tr>
+  <tr>
+      <td><a href="#company" onclick="cmDetail('599','520');return false;">SM Investments Corporation</a></td>
+      <td class="alignC"><a href="#company" onclick="cmDetail('599','520');return false;">SM</a></td>
+      <td>Holding Firms</td>
+      <td>Holding Firms</td>
+      <td class="alignC">Mar 22, 2005</td>
+    </tr>
+  <tr>
+      <td><a href="#company" onclick="cmDetail('112','314');return false;">SM Prime Holdings, Inc.</a></td>
+      <td class="alignC"><a href="#company" onclick="cmDetail('112','314');return false;">SMPH</a></td>
+      <td>Property</td>
+      <td>Property</td>
+      <td class="alignC">Jul 05, 1994</td>
+    </tr>
+  <tr>
+      <td><a href="#company" onclick="cmDetail('154','165');return false;">San Miguel Corporation</a></td>
+      <td class="alignC"><a href="#company" onclick="cmDetail('154','165');return false;">SMC</a></td>
+      <td>Holding Firms</td>
+      <td>Holding Firms</td>
+      <td class="alignC">Nov 05, 1948</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="paging"><a href="#" onclick="return false;"><img src="/images/common/icon_first.gif" alt="first page"/></a>
+<a href="#" onclick="return false;"><img src="/images/common/icon_prev.gif" alt="prev block"/></a>
+<span>1</span>
+<a href="#" onclick="return false;"><img src="/images/common/icon_next.gif" alt="next block"/></a>
+<a href="#" onclick="return false;"><img src="/images/common/icon_end.gif" alt="last page"/></a></div>

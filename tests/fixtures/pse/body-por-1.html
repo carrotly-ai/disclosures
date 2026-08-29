@@ -1,0 +1,698 @@
+<!-- 
+    <!DOCTYPE ..> 을 추가할 때는 반드시 HTML이 아닌 XHTML Doctype을 추가할 것. HTML Doctype을 추가하면
+      PDF 생성할 때 오류 발생. DOCTYPE을 추가하지 않아도 아무 문제없으므로 가능한 추가하지 말 것.
+--><!DOCTYPE html PUBLIC "-//W3C//ENTITIES Latin 1 for XHTML//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml-lat1.ent">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko" lang="ko">
+ <head> 
+  <meta charset="utf-8" /> 
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /> 
+  <!-- css-desktop-start --> 
+  <style type="text/css">
+  @charset "utf-8";
+
+html,body{color:#333; background-color: #fff;}
+body,input,textarea,select { font:normal 0.9em thoma, arial, Verdana, sans-serif;}
+
+/* for PDF */
+tr { page-break-inside: avoid; }  
+
+
+img{border:0; vertical-align:middle;}
+address,caption,cite,code,dfn,em,var{font-style:normal;font-weight:normal;}
+li{list-style:none;}
+
+
+input,textarea,select{ vertical-align:middle;}
+input[type="radio"]{margin-right:3px; vertical-align:top;}
+/*IE7 Hack*/
+*:first-child+html input[type="radio"]{margin-right:0px; vertical-align:middle;}
+*:first-child+html input[type="checkbox"]{margin:-5px 0px;}
+
+
+ 
+
+#contentBox{width:688px; border:2px solid #ccc; padding: 8px; }
+#contentBox h1,#contentBox h2,#contentBox h3, #contentBox h4{border-bottom:1px solid #ccc; padding-bottom:15px; text-align:center;}
+#contentBox h1 span,#contentBox h2 span{display:block; font-size:0.8em; margin:5px;}
+#contentBox h4 span{display:block;}
+
+#contentBox .textleft{text-align:left;}
+#contentBox caption{font-weight:bold;}
+#contentBox caption img{ float:right;}
+
+#contentBox th { text-align: center; }
+#contentBox  table{width:100%; border-collapse:collapse; border:1px solid #ccc; margin:15px 0px;}
+#contentBox .type1 th, th.ex { width: 20%; text-align: left; }
+#contentBox .type2 th { text-align: left; }
+#contentBox th {background-color:#eee; color:#444; }
+#contentBox th, #contentBox td {border:1px solid #ccc; padding:3px; font-size:0.8em; }
+caption{text-align:left; margin-bottom:5px; font-size:0.8em; color:#222;}
+
+
+#contentBox h1 img{  display:block; margin:0px auto 8px ;}
+#contentBox p.info{font-size:0.8em;text-align:justify;font-style:italic;}
+#contentBox p.just{text-align:justify;}
+
+
+#contentBox p.reportType {font-weight:bold;  margin:5px 0px;}
+
+#contentBox ul.reportType, #contentBox ul.reportTypeL{ padding:5px;  margin:0px; font-size:0.8em;font-weight:normal; border:1px dashed #bbb; overflow:auto; }
+#contentBox .reportType  span,#contentBox .reportTypeL  span{padding:0px 10px 0px 5px; width:60px; display:inline-block; white-space: nowrap; }
+
+#contentBox .reportType li {
+  margin: 0.8em 0em 0.8em 0em;
+}
+#contentBox .reportTypeL li:first-child {
+    float: left;
+
+    padding-right: 50px;
+    margin: 0.8em 0em 0.8em 0em;
+}
+#contentBox .reportTypeL li {
+    padding-right: 50px;
+    margin: 0.8em 0em 0.8em 0em;
+}
+
+#contentBox ul.status{ padding:0px; margin:0px; }
+#contentBox .status li {float:left;  padding-right:50px;}
+
+#contentBox  dl.choice{border:none; margin:0px; padding:0px}
+
+
+#contentBox dl{border:2px solid #bbb; padding:15px; }
+#contentBox dl.none{border:none; padding:8px; }
+
+#contentBox dd{margin:5px ;}
+#contentBox dd span{padding:0px 10px;}
+#contentBox dl table{ margin:5px 0px;}
+#contentBox dd.hline{float:left;  padding: 0px 15px;}
+#contentBox .clear{clear:both}
+
+#contentBox .indent15{text-indent:15px;}
+#contentBox .indent20{text-indent:20px;}
+#contentBox .em{font-size:110%; font-weight:bold; text-align:center; padding:10px 100px;}
+#contentBox .sub{font-weight:bold;}
+
+
+#contentBox ul.choice{ padding:0px; }
+#contentBox ul.choice span{padding:0px 10px 0px 5px;}
+
+
+
+
+
+
+#contentBox hr{margin:10px 0px; height:1px; border-width:0;  background-color:#ccc; }
+
+
+#remarkContents {width: 688px; margin: 10px; }
+#remarkContents li {list-style-type: circle; margin-top: 3px;}
+
+  </style> 
+  <!-- css-desktop-end --> 
+  <style type="text/css">
+    input { border: none; }
+
+    .fmtNumber {
+      text-align: right;
+    }
+
+    .alignRight {
+      text-align: right;
+    }
+    
+    span.valInput {
+      font-size: 1.1em;
+      display: block;
+    }
+    p.valText {
+      font-size: 1.1em;
+      white-space: pre-line;
+    }
+    span.valSelect {
+      font-size: 1.1em;
+      display: block;
+    }
+    textarea {
+      color: black;
+      border: none; 
+      white-space: pre-line; 
+      overflow-y: auto; 
+      word-wrap: break-word; 
+      resize: none;
+    }
+  </style> 
+ </head> 
+ <body><a href="https://edge.pse.com.ph/cdn-cgi/content?id=6EWth1DYFMzEYnCKPkkFlcqRjNIm3b8J6ANYFTWwP8s-1788017596.491074-1.2.1.1-hymJ86w1VQblDrox0NMRlZ8UgC914ljNWA08rbTBV2udoI8r9Gt3ehEurWmaFHDI" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a>
+<div id="remarkContents" style="">       <table style="width: 100%; margin-bottom: 7px; font-weight: bold; "> <tr style="padding: 0px;">                                        <td></td>                                       <td style="text-align:right;">CR05099-2026</td>              </tr>                     </table>                      <span style="font-size: 1.0em; margin-left: 20px;"></span> <ul style="margin-top: 0;">                 </ul>     </div> 
+  <div id="form1" action="/submission/accomplish"> 
+   <div id="contentBox"> 
+    <p class="info">The PSE makes no representation on the accuracy, validity, correctness and completeness of the information stated in the respective PORs of listed companies. The PSE shall use the information contained in the POR submitted by the company in computing a company's weight in the index and this may be updated or adjusted consistent with the policy of the Exchange in managing the PSEi and sector indices.</p> 
+    <h1><img src="clogo/null" alt="" id="companyLogo" width="175" /><span id="companyName">SM Investments Corporation</span><span id="companyStockSymbol">SM</span></h1> 
+    <h4>PSE Disclosure Form POR-1 - Public Ownership Report <span><i>Reference: Amended Rule on Minimum Public Ownership</i></span> </h4> 
+    <p class="reportType">Report Type</p> 
+    <ul class="reportType"> 
+     <li style="background-color: white;"><input readonly="readonly" disabled="disabled" type="radio" name="ReportType0" value="DAY" data-type="RADIO" style="background-color: white;" /><span>Monthly</span></li> 
+     <li style="background-color: white;"><input readonly="readonly" disabled="disabled" type="radio" name="ReportType1" value="MON" data-type="RADIO" style="background-color: white;" checked="checked" /><span>Quarterly</span></li> 
+     <li style="background-color: white;"><input readonly="readonly" disabled="disabled" type="radio" name="ReportType2" value="OTH" data-type="RADIO" style="background-color: white;" /><span>Others</span></li> 
+    </ul> 
+    <table class="type1"> 
+     <tbody> 
+      <tr> 
+       <th>Report Date</th> 
+       <td><span class="valInput ">Jun 30, 2026</span></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1"> 
+     <caption>
+       Computation of Public Ownership 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Number of Issued <br />Common Shares</th> 
+       <td><span class="valInput ">1,233,154,140</span></td> 
+      </tr> 
+      <tr> 
+       <th>Less: Number of Treasury<br /> Common Shares, if any</th> 
+       <td><span class="valInput ">17,115,260</span></td> 
+      </tr> 
+      <tr> 
+       <th>Number of Outstanding<br />Common Shares</th> 
+       <td><span class="valInput ">1,216,038,880</span></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <p class="sub">Less :</p> 
+    <table id="Directors" data-type="GRID_ROLLUP_TOT"> 
+     <caption>
+       A. Directors 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Name</th> 
+       <th>Direct</th> 
+       <th>Indirect</th> 
+       <th>Total direct &amp; indirect shares</th> 
+       <th>% to Total Outstanding Shares</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Amando M. Tetangco, Jr.</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">100</span></td> 
+       <td><span class="valInput fmtNumber">100</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Teresita T. Sy</span></td> 
+       <td><span class="valInput fmtNumber">28,553,272</span></td> 
+       <td><span class="valInput fmtNumber">60,166,190</span></td> 
+       <td><span class="valInput fmtNumber"> 88,719,462 </span></td> 
+       <td><span class="valInput fmtNumber">7.3</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Henry T. Sy, Jr.</span></td> 
+       <td><span class="valInput fmtNumber">4,632,959</span></td> 
+       <td><span class="valInput fmtNumber">75,017,188</span></td> 
+       <td><span class="valInput fmtNumber"> 79,650,147 </span></td> 
+       <td><span class="valInput fmtNumber">6.55</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Harley T. Sy</span></td> 
+       <td><span class="valInput fmtNumber">90,717,536</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">90,717,536</span></td> 
+       <td><span class="valInput fmtNumber">7.46</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Frederic C. DyBuncio</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">10</span></td> 
+       <td><span class="valInput fmtNumber">10</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Robert G. Vergara</span></td> 
+       <td><span class="valInput fmtNumber">100</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">100</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Ramon M. Lopez</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">1,180</span></td> 
+       <td><span class="valInput fmtNumber">1,180</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Lily K. Gruba</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">10</span></td> 
+       <td><span class="valInput fmtNumber">10</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Marife B. Zamora</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">610</span></td> 
+       <td><span class="valInput fmtNumber">610</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">123,903,867</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">135,185,288</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">259,089,155</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">21.31</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table id="Officers" data-type="GRID_ROLLUP_TOT"> 
+     <caption>
+       B. Officers 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Name</th> 
+       <th>Direct</th> 
+       <th>Indirect</th> 
+       <th>Total direct &amp; indirect shares</th> 
+       <th>% to Total Outstanding Shares</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Erwin G. Pato</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Elizabeth Anne C. Uychaco</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Franklin C. Gomez</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">13,880</span></td> 
+       <td><span class="valInput fmtNumber">13,880</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Atty. Arthur A. Sy</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Ulysses C. Naguit</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">75</span></td> 
+       <td><span class="valInput fmtNumber">75</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Vicky L. Salas</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Shiela P. Alarcio</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Atty. Elmer B. Serrano</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">13,955</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">13,955</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table id="PS" data-type="GRID_ROLLUP_TOT"> 
+     <caption>
+       C. Principal/Substantial Stockholders 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Name</th> 
+       <th>Direct</th> 
+       <th>Indirect</th> 
+       <th>Total direct &amp; indirect shares</th> 
+       <th>% to Total Outstanding Shares</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Hans T. Sy</span></td> 
+       <td><span class="valInput fmtNumber">78,951,613</span></td> 
+       <td><span class="valInput fmtNumber">23,000,287</span></td> 
+       <td><span class="valInput fmtNumber">101,951,900</span></td> 
+       <td><span class="valInput fmtNumber">8.38</span></td> 
+       <td></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Herbert T. Sy</span></td> 
+       <td><span class="valInput fmtNumber">89,865,772</span></td> 
+       <td><span class="valInput fmtNumber">12,000,000</span></td> 
+       <td><span class="valInput fmtNumber">101,865,772</span></td> 
+       <td><span class="valInput fmtNumber">8.38</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Elizabeth T. Sy</span></td> 
+       <td><span class="valInput fmtNumber">39,562,267</span></td> 
+       <td><span class="valInput fmtNumber">34,573,314</span></td> 
+       <td><span class="valInput fmtNumber">74,135,581</span></td> 
+       <td><span class="valInput fmtNumber">6.1</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">208,379,652</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">69,573,601</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">277,953,253</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">22.86</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table id="AFF" data-type="GRID_ROLLUP_TOT"> 
+     <caption>
+       D. Affiliates 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Name</th> 
+       <th>Direct</th> 
+       <th>Indirect</th> 
+       <th>Total direct &amp; indirect shares</th> 
+       <th>% to Total Outstanding Shares</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Multi Realty Dev't Corp.</span></td> 
+       <td><span class="valInput fmtNumber">1,648</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">1,648</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">SM Prime Holdings, Inc.</span></td> 
+       <td><span class="valInput fmtNumber">146,104</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">146,104</span></td> 
+       <td><span class="valInput fmtNumber">0.01</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Intercontinental Development Corporation</span></td> 
+       <td><span class="valInput fmtNumber">7,039,562</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">7,039,562</span></td> 
+       <td><span class="valInput fmtNumber">0.58</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Belle Corporation</span></td> 
+       <td><span class="valInput fmtNumber">48,877</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">48,877</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Syntrix Holdings, Inc.</span></td> 
+       <td><span class="valInput fmtNumber">47,383,180</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">47,383,180</span></td> 
+       <td><span class="valInput fmtNumber">3.9</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Sysmart Corporation</span></td> 
+       <td><span class="valInput fmtNumber">28,433,972</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">28,433,972</span></td> 
+       <td><span class="valInput fmtNumber">2.34</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Tansmart Holdings, Inc.</span></td> 
+       <td><span class="valInput fmtNumber">27,285,000</span></td> 
+       <td><span class="valInput fmtNumber">0</span></td> 
+       <td><span class="valInput fmtNumber">27,285,000</span></td> 
+       <td><span class="valInput fmtNumber">2.24</span></td> 
+       <td><a href="javascript:void(0);" id="remNew"></a></td> 
+      </tr> 
+      <tr> 
+       <td></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">110,338,343</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">110,338,343</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">9.07</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table id="GOV" data-type="GRID_ROLLUP_TOT"> 
+     <caption>
+       E. Government 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Name</th> 
+       <th>Direct</th> 
+       <th>Indirect</th> 
+       <th>Total direct &amp; indirect shares</th> 
+       <th>% to Total Outstanding Shares</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td></td> 
+      </tr> 
+      <tr> 
+       <td></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table id="Banks" data-type="GRID_ROLLUP_TOT"> 
+     <caption>
+       F. Banks 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Name</th> 
+       <th>Direct</th> 
+       <th>Indirect</th> 
+       <th>Total direct &amp; indirect shares</th> 
+       <th>% to Total Outstanding Shares</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td></td> 
+      </tr> 
+      <tr> 
+       <td></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table id="EMP" data-type="GRID_ROLLUP_TOT"> 
+     <caption>
+       G. Employees 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Name</th> 
+       <th>Direct</th> 
+       <th>Indirect</th> 
+       <th>Total direct &amp; indirect shares</th> 
+       <th>% to Total Outstanding Shares</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td></td> 
+      </tr> 
+      <tr> 
+       <td></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table id="LUS" data-type="GRID_ROLLUP_TOT"> 
+     <caption>
+       H. Lock-Up Shares 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Name</th> 
+       <th>Direct</th> 
+       <th>Indirect</th> 
+       <th>Total direct &amp; indirect shares</th> 
+       <th>% to Total Outstanding Shares</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td></td> 
+      </tr> 
+      <tr> 
+       <td></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table id="OTH" data-type="GRID_ROLLUP_TOT"> 
+     <caption>
+       I. Others 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Name</th> 
+       <th>Direct</th> 
+       <th>Indirect</th> 
+       <th>Total direct &amp; indirect shares</th> 
+       <th>% to Total Outstanding Shares</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td><span class="valInput fmtNumber">-</span></td> 
+       <td></td> 
+      </tr> 
+      <tr> 
+       <td></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td><span data-type="TOTAL" style="display: block; text-align: right;">0</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1"> 
+     <tbody> 
+      <tr> 
+       <th>Number of Listed<br />Common Shares</th> 
+       <td><span class="valInput ">1,226,114,578</span></td> 
+      </tr> 
+      <tr> 
+       <th>Total Number of<br />Non-Public Shares</th> 
+       <td><span class="valInput ">647,394,706</span></td> 
+      </tr> 
+      <tr> 
+       <th>Total Number of Shares Owned<br />by the Public</th> 
+       <td><span class="valInput ">568,644,174</span></td> 
+      </tr> 
+      <tr> 
+       <th>Public Ownership Percentage</th> 
+       <td><span class="valInput ">46.76%</span></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1"> 
+     <tbody> 
+      <tr> 
+       <th>Other Relevant Information</th> 
+      </tr> 
+      <tr> 
+       <td><p class="valText">Please see attachment.</p></td> 
+      </tr> 
+     </tbody> 
+    </table>  
+    <div style="margin-top: 48px;"> 
+     <span style="font-weight: bold; font-size: 0.8em;">Filed on behalf by:</span> 
+     <table class="type2" style="margin-top: 3px;"> 
+      <tbody> 
+       <tr> 
+        <th style="width: 40%;">Name</th> 
+        <td>Elmer Serrano</td> 
+       </tr> 
+       <tr> 
+        <th>Designation</th> 
+        <td>Corporate Secretary</td> 
+       </tr> 
+      </tbody> 
+     </table> 
+    </div>
+   </div> 
+  </div>  
+ </body>
+</html>

@@ -1,0 +1,115 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<title>Change in Shareholdings of Directors and Principal Officers</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<script src="/js/lib/jquery-1.10.2.min.js"></script>
+<script src="/js/lib/jquery-ui-1.10.3.min.js"></script>
+<script src="/js/lib/jquery.blockUI.js"></script>
+<!-- <script src="/js/lib/jquery.selectbox-0.2.js"></script> -->
+<script src="/js/lib/jquery.ezmark.js"></script>
+<script src="/js/lib/jquery.cycle.js"></script>
+<script src="/js/common/epCommon.js?version=20220325"></script>
+<script src="/js/common/epPopup.js"></script>
+<!--script src="http://steema.us/files/jscript/src/teechart.js" type="text/javascript"></script -->
+<script src="/js/teechart/teechart.js"></script>
+<script src="/js/teechart/teechart-table.js"></script>  
+<script src="/js/teechart/teechart-extras.js"></script>
+<script src="/js/teechart/teechart-data.js"></script>
+<script src="/js/teechart/date.format.js"></script>
+<link href="/js/lib/themes/base/jquery-ui.css" rel="stylesheet" />
+<!-- <link href="/js/lib/themes/jquery.selectbox.css" rel="stylesheet" /> -->
+<link href="/js/lib/themes/jquery.ezmark.css" rel="stylesheet" />
+<link href="/css/common.css" type="text/css" rel="stylesheet" />
+<link href="/css/contents.css?version=20220601" type="text/css" rel="stylesheet" />
+<link href="/css/viewer.css" type="text/css" rel="stylesheet" />
+<script type="text/javascript">
+$(document).ready(function() {
+  setViewSize();
+
+  $(window).resize(function() {
+    setViewSize();
+  });
+});
+
+function setViewSize() {
+  $("#viewContents").width($("#viewOption").innerWidth());
+  $("#viewContents").height($(window).innerHeight() - 190);
+}
+
+function docChange() {
+  var edge_no = $("#docList").val();
+  if (edge_no) {
+    $.blockUI();
+    document.location.href = "/openDiscViewer.do?edge_no=" + edge_no;
+  }
+}
+
+function docPrint() {
+  window.frames["viewContents"].focus();
+  window.frames["viewContents"].print();
+};
+
+function downloadFile() {
+  var file_id = $("#file_list").val();
+  if (file_id) {
+    $("#file_id").val(file_id);
+    $("#form1").submit();
+  } else {
+    jAlert("Select the file.", function() {$("#file_list").focus();});
+  }
+}
+
+</script>
+<script type="text/javascript">var switchTo5x=true;</script>
+<script type="text/javascript" src="http://w.sharethis.com/button/buttons.js"></script>
+<script type="text/javascript">stLight.options({publisher: "87c41a36-4d48-42fb-b058-e7596aaf4c59", doNotHash: false, doNotCopy: false, hashAddressBar: true});</script>
+</head>
+<body><a href="https://edge.pse.com.ph/cdn-cgi/content?id=jdyhQmFvMsCriCFBgFnVhf5EAgP7IoapIqJ.rBcP9nM-1788017589.3898358-1.2.1.1-MboMZmBc1vcfeI.6YUXw7cNyp6uwI9WuvBJ8gfn6ogZ6agM1tw.1PRHLEcjGeLx4" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a>
+<div id="viewHeader">
+ <h2>SM Investments Corporation</h2>
+ <p>Disclosure Date : Aug 19, 2025</p>
+</div>
+<div id="viewBody">
+  <div class="share">
+<span class="st_facebook"></span>
+<span class="st_twitter"></span>
+<span class="st_linkedin"></span>
+<span class="st_email"></span>
+  </div>
+  <div id="viewOption">
+   <p>
+    <label for="docList">Main Document (1)</label>
+    <select id="docList" style="width:410px" onchange="docChange();" >
+      <option value="7ef3ad16b2ae40daec6e1601ccee8f59" selected>
+        Aug 19, 2025&nbsp;
+        Change in Shareholdings of Directors and Principal Officers</option>
+      </select>
+  </p>
+  <p>
+    <label for="file_list">Attachments (1)</label>
+    <select id="file_list" name="file_list" style="width:410px" >
+      <option value="">Select</option><option value="1804534">
+        Aug 19, 2025&nbsp;
+        18 Aug 2025 SMIC - Change in Shareholdings of SMIC Director  - Henry T. Sy Jr_-signed.pdf</option>
+      </select>
+    <a href="#download" onclick="downloadFile();return false;">
+      <img src="/images/common/btn_download.gif" alt="Download"/></a>
+    </p>
+  <p class="btn">
+  <a href="#print" onclick="docPrint();return false;">
+    <img src="/images/common/btn_print.png" alt="Print" /></a>
+  <a href="#close" onclick="self.close();return false;">
+    <img src="/images/common/btn_close.png" alt="Close" /></a>
+  </p>
+  </div>
+  <div id="log"></div>
+<iframe src="/downloadHtml.do?file_id=1804533" id="viewContents" name="viewContents" frameborder="0"></iframe>
+<form id="form1" name="form1" action="/downloadFile.do" style="display:none;" target="downloadFrame">
+    <input type="hidden" id="file_id" name="file_id" />
+  </form>
+  <iframe name="downloadFrame" frameborder="0" style="display:none;"></iframe>
+</div>
+</body>
+</html>
