@@ -384,6 +384,78 @@ describe("parseCninfoBoardRoster", () => {
       position: "党委书记、董事长",
     });
   });
+
+  // --- Regressions caught by live verification against real annual reports.
+
+  test("finds the roster on a post-2023-Company-Law report with no 监事", () => {
+    // The 2023 Company Law revision abolished the supervisory board, so modern
+    // annuals (Moutai FY2025) head this section "董事和高级管理人员的情况" with
+    // no 监事 at all. Requiring 董事 AND 监事 AND 高级管理人员 found nothing.
+    const text = [
+      "三、",
+      "董事和高级管理人员的情况",
+      "现任及报告期内离任董事",
+      "和",
+      "高级管理人员持股变动及",
+      "薪",
+      "酬情况",
+      "姓名",
+      "职务",
+      "陈华",
+      "党委书记",
+      "男",
+    ].join("\n");
+    expect(parseCninfoBoardRoster(text)).toContainEqual({
+      name: "陈华",
+      position: "党委书记",
+    });
+  });
+
+  test("merges a name split one glyph per line, without absorbing filler glyphs", () => {
+    // The 姓名 column is narrow enough that 陈华 is emitted as "陈" / "华". The
+    // merge must not also swallow the date-unit (年/月/日) and yes/no (是/否)
+    // glyphs the neighbouring columns emit, which produced 日王莉 / 否周雪.
+    const text = [
+      "董事和高级管理人员的情况",
+      "持股变动",
+      "姓名",
+      "职务",
+      "陈",
+      "华",
+      "党委书记",
+      "男",
+      "54",
+      "2025",
+      "年",
+      "10",
+      "月",
+      "27",
+      "日",
+      "是",
+      "王",
+      "莉",
+      "党委副书记",
+      "女",
+    ].join("\n");
+    const roster = parseCninfoBoardRoster(text);
+    expect(roster).toContainEqual({ name: "陈华", position: "党委书记" });
+    expect(roster).toContainEqual({ name: "王莉", position: "党委副书记" });
+    expect(roster.some((m) => m.name.includes("日") || m.name.includes("是"))).toBe(false);
+  });
+
+  test("never anchors on the 任职情况 (roles at shareholder units) table", () => {
+    // That is a DIFFERENT table pairing a shareholding ENTITY with a role; it
+    // emitted company names as people (金山软件 | 首席执行官).
+    const text = [
+      "现任及报告期内离任董事和高级管理人员的任职情况",
+      "1、在股东单位任职情况",
+      "金山软件",
+      "首席执行官",
+      "金投有限公",
+      "董事",
+    ].join("\n");
+    expect(parseCninfoBoardRoster(text)).toHaveLength(0);
+  });
 });
 
 // --- getCninfoOwners (fetch + extract + gate) ------------------------------
@@ -566,6 +638,41 @@ describe("getCninfoInsiders", () => {
     const result = await getCninfoInsiders("600519", options(fetchFn));
     expect(result.reason).toBe("mojibake");
     expect(result.roster).toBeUndefined();
+  });
+
+  test("routes a STAR issuer (688xxx) to SSE despite an opaque numeric orgId", async () => {
+    // Live-found: cninfo's orgId prefix is NOT a reliable exchange indicator —
+    // only legacy issuers carry gssh/gssz. Kingsoft 688111 resolves to orgId
+    // 9900035303 (Ping An 601318 -> 9900002221 likewise), which the prefix
+    // heuristic classified as "szse", silently sending Shanghai and STAR
+    // issuers to the Shenzhen feed that has no rows for them. Routing now keys
+    // on the unambiguous A-share code.
+    const fetchFn = routedFetch([
+      {
+        pattern: "topSearch/query",
+        body: [{ code: "688111", zwjc: "金山办公", orgId: "9900035303", delisted: false }],
+      },
+      annualRoute,
+      pdfRoute(buildCninfoReportPdf(MOUTAI_ROSTER.split("\n"))),
+    ]);
+    const result = await getCninfoInsiders("688111", options(fetchFn));
+    expect(result.exchange).toBe("SSE");
+    expect(result.mode).toBe("pdf-roster");
+    expect(fetchFn.requests.some(({ url }) => url.includes("ShowReport"))).toBe(false);
+  });
+
+  test("routes a ChiNext issuer (3xxxxx) to SZSE despite an opaque orgId", async () => {
+    // CATL 300750 resolves to orgId "GD165627" — neither gssh nor gssz.
+    const fetchFn = routedFetch([
+      {
+        pattern: "topSearch/query",
+        body: [{ code: "300750", zwjc: "宁德时代", orgId: "GD165627", delisted: false }],
+      },
+      szseRoute(SZSE_ROWS),
+    ]);
+    const result = await getCninfoInsiders("300750", options(fetchFn));
+    expect(result.exchange).toBe("SZSE");
+    expect(result.mode).toBe("szse-structured");
   });
 
   test("SSE roster degrades to link-only when the table is absent", async () => {

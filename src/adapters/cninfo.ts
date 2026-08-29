@@ -1361,55 +1361,132 @@ const CN_PERSON_NAME_RE = /^[㐀-鿿·]{2,6}$/;
 const CN_INSIDER_HEADER_RE =
   /姓名|职务|性别|年龄|任期|持股|报告期|薪酬|期初|期末|增减|变动|股数|原因|合计|单位|简称|代码/;
 
-/** Locate the 董监高 roster region (董事、监事、(和)?高级管理人员). */
+/**
+ * Locate the roster region. The section heading is NOT stable across issuers or
+ * years: the 2023 revision of the Company Law abolished the supervisory board
+ * (监事会), so post-reform annuals (e.g. Moutai FY2025) head this section
+ * "董事和高级管理人员的情况" with no 监事 at all, while issuers that retain
+ * supervisors still print "董事、监事、高级管理人员情况". Requiring all three
+ * terms therefore finds nothing on a modern report. Anchor on 高级管理人员 plus
+ * 董事 (both invariant), and prefer the *holdings* sub-table
+ * (持股变动 / 持股情况), which is the one carrying the name+职务 rows — a
+ * narrative mention of the same words carries no table.
+ */
 function boardRosterRegion(lines: readonly string[]): readonly string[] | undefined {
+  let fallback: readonly string[] | undefined;
   for (let i = 0; i < lines.length; i += 1) {
-    const window = `${lines[i] ?? ""}${lines[i + 1] ?? ""}${lines[i + 2] ?? ""}${lines[i + 3] ?? ""}`
-      .replace(/\s/g, "");
-    if (
-      window.includes("董事") && window.includes("监事") &&
-      window.includes("高级管理人员")
-    ) {
-      return lines.slice(i, i + 220);
-    }
+    const window = lines.slice(i, i + 12).join("").replace(/\s/g, "");
+    if (!window.includes("高级管理人员") || !window.includes("董事")) continue;
+    const region = lines.slice(i, i + 300);
+    // Prefer the持股变动/持股情况 holdings table — that is the roster proper.
+    // 任职情况 is a DIFFERENT table (positions held at SHAREHOLDER units), whose
+    // rows pair a shareholding entity with a role and would emit company names
+    // as people, so it must not win the anchor.
+    if (/任职情况/.test(window)) continue;
+    if (/持股变动|持股情况|基本情况/.test(window)) return region;
+    fallback ??= region;
   }
-  return undefined;
+  return fallback;
+}
+
+/** A single Han glyph — a roster name cell often arrives one glyph per line. */
+const CN_SINGLE_HAN_RE = /^[\u3400-\u9fff]$/;
+
+/**
+ * Single Han glyphs that are table furniture, never part of a person's name:
+ * the date-unit suffixes the \u4efb\u671f columns emit one per line (\u5e74/\u6708/\u65e5) and the
+ * yes/no flags of the \u662f\u5426\u5728\u5173\u8054\u65b9\u83b7\u53d6\u85aa\u916c column (\u662f/\u5426). Without excluding
+ * them the merge fuses a trailing \u65e5 or \u662f onto the next name (\u65e5\u738b\u8389, \u5426\u5468\u96ea).
+ */
+const CN_NAME_STOP_GLYPH = new Set(["\u5e74", "\u6708", "\u65e5", "\u662f", "\u5426", "\u7537", "\u5973", "\u65e0"]);
+
+/**
+ * Merge runs of consecutive single-Han cells into one name cell. Real roster
+ * tables set the 姓名 column narrow enough that a two- or three-character name
+ * is emitted one glyph per line (陈 / 华 → 陈华), which no 2-6-character name
+ * test can match. Runs of 2-4 single glyphs are joined; a longer run is left
+ * alone, since that is body prose rather than a name cell.
+ */
+function mergeSingleHanRuns(cells: readonly string[]): string[] {
+  const merged: string[] = [];
+  for (let i = 0; i < cells.length; i += 1) {
+    const isNameGlyph = (c: string): boolean =>
+      CN_SINGLE_HAN_RE.test(c) && !CN_NAME_STOP_GLYPH.has(c);
+    if (!isNameGlyph(cells[i]!)) {
+      merged.push(cells[i]!);
+      continue;
+    }
+    let j = i;
+    while (j < cells.length && isNameGlyph(cells[j]!)) j += 1;
+    const run = cells.slice(i, j);
+    if (run.length >= 2 && run.length <= 4) merged.push(run.join(""));
+    else merged.push(...run);
+    i = j - 1;
+  }
+  return merged;
 }
 
 /**
  * Parse the annual-report 董监高 roster into {name, position} rows. Walks the
- * cell stream and emits a row whenever a plausible person-name cell (2–6 Han
- * chars, no role keyword, not a header) is immediately followed by a
- * position cell (carrying a governance role keyword). Deduplicated, capped at
- * 60. Names and positions are the load-bearing fields (they hold cleanly);
- * fragmenting date/shareholding cells are intentionally not emitted.
+ * cell stream (after merging glyph-split name cells) and emits a row whenever a
+ * plausible person-name cell (2-6 Han chars, no role keyword, not a header) is
+ * followed within the next two cells by a position cell carrying a governance
+ * role keyword — the small lookahead absorbs a stray fragment between the two
+ * columns. Deduplicated by name (the first, primary 职务 wins) and capped at 60.
+ * Names and positions are the load-bearing fields; the date and shareholding
+ * cells fragment badly and are intentionally never emitted.
  */
 export function parseCninfoBoardRoster(text: string): CninfoBoardMember[] {
   const region = boardRosterRegion(normalizeCninfoText(text).split("\n"));
   if (!region) return [];
-  const cells: string[] = [];
+  const rawCells: string[] = [];
   for (const line of region) {
     for (const cell of line.split(/\s{2,}/)) {
       const trimmed = cell.trim();
-      if (trimmed) cells.push(trimmed);
+      if (trimmed) rawCells.push(trimmed);
     }
   }
+  const cells = mergeSingleHanRuns(rawCells);
   const members: CninfoBoardMember[] = [];
   const seen = new Set<string>();
   for (let i = 0; i < cells.length - 1 && members.length < 60; i += 1) {
     const name = cells[i]!;
-    const next = cells[i + 1]!;
     if (!CN_PERSON_NAME_RE.test(name)) continue;
     if (CN_ROLE_RE.test(name) || CN_INSIDER_HEADER_RE.test(name)) continue;
-    if (!CN_ROLE_RE.test(next) || next.length > 24 || CN_INSIDER_HEADER_RE.test(next)) {
-      continue;
+    if (seen.has(name)) continue;
+    for (let k = i + 1; k <= Math.min(i + 2, cells.length - 1); k += 1) {
+      const next = cells[k]!;
+      if (CN_INSIDER_HEADER_RE.test(next)) continue;
+      if (!CN_ROLE_RE.test(next) || next.length > 24) continue;
+      seen.add(name);
+      members.push({ name, position: next });
+      break;
     }
-    const key = `${name} ${next}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    members.push({ name, position: next });
   }
   return members;
+}
+
+/**
+ * Decide which exchange's insider surface an issuer belongs to.
+ *
+ * The cninfo `column`/orgId prefix is NOT a reliable exchange indicator here:
+ * only legacy issuers carry the gssh/gssz prefixes, while many (Ping An
+ * 601318 -> 9900002221, Kingsoft 688111 -> 9900035303, CATL 300750 -> GD165627)
+ * return a bare numeric or opaque orgId that the prefix heuristic defaults to
+ * "szse". Routing on that would send SSE and STAR issuers to the Shenzhen feed,
+ * which legitimately has no rows for them — a silent empty result.
+ *
+ * The A-share code itself is unambiguous and is what the SZSE feed filters on:
+ * 6xxxxx = Shanghai (main board + 688 STAR), 0xxxxx/3xxxxx = Shenzhen (main
+ * board + ChiNext). HKEX-mirrored rows keep the column-based answer.
+ */
+function szseInsiderExchange(entity: CninfoEntity): "SZSE" | "SSE" | "HKE" {
+  if (entity.column === "hke") return "HKE";
+  const code = entity.stockCode.trim();
+  if (/^6\d{5}$/.test(code)) return "SSE";
+  if (/^[03]\d{5}$/.test(code)) return "SZSE";
+  // Not a 6-digit A-share code — fall back to what cninfo's column claims.
+  return entity.column === "sse" ? "SSE" : "SZSE";
 }
 
 export type CninfoInsidersMode = "szse-structured" | "pdf-roster";
@@ -1447,12 +1524,8 @@ export async function getCninfoInsiders(
   options: AdapterOptions = {},
 ): Promise<CninfoInsidersResult> {
   const entity = await resolveCninfoEntity(company, options);
-  const exchange = entity.column === "sse"
-    ? "SSE"
-    : entity.column === "hke"
-      ? "HKE"
-      : "SZSE";
-  if (entity.column === "szse") {
+  const exchange = szseInsiderExchange(entity);
+  if (exchange === "SZSE") {
     const changes = await getSzseInsiderChanges(entity.stockCode, options);
     return {
       entity,
