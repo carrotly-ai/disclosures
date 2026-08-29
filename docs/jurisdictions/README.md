@@ -9,7 +9,7 @@ an empty or fabricated result.
 Three further **filed-document / register tools** — `CompanyDocument`, `CompanyCharges`, and
 `PersonAppointments` — originated as Companies House features. `CompanyDocument` now also
 serves **US** (SEC EDGAR), **JP** (EDINET), **KR** (OpenDART), **FR** (info-financiere
-OAM), and **HK** (HKEXnews); `PersonAppointments` also serves **US** (SEC EDGAR reporting
+OAM), **HK** (HKEXnews), and **CN** (cninfo); `PersonAppointments` also serves **US** (SEC EDGAR reporting
 owners), **DE** (BaFin DealingsInfo notifying persons), and **FR** (recherche-entreprises
 *dirigeants*), all via a `jurisdiction` parameter (default `GB`). `CompanyCharges` remains
 UK-only for now. See [GB.md](GB.md), [US.md](US.md), [JP.md](JP.md), [KR.md](KR.md),
@@ -28,8 +28,8 @@ configuration, and library API, see the top-level [README](../../README.md).
 | `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ |
 | `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -97,7 +97,10 @@ Shanghai data sits inside a JS-gated credit file), so they fall back to the as-p
 and shareholding cells fragment in extraction. A transaction feed and a roster snapshot answer
 different questions; the response states which one it served. See [CN.md](CN.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, and `CN`; `PersonAppointments`
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, and `CN`;
+`PersonAppointments` accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is
+UK-only and takes no `jurisdiction` parameter.
+
 NL `CompanyOwners` / `CompanyInsiders` come from the AFM's **keyless whole-file register
 exports**, which support **no server-side filtering** (an `?issuer=` parameter is ignored and
 `Range` is not honoured), so a per-issuer view means downloading a register and filtering
@@ -108,10 +111,6 @@ adapter reduces each register to a compact per-issuer digest at parse time (293k
 warm 7 ms); pass a cache so the digest survives process restarts. NL covers AFM-supervised
 listed issuers only — KVK is paid — and **ESAP (2027+) will eventually overlap this
 coverage**. See [NL.md](NL.md).
-
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
-accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no
-`jurisdiction` parameter.
 
 `OwnershipChain` takes no `jurisdiction` parameter: it is GLEIF Level-2 relationship data
 for any entity worldwide. It reports accounting-consolidation parents and children, which
