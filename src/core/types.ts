@@ -21,6 +21,7 @@ export const JURISDICTIONS = {
   TH: "TH",
   NL: "NL",
   ID: "ID",
+  AE: "AE",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -47,6 +48,7 @@ export const DATA_SOURCES = {
   DBD: "DBD",
   AFM: "AFM",
   IDX: "IDX",
+  DFM: "DFM",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -96,6 +98,8 @@ export interface IdentifierSet {
   sector?: string;
   /** Exchange listing date (ISO), where the register publishes one (IDX). */
   listingDate?: string;
+  /** DFM (Dubai) issuer symbol, e.g. EMAAR (Emaar Properties PJSC). */
+  dfmSymbol?: string;
   jurisdiction?: string;
 }
 

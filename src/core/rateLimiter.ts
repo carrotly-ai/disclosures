@@ -224,6 +224,13 @@ export const afmRateLimiter = new SlidingWindowRateLimiter(12, 60_000);
 // and one instance download. Be conspicuously polite to a challenged host.
 export const idxRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 
+// Dubai Financial Market (api2.dfm.ae efsah JSON + widget gateway, and the
+// keyless PDF host feeds.dfm.ae). No documented limit. One filings call is a
+// cached roster load plus up to 5 feed pages; one document call is a single
+// HEAD or GET. Keep a modest budget that never self-trips on one bounded
+// lookup while cross-call abuse still trips it.
+export const dfmRateLimiter = new SlidingWindowRateLimiter(90, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -246,4 +253,5 @@ export function resetRateLimiters(): void {
   dbdRateLimiter.reset();
   afmRateLimiter.reset();
   idxRateLimiter.reset();
+  dfmRateLimiter.reset();
 }

@@ -262,6 +262,16 @@ import {
   searchIdxFilings,
 } from "../adapters/idxIndonesia.js";
 import {
+  DFM_DISCLOSURES_PAGE_URL,
+  DFM_DOCUMENT_CONTENT_WARNING,
+  getDfmDocumentMetadata,
+  getDfmDocumentPdf,
+  getDfmFilings,
+  isDfmDisclosureType,
+  searchDfmCompanies,
+} from "../adapters/dfmDubai.js";
+import type { DfmDocumentMetadata, DfmEntity } from "../adapters/dfmDubai.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -410,6 +420,7 @@ function identifierText(entity: Entity): string {
     entity.hkexStockId ? `HKEX stockId ${entity.hkexStockId}` : undefined,
     entity.uen ? `UEN ${entity.uen}` : undefined,
     entity.juristicId ? `juristic ${entity.juristicId}` : undefined,
+    entity.dfmSymbol ? `DFM ${entity.dfmSymbol}` : undefined,
   ].filter((value): value is string => Boolean(value)).join("; ") || "—";
 }
 
@@ -472,6 +483,7 @@ function entitiesStructured(entities: Entity[]): Record<string, unknown> {
       hkexStockId: entity.hkexStockId,
       uen: entity.uen,
       juristicId: entity.juristicId,
+      dfmSymbol: entity.dfmSymbol,
       sourceUrl: entity.sourceUrl,
     })),
   };
@@ -1635,6 +1647,101 @@ const ID_NOT_FOUND_HINT =
   "Try a 4-letter IDX ticker / kode emiten (e.g. BBCA, TLKM) or the issuer's " +
   "name as IDX spells it. " + IDX_ANTIBOT_NOTE;
 
+// --- AE (DFM, Dubai) constants ---------------------------------------------
+//
+// Every AE message states the scope limit up front: this is Dubai, not the UAE.
+// ADX, DIFC and ADGM were all bot-walled from a datacenter IP when the AE route
+// was verified, so pretending to "UAE coverage" would be dishonest.
+const AE_DUBAI_ONLY_NOTE =
+  "AE coverage is DUBAI ONLY (Dubai Financial Market and Nasdaq Dubai), not " +
+  "the whole UAE. ADX (Abu Dhabi — ADNOC group, IHC, Aldar) answers HTTP 403 " +
+  "from an Imperva/Cloudflare edge, the DIFC public register answers a " +
+  "persistent 429 Cloudflare bot-wall, and the ADGM registration authority " +
+  "answers 403, so no keyless server-side path exists to any of them. An " +
+  "Abu Dhabi or free-zone issuer will not be found here — that is a coverage " +
+  "gap, not evidence the issuer has nothing on file.";
+
+const AE_RESOLVE_CAVEAT =
+  "DFM listed securities (equities, REITs, ETFs and funds on Dubai Financial " +
+  "Market and Nasdaq Dubai). The symbol is the id every other AE intent takes. " +
+  "Arabic names come from the exchange's own Arabic roster. " + AE_DUBAI_ONLY_NOTE;
+
+const AE_FILINGS_CAVEAT =
+  "DFM efsah (إفصاح) disclosures for one issuer, newest first. One row per " +
+  "attached document, because each is separately fetchable; a results " +
+  "announcement can therefore appear twice (statements plus a " +
+  "management-discussion annex). Headlines and documents are the issuer's own " +
+  "English or Arabic filing. " + AE_DUBAI_ONLY_NOTE;
+
+const AE_NOT_FOUND_HINT =
+  "Try a DFM issuer symbol (e.g. EMAAR, EMIRATESNBD, SALIK, TALABAT) or the " +
+  "issuer's name in English or Arabic. " + AE_DUBAI_ONLY_NOTE;
+
+const AE_INSIDERS_UNSUPPORTED =
+  "CompanyInsiders is unsupported for jurisdiction \"AE\". DFM's efsah feed " +
+  "carries no structured insider-dealing or director-holdings disclosure type: " +
+  "board changes and related-party dealings arrive as free-text disclosure " +
+  "PDFs, which this release does not parse into normalized insider records. " +
+  "Use CompanyFilings with jurisdiction \"AE\" (try forms like [\"board\"] or " +
+  "[\"resignation\"]) to locate the underlying disclosure, then CompanyDocument " +
+  "to read it. " + AE_DUBAI_ONLY_NOTE;
+
+const AE_OWNERS_UNSUPPORTED =
+  "CompanyOwners is unsupported for jurisdiction \"AE\". Neither DFM nor the " +
+  "SCA (Securities and Commodities Authority) publishes a keyless structured " +
+  "major-shareholder or threshold-crossing register: ownership disclosure " +
+  "reaches DFM as free-text PDFs, so this release does not normalize it. Use " +
+  "CompanyFilings with jurisdiction \"AE\" to locate those disclosures. " +
+  AE_DUBAI_ONLY_NOTE;
+
+const AE_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"AE\". DFM publishes no " +
+  "structured financial figures — quarterly and annual results arrive as " +
+  "statement and press-release PDFs under the efsah feed's " +
+  "\"financial_reports\" type, not as XBRL or a normalized facts API. Use " +
+  "CompanyFilings with jurisdiction \"AE\" and forms [\"financial\"] to find " +
+  "the issuer's latest statements, then CompanyDocument (mode \"xhtml\") for " +
+  "their text. " + AE_DUBAI_ONLY_NOTE;
+
+/**
+ * Attach an LEI to DFM matches. The exchange roster carries no LEI at all, so
+ * GLEIF (keyless, CC0, already a dependency of this server) fills the gap by
+ * legal name — giving the caller an identifier that chains into OwnershipChain.
+ *
+ * Bounded to the top few candidates — one GLEIF call each — and best-effort: a
+ * GLEIF failure or an ambiguous name leaves the exchange match untouched rather
+ * than failing the resolve. A hit is accepted only when GLEIF places the entity
+ * in AE, so a same-named foreign company cannot attach a wrong LEI.
+ */
+const AE_GLEIF_ENRICH_LIMIT = 3;
+
+async function enrichAeCandidatesWithGleif(
+  candidates: DfmEntity[],
+  runtime: AdapterOptions,
+): Promise<DfmEntity[]> {
+  return Promise.all(
+    candidates.map(async (candidate, index) => {
+      if (candidate.lei || index >= AE_GLEIF_ENRICH_LIMIT) return candidate;
+      try {
+        const matches = await searchGleifEntities(candidate.legalName, runtime);
+        const match = matches.find(
+          (entity) => entity.lei && entity.jurisdiction === "AE",
+        );
+        if (!match?.lei) return candidate;
+        return {
+          ...candidate,
+          lei: match.lei,
+          matchReason: `${candidate.matchReason ?? "DFM match"}; LEI via GLEIF`,
+          sourceIdentifiers: { ...candidate.sourceIdentifiers, lei: match.lei },
+        } satisfies DfmEntity;
+      } catch {
+        // GLEIF is supplementary here — the DFM match still stands.
+        return candidate;
+      }
+    }),
+  );
+}
+
 // Render the DBD register record for the top resolved TH match: both legal
 // names, juristic type, status, capital, TSIC classification and head office.
 function buildThProfileDetailSection(entity: DbdEntity): string {
@@ -1996,6 +2103,44 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "CompanyFilings (jurisdiction \"ID\") for the issuer's " +
                 "disclosure announcements, or CompanyFinancials (jurisdiction " +
                 "\"ID\") for headline totals parsed from its XBRL instance.",
+            ),
+          ), entitiesStructured(top));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "AE") {
+        try {
+          const results = await searchDfmCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(company, AE_NOT_FOUND_HINT);
+          }
+          // The DFM roster carries no LEI, so the top matches are enriched from
+          // GLEIF (keyless, CC0) to give the caller an identifier that chains
+          // into OwnershipChain.
+          const top = await enrichAeCandidatesWithGleif(
+            results.slice(0, 10),
+            options,
+          );
+          return textResult(joinSections(
+            `# Company resolution (DFM / Dubai Financial Market): ${company}`,
+            entityRows(top),
+            markdownTable(
+              ["Symbol", "Issuer (EN)", "Issuer (AR)", "Sector", "Listed on"],
+              top.map((entity) => [
+                entity.dfmSymbol,
+                entity.legalName,
+                entity.aliases?.[0],
+                entity.sourceIdentifiers?.sector,
+                entity.status?.replace(/^Listed \((.*)\)$/, "$1"),
+              ]),
+            ),
+            `_${AE_RESOLVE_CAVEAT}_`,
+            nextStep(
+              "use the DFM symbol from this table with CompanyFilings " +
+                "(jurisdiction \"AE\") for the issuer's efsah disclosures, then " +
+                "CompanyDocument (jurisdiction \"AE\") for a filing's PDF or " +
+                "text. An LEI here also works with OwnershipChain.",
             ),
           ), entitiesStructured(top));
         } catch (error) {
@@ -2491,6 +2636,63 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
           ), filingsStructured(filings));
         }
+        if (jurisdiction === "AE") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            return textResult(
+              `Latest ${mode === "latest_annual" ? "annual" : "quarterly"} mode ` +
+                "is unsupported for AE. DFM's efsah feed tags a results " +
+                "disclosure with a quarter (Q1/Q2/…) but publishes no " +
+                "normalized annual/quarterly report-metadata equivalent. Use " +
+                "mode \"search\" with forms [\"financial_reports\"] for the " +
+                "issuer's statement filings, newest first.",
+            );
+          }
+          // "general_meetings" / "financial_reports" in `forms` are the feed's
+          // own server-side type filter; anything else stays a client-side
+          // text match over the headline and document description.
+          const typeFilter = (forms ?? []).find((form) =>
+            isDfmDisclosureType(form.trim().toLowerCase())
+          )?.trim().toLowerCase();
+          const textForms = (forms ?? []).filter(
+            (form) => !isDfmDisclosureType(form.trim().toLowerCase()),
+          );
+          const { filings, truncated } = await getDfmFilings({
+            company,
+            ...(textForms.length ? { forms: textForms } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            ...(typeFilter && isDfmDisclosureType(typeFilter)
+              ? { disclosureType: typeFilter }
+              : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No DFM disclosures found for "${company}" in the scanned window.`,
+              `_${AE_FILINGS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# DFM disclosures: ${company}`,
+            markdownTable(
+              ["Published", "Headline", "Type", "Document", "Transaction id", "PDF"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description,
+                filing.accession,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            truncated
+              ? "_More disclosures exist beyond the scanned pages — narrow the " +
+                "window with start_date/end_date, or raise limit._"
+              : "",
+            `_${AE_FILINGS_CAVEAT}_`,
+            FILINGS_NEXT_STEP,
+          ), filingsStructured(filings));
+        }
         if (jurisdiction === "NL") {
           return textResult(AFM_FILINGS_UNSUPPORTED);
         }
@@ -2867,6 +3069,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "ID") {
         return textResult(ID_INSIDERS_UNSUPPORTED);
+      }
+      if (jurisdiction === "AE") {
+        return textResult(AE_INSIDERS_UNSUPPORTED);
       }
       try {
         if (jurisdiction === "DE") {
@@ -3287,6 +3492,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "ID") {
         return textResult(joinSections(
           ID_OWNERS_UNSUPPORTED,
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "AE") {
+        return textResult(joinSections(
+          AE_OWNERS_UNSUPPORTED,
           "_Absence of a result here is not evidence that no large holder exists._",
         ));
       }
@@ -3786,6 +3997,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "TH") {
         return textResult(TH_FINANCIALS_UNSUPPORTED);
       }
+      if (jurisdiction === "AE") {
+        return textResult(AE_FINANCIALS_UNSUPPORTED);
+      }
       if (jurisdiction === "ID") {
         try {
           const requested = concepts?.filter((concept) =>
@@ -4204,7 +4418,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
         jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
-        jurisdiction === "ID"
+        jurisdiction === "ID" || jurisdiction === "AE"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -4230,7 +4444,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                               ? "ACRA (Singapore)"
                               : jurisdiction === "TH"
                                 ? "DBD (Thailand)"
-                                : "IDX (Indonesia)";
+                                : jurisdiction === "ID"
+                                  ? "IDX (Indonesia)"
+                                  : "DFM (Dubai)";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +
@@ -4723,6 +4939,98 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  /**
+   * AE (DFM, Dubai). transaction_id is the efsah resource `r_path` that
+   * CompanyFilings returned, e.g.
+   * `/2026/Aug/7/<uuid>/Emaar Properties H1 2026 Press Release   English.P.pdf`.
+   * A full https://feeds.dfm.ae/documents/efsah/… URL is also accepted; the
+   * rebuilt URL's host is validated to stay on dfm.ae before any fetch.
+   */
+  async function companyDocumentAe(
+    _company: string,
+    transactionId: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!transactionId) {
+      return textResult(
+        "Provide a transaction_id (the DFM efsah r_path from CompanyFilings " +
+          "with jurisdiction \"AE\", e.g. /2026/Aug/7/<uuid>/<name>.pdf) to " +
+          "fetch a Dubai filing's document. " + AE_DUBAI_ONLY_NOTE,
+      );
+    }
+    try {
+      if (mode === "xhtml") {
+        const pdf = await getDfmDocumentPdf(transactionId, options);
+        const extracted = extractPdfText(pdf.bytes);
+        if (!extracted.text) {
+          return textResult(joinSections(
+            `# DFM document: ${pdf.suggestedFilename}`,
+            ...pdfNoTextSections(extracted),
+            `_Filing: ${link("open", pdf.sourceUrl)}._`,
+          ));
+        }
+        return textResult(joinSections(
+          `# DFM document: ${pdf.suggestedFilename}`,
+          ...pdfExtractionSections(
+            extracted,
+            DFM_DOCUMENT_CONTENT_WARNING,
+            textOffset ?? 0,
+          ),
+          "_DFM issuers file in English and Arabic; an Arabic filing's text " +
+            "layer extracts as right-to-left Arabic in logical order, without " +
+            "shaping or bidi reordering._",
+          `_Filing: ${link("open", pdf.sourceUrl)}._`,
+        ));
+      }
+
+      if (mode === "pdf") {
+        const pdf = await getDfmDocumentPdf(transactionId, options);
+        const target = outputPath
+          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
+          : join(tmpdir(), pdf.suggestedFilename);
+        await writeFile(target, pdf.bytes);
+        return textResult(joinSections(
+          `# DFM document: ${pdf.suggestedFilename}`,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
+              ["Filing", link("view", pdf.sourceUrl)],
+            ],
+          ),
+          `_${DFM_DOCUMENT_CONTENT_WARNING} The file was written to disk; its bytes are not inlined here._`,
+        ));
+      }
+
+      const metadata: DfmDocumentMetadata =
+        await getDfmDocumentMetadata(transactionId, options);
+      return textResult(joinSections(
+        `# DFM document: ${metadata.filename}`,
+        markdownTable(
+          ["Field", "Value"],
+          [
+            ["Transaction id", metadata.transactionId],
+            ["Document path", metadata.path],
+            ["Content type", metadata.contentType ?? "—"],
+            ["Size (bytes)", metadata.byteLength !== undefined ? String(metadata.byteLength) : "—"],
+            ["Last modified", metadata.lastModified ?? "—"],
+            ["Filing", link("view", metadata.sourceUrl)],
+          ],
+        ),
+        "_Use mode=\"xhtml\" for the PDF's best-effort extracted text (paged " +
+          "via text_offset), or mode=\"pdf\" to download the PDF (saved to " +
+          "disk, 25 MB cap). " + DFM_DOCUMENT_CONTENT_WARNING + "_",
+      ));
+    } catch (error) {
+      return failureResult(transactionId, error);
+    }
+  }
+
   async function companyDocumentCn(
     company: string,
     transactionId: string | undefined,
@@ -4809,11 +5117,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     "Fetch a filed document's content by the transaction_id CompanyFilings " +
       "returned (GB transaction id — default; US accession number; JP EDINET " +
       "docID; KR DART rcept_no; FR info-financiere OAM record id; HK HKEXnews " +
-      "FILE_LINK path). Mode \"metadata\" (default) lists the " +
+      "FILE_LINK path; AE DFM efsah r_path). Mode \"metadata\" (default) lists the " +
       "filing's documents/renditions with sizes; \"xhtml\" returns the primary " +
       "document's extracted plain text where available — from a machine-readable " +
       "iXBRL/XHTML rendition (GB/US/KR) or best-effort text-layer extraction from " +
-      "the filed PDF (FR/HK/CN, and JP where a PDF exists); paged via text_offset, " +
+      "the filed PDF (FR/HK/CN/AE, and JP where a PDF exists); paged via text_offset, " +
       "with scanned/image PDFs and text-less filings reported honestly; \"pdf\" " +
       "saves the PDF to a local file and returns the path, never inline bytes. " +
       "For CN the extracted text is CJK-space-normalized and mojibake (zero-CJK) " +
@@ -4824,12 +5132,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .min(1)
         .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR/CN)"),
       jurisdiction: z
-        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN"])
+        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "AE"])
         .optional()
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
-            "\"KR\" (OpenDART), \"FR\" (info-financiere OAM), \"HK\" (HKEXnews), or " +
-            "\"CN\" (cninfo SSE/SZSE)",
+            "\"KR\" (OpenDART), \"FR\" (info-financiere OAM), \"HK\" (HKEXnews), " +
+            "\"CN\" (cninfo SSE/SZSE), or \"AE\" (DFM Dubai — Dubai only)",
         ),
       transaction_id: z
         .string()
@@ -4839,8 +5147,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           "GB Companies House filing-history transaction id, US SEC accession " +
             "number, JP EDINET docID, KR OpenDART receipt number (rcept_no), " +
             "FR info-financiere OAM record id, HK HKEXnews FILE_LINK path " +
-            "(e.g. /listedco/listconews/…/….pdf), or CN cninfo announcement PDF " +
-            "URL / adjunctUrl path (finalpage/YYYY-MM-DD/ID.PDF) — all from CompanyFilings",
+            "(e.g. /listedco/listconews/…/….pdf), CN cninfo announcement PDF " +
+            "URL / adjunctUrl path (finalpage/YYYY-MM-DD/ID.PDF), or AE DFM " +
+            "efsah r_path (/YYYY/Mon/D/<uuid>/<name>.pdf) — all from CompanyFilings",
         ),
       document_id: z
         .string()
@@ -4889,6 +5198,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "CN") {
         return companyDocumentCn(company, transaction_id, mode, text_offset, output_path);
+      }
+      if (jurisdiction === "AE") {
+        return companyDocumentAe(company, transaction_id, mode, text_offset, output_path);
       }
       try {
         let documentId = document_id;

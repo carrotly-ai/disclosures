@@ -318,6 +318,31 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "entity registry) is a paid PNBP per-document product, and OJK is a " +
       "regulator/licensing site rather than a filing store.",
   },
+  {
+    code: "AE",
+    name: "United Arab Emirates — Dubai only (DFM)",
+    source: "Dubai Financial Market (keyless api2.dfm.ae efsah JSON + feeds.dfm.ae PDFs)",
+    credential: "None.",
+    identifiers:
+      "DFM issuer symbol (e.g. EMAAR, EMIRATESNBD, SALIK) or the issuer's " +
+      "name in English or Arabic",
+    intents:
+      "CompanyResolve (DFM + Nasdaq Dubai listed securities — symbol, English " +
+      "and Arabic name, sector; LEI enriched via GLEIF), CompanyFilings " +
+      "(per-issuer efsah disclosures with a direct PDF per attachment; date " +
+      "window, limit, and a general-meetings / financial-reports type filter), " +
+      "CompanyDocument (the disclosure PDF by its efsah r_path — metadata, " +
+      "extracted text, or download)",
+    caveat:
+      "DUBAI ONLY, not the whole UAE. ADX (Abu Dhabi — ADNOC group, IHC, " +
+      "Aldar) answers 403 from an Imperva/Cloudflare edge, the DIFC public " +
+      "register answers a persistent 429 Cloudflare bot-wall, and the ADGM " +
+      "registration authority answers 403, so none is reachable keyless from " +
+      "a server. Within DFM there is no structured owners/insiders/financials " +
+      "feed — results arrive as disclosure PDFs — so those intents are honest " +
+      "unsupported. Filings are the issuer's own English or Arabic filing; a " +
+      "scanned PDF reports no extractable text layer rather than guessing.",
+  },
 ] as const;
 
 export function renderJurisdictionReference(
