@@ -2036,6 +2036,301 @@ describe("explicit CN routing", () => {
     expect(text).toContain("static.cninfo.com.cn");
     expect(result.structuredContent).toBeUndefined();
   });
+
+  // --- CompanyOwners (top-10 shareholders) ---------------------------------
+
+  const cnTop10Lines = [
+    "前十名股东持股情况",
+    "股东名称",
+    "期末持股数量",
+    "比例(%)",
+    "股东性质",
+    "中国贵州茅台酒厂（集团）有限责任公司",
+    "681,282,935",
+    "54.40",
+    "国有法人",
+    "香港中央结算有限公司",
+    "55,048,844",
+    "4.40",
+    "境外法人",
+  ];
+
+  test("CompanyOwners CN renders the top-10 table + structuredContent", async () => {
+    const fetchFn = routedFetch([
+      cnSearchRoute,
+      cnAnnouncementRoute,
+      { pattern: ".PDF", body: buildCninfoReportPdf(cnTop10Lines) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Top-10 shareholders (cninfo periodic report)");
+    expect(text).toContain("中国贵州茅台酒厂（集团）有限责任公司");
+    expect(text).toContain("54.4%");
+    expect(text).toContain("681,282,935");
+    expect(text).toContain("CN top-10 shareholders (periodic report, as published)");
+    // Honest about what it is and is not.
+    expect(text).toContain("as published");
+    expect(text).toContain("not a live register");
+    const structured = result.structuredContent as {
+      owners?: Array<{ holderName?: string; pct?: number; shareCount?: number; thresholdRegime?: string }>;
+      sourceJurisdiction?: string;
+    };
+    expect(structured?.sourceJurisdiction).toBe("CN");
+    expect(structured.owners?.[0]).toMatchObject({
+      holderName: "中国贵州茅台酒厂（集团）有限责任公司",
+      pct: 54.4,
+      shareCount: 681_282_935,
+    });
+    expect(structured.owners?.[0]?.thresholdRegime).toContain("top-10 shareholders");
+  });
+
+  test("CompanyOwners CN degrades to the PDF link when the table is unreadable", async () => {
+    const fetchFn = routedFetch([
+      cnSearchRoute,
+      cnAnnouncementRoute,
+      { pattern: ".PDF", body: buildImagePdf() },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("could not be reliably extracted");
+    expect(text).toContain("static.cninfo.com.cn");
+    expect(text).toContain("not evidence that no large holder exists");
+    expect(result.structuredContent).toBeUndefined();
+  });
+
+  // --- CompanyInsiders (per-exchange routing) ------------------------------
+
+  test("CompanyInsiders CN (SZSE) renders the structured 董监高 share-change feed", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "topSearch/query",
+        body: [{ code: "000858", zwjc: "五粮液", orgId: "gssz0000858", delisted: false }],
+      },
+      {
+        pattern: "ShowReport/data",
+        body: [{
+          metadata: { recordcount: 1, pagesize: 20 },
+          data: [{
+            zqdm: "000858",
+            zqjc: "五粮液",
+            ggxm: "李四",
+            jyrq: "2026-08-27",
+            bdgs: "-40.00",
+            bdjj: "10.74",
+            bdyy: "竞价交易",
+            cgbdbl: "0.4969",
+            cgzs: "7,091.75",
+            gdxm: "李四",
+            zw: "董事、高管",
+            gxlb: "本人",
+          }],
+        }],
+      },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "000858",
+      jurisdiction: "CN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Insider share changes (SZSE 董监高 feed)");
+    expect(text).toContain("李四");
+    expect(text).toContain("董事、高管");
+    expect(text).toContain("2026-08-27");
+    // 万股 converted to whole shares in the rendered table.
+    expect(text).toContain("-400,000");
+    expect(text).toContain("70,917,500");
+    const structured = result.structuredContent as {
+      insiders?: Array<{ name?: string; position?: string; sharesChanged?: number }>;
+      sourceJurisdiction?: string;
+    };
+    expect(structured?.sourceJurisdiction).toBe("CN");
+    expect(structured.insiders?.[0]).toMatchObject({
+      name: "李四",
+      position: "董事、高管",
+      sharesChanged: -400_000,
+    });
+  });
+
+  test("CompanyInsiders CN (SSE) falls back to the annual-report 董监高 roster", async () => {
+    const roster = [
+      "董事、监事、高级管理人员情况",
+      "姓名",
+      "职务",
+      "陈华",
+      "党委书记、董事长",
+      "男",
+      "王莉",
+      "董事、总经理",
+      "女",
+    ];
+    const fetchFn = routedFetch([
+      cnSearchRoute,
+      cnAnnouncementRoute,
+      { pattern: ".PDF", body: buildCninfoReportPdf(roster) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Directors, supervisors & senior management");
+    expect(text).toContain("陈华");
+    expect(text).toContain("党委书记、董事长");
+    // The asymmetry is stated honestly in the output itself.
+    expect(text).toContain("no keyless structured");
+    const structured = result.structuredContent as {
+      insiders?: Array<{ name?: string; position?: string }>;
+      sourceJurisdiction?: string;
+    };
+    expect(structured?.sourceJurisdiction).toBe("CN");
+    expect(structured.insiders?.[0]).toMatchObject({ name: "陈华" });
+    // A SZSE feed request is never issued for an SSE issuer.
+    expect(fetchFn.requests.some(({ url }) => url.includes("ShowReport"))).toBe(false);
+  });
+
+  test("CompanyInsiders CN (SSE) degrades to the PDF link on an unreadable roster", async () => {
+    const fetchFn = routedFetch([
+      cnSearchRoute,
+      cnAnnouncementRoute,
+      { pattern: ".PDF", body: buildImagePdf() },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("could not be reliably extracted");
+    expect(text).toContain("static.cninfo.com.cn");
+    expect(result.structuredContent).toBeUndefined();
+  });
+
+  // --- CompanyDocument CN ---------------------------------------------------
+
+  const CN_DOC_ID = "finalpage/2026-04-17/1220000001.PDF";
+
+  test("CompanyDocument CN mode=xhtml returns CJK-normalized, fenced text", async () => {
+    const fetchFn = routedFetch([
+      { pattern: ".PDF", body: buildCninfoReportPdf(["营业收入", "168,838,102,514.79"]) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "600519",
+      jurisdiction: "CN",
+      transaction_id: CN_DOC_ID,
+      mode: "xhtml",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    // The normalizer collapsed the per-glyph spacing the extractor emits.
+    expect(text).toContain("营业收入");
+    expect(text).toContain("168,838,102,514.79");
+    // Untrusted third-party content is fenced with the standard sentinels.
+    expect(text).toContain("<<<BEGIN UNTRUSTED DOCUMENT TEXT>>>");
+    expect(text).toContain("<<<END UNTRUSTED DOCUMENT TEXT>>>");
+    expect(text).toContain("untrusted");
+    expect(text).toContain("CJK-space-normalized");
+  });
+
+  test("CompanyDocument CN mode=xhtml pages via text_offset", async () => {
+    const filler = Array.from({ length: 400 }, (_, i) => `第${i}行营业收入说明文字内容`);
+    const fetchFn = routedFetch([
+      { pattern: ".PDF", body: buildCninfoReportPdf(filler) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const head = await toolByName(tools, "CompanyDocument").handler({
+      company: "600519",
+      jurisdiction: "CN",
+      transaction_id: CN_DOC_ID,
+      mode: "xhtml",
+    } as never);
+    expect(resultText(head)).toContain("Characters 0–");
+    const offsetResult = await toolByName(tools, "CompanyDocument").handler({
+      company: "600519",
+      jurisdiction: "CN",
+      transaction_id: CN_DOC_ID,
+      mode: "xhtml",
+      text_offset: 20,
+    } as never);
+    expect(resultText(offsetResult)).toContain("Characters 20–");
+  });
+
+  test("CompanyDocument CN mode=xhtml reports a mojibake report honestly", async () => {
+    const fetchFn = routedFetch([{ pattern: ".PDF", body: buildImagePdf() }]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "600519",
+      jurisdiction: "CN",
+      transaction_id: CN_DOC_ID,
+      mode: "xhtml",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain('mode="pdf"');
+    // No fenced text block is emitted when nothing decoded.
+    expect(text).not.toContain("<<<BEGIN UNTRUSTED DOCUMENT TEXT>>>");
+  });
+
+  test("CompanyDocument CN mode=metadata describes the announcement PDF", async () => {
+    const fetchFn = routedFetch([
+      { pattern: ".PDF", body: buildCninfoReportPdf(["营业收入"]) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "600519",
+      jurisdiction: "CN",
+      transaction_id: CN_DOC_ID,
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("cninfo document");
+    expect(text).toContain("static.cninfo.com.cn/finalpage/2026-04-17/1220000001.PDF");
+    expect(text).toContain('mode="xhtml"');
+  });
+
+  test("CompanyDocument CN accepts a full cninfo URL and rejects a foreign host", async () => {
+    const fetchFn = routedFetch([
+      { pattern: ".PDF", body: buildCninfoReportPdf(["营业收入"]) },
+    ]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const ok = await toolByName(tools, "CompanyDocument").handler({
+      company: "600519",
+      jurisdiction: "CN",
+      transaction_id: `https://static.cninfo.com.cn/${CN_DOC_ID}`,
+    } as never);
+    expect(resultText(ok)).toContain("cninfo document");
+    // SSRF guard: a non-cninfo host is refused without a fetch.
+    const before = fetchFn.requests.length;
+    const bad = await toolByName(tools, "CompanyDocument").handler({
+      company: "600519",
+      jurisdiction: "CN",
+      transaction_id: "https://evil.example.com/x.PDF",
+    } as never);
+    expect(resultText(bad)).toContain("cninfo.com.cn");
+    expect(fetchFn.requests.length).toBe(before);
+  });
+
+  test("CompanyDocument CN without a transaction_id explains what to pass", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyDocument").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    expect(resultText(result)).toContain("transaction_id");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
 });
 
 describe("explicit IN routing", () => {

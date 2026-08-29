@@ -992,7 +992,7 @@ export interface CninfoOwnerRow {
 // enough that it never appears inside a real holder's name (unlike 股份/有限/
 // 公司, which do), so a name-token test can reject them wholesale.
 const CN_OWNER_HEADER_RE =
-  /持股比例|持股数量|期末持股|持股总数|报告期|股东性质|股份性质|质押|冻结|标记|股份状态|表决权|限售条件|前十名|战略投资|股东名称|股东.{0,2}总数|参与.{0,4}融资|信用.{0,2}账户|单位[：:]|序号|合计|变动情况/;
+  /比例|持股数量|期末持股|持股总数|报告期|股东性质|股份性质|质押|冻结|标记|股份状态|表决权|限售条件|前十名|战略投资|股东名称|股东.{0,2}总数|参与.{0,4}融资|信用.{0,2}账户|单位[：:]|序号|合计|变动情况|名称|数量|类别|种类/;
 
 // Holder-nature cells (国有法人 etc.). Kept distinct from names so they land in
 // the `nature` field rather than starting a spurious row.
