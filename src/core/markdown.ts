@@ -38,6 +38,7 @@ const CURRENCY_FORMATS: Record<
   TWD: { symbol: "NT$", maximumFractionDigits: 0 },
   HKD: { symbol: "HK$", maximumFractionDigits: 0 },
   CNY: { symbol: "RMB ", maximumFractionDigits: 0 },
+  IDR: { symbol: "Rp ", maximumFractionDigits: 0 },
 };
 
 export function formatNumber(value: number, unit: string): string {
