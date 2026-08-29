@@ -178,6 +178,153 @@ describe("parseCninfoTopShareholders", () => {
     expect(rows[0]!.holderName).toBe("中国贵州茅台酒厂（集团）有限责任公司");
     expect(rows[0]!.pct).toBe(54.4);
   });
+
+  // --- Regressions caught by live verification, not by the synthetic fixtures.
+  // Each of these shapes was found running the built server against real
+  // cninfo PDFs (Moutai 600519 half-year, CATL 300750 half-year) and silently
+  // corrupted the output before the fix.
+
+  test("the wrapped header block never swallows the largest shareholder", () => {
+    // Moutai's real header wraps into ~20 one-per-line fragments before the
+    // first data row. Left in the stream they accumulated into the first
+    // holder's name buffer and pushed it past the length guard, DROPPING the
+    // 54.5%控股股东 entirely while every smaller holder still parsed.
+    const text = [
+      "单位：",
+      "股",
+      "前十名股东持股情况",
+      "（不含通过转融通出借股份）",
+      "股东名称",
+      "（全称）",
+      "报告期内增",
+      "减",
+      "期末持股数",
+      "量",
+      "比例",
+      "( % )",
+      "持有有限",
+      "售条件股",
+      "份数量",
+      "质押",
+      "、标记",
+      "或冻",
+      "结情况",
+      "股东",
+      "性质",
+      "股份状态",
+      "数量",
+      "中国贵州茅台酒厂（集",
+      "团）有限责任公司",
+      "681,282,935",
+      "54.50",
+      "无",
+      "国有",
+      "法人",
+      "贵州省国有资本运营有限",
+      "责任公司",
+      "56,996,777",
+      "4.56",
+      "未知",
+      "国有",
+      "法人",
+    ].join("\n");
+    const rows = parseCninfoTopShareholders(text);
+    expect(rows[0]).toMatchObject({
+      holderName: "中国贵州茅台酒厂（集团）有限责任公司",
+      shareCount: 681_282_935,
+      pct: 54.5,
+      // 国有 + 法人 arrive as two cells and must re-join.
+      nature: "国有法人",
+    });
+    expect(rows[1]!.holderName).toBe("贵州省国有资本运营有限责任公司");
+  });
+
+  test("page furniture is never emitted as a shareholder row", () => {
+    // A footer ("…2026 年半年度报告" + a page number) sat inside the region and
+    // parsed as two junk rows ("贵州茅台酒股份有限公司 | 202 | 6%").
+    // Requiring a comma-grouped count and an explicit/fractional percentage
+    // rejects it.
+    const text = [
+      "前十名股东持股情况",
+      "股东名称",
+      "中国贵州茅台酒厂（集团）有限责任公司",
+      "681,282,935",
+      "54.50",
+      "国有法人",
+      "贵州茅台酒股份有限公司",
+      "202",
+      "6",
+      "年半年度报告",
+      "110",
+      "24",
+    ].join("\n");
+    const rows = parseCninfoTopShareholders(text);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.holderName).toBe("中国贵州茅台酒厂（集团）有限责任公司");
+  });
+
+  test("finds the heading when the count is an Arabic numeral split across lines", () => {
+    // CATL words it "持股5%以上的股东或前" / "10" / "名股东持股情况（不含…）" —
+    // no 前十 substring at all, and split over three lines, so a fixed
+    // 前十名股东持股情况 match found nothing and the whole table was lost.
+    const text = [
+      "持股",
+      "5%",
+      "以上的股东或前",
+      "10",
+      "名股东持股情况（不含通过转融通出借股份）",
+      "股东名称",
+      "厦门瑞庭投资有限公司",
+      "境内一般",
+      "法人",
+      "22.04%",
+      "1,019,704,949",
+    ].join("\n");
+    const rows = parseCninfoTopShareholders(text);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      holderName: "厦门瑞庭投资有限公司",
+      shareCount: 1_019_704_949,
+      pct: 22.04,
+      nature: "境内一般法人",
+    });
+  });
+
+  test("splits a nature that shares one cell with a short personal name", () => {
+    // Narrow columns emit no gap, so "黄世霖境内自然人" arrives as ONE cell and
+    // was reported verbatim as the holder name.
+    const text = [
+      "前十名股东持股情况",
+      "黄世霖境内自然人",
+      "9.09%",
+      "420,388,947",
+    ].join("\n");
+    const rows = parseCninfoTopShareholders(text);
+    expect(rows[0]).toMatchObject({
+      holderName: "黄世霖",
+      nature: "境内自然人",
+      shareCount: 420_388_947,
+      pct: 9.09,
+    });
+  });
+
+  test("skips the separate 无限售条件股东 follow-on table", () => {
+    // That sub-table shares the 名股东持股情况 tail; anchoring on the tail alone
+    // would land on it instead of the main top-10 table.
+    const text = [
+      "前十名股东持股情况",
+      "中国贵州茅台酒厂（集团）有限责任公司",
+      "681,282,935",
+      "54.50",
+      "国有法人",
+      "前十名无限售条件股东持股情况",
+      "某某无限售股东",
+      "1,111,111",
+      "1.11",
+    ].join("\n");
+    const rows = parseCninfoTopShareholders(text);
+    expect(rows[0]!.holderName).toBe("中国贵州茅台酒厂（集团）有限责任公司");
+  });
 });
 
 // --- parseCninfoBoardRoster ------------------------------------------------

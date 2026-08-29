@@ -992,20 +992,44 @@ export interface CninfoOwnerRow {
 // enough that it never appears inside a real holder's name (unlike 股份/有限/
 // 公司, which do), so a name-token test can reject them wholesale.
 const CN_OWNER_HEADER_RE =
-  /比例|持股数量|期末持股|持股总数|报告期|股东性质|股份性质|质押|冻结|标记|股份状态|表决权|限售条件|前十名|战略投资|股东名称|股东.{0,2}总数|参与.{0,4}融资|信用.{0,2}账户|单位[：:]|序号|合计|变动情况|名称|数量|类别|种类/;
+  /比例|持股数量|期末持股|持股总数|报告期|股东性质|股份性质|质押|冻结|标记|股份状态|表决权|限售条件|前十名|战略投资|股东名称|股东.{0,2}总数|参与.{0,4}融资|信用.{0,2}账户|单位[：:]|序号|合计|变动情况|名称|数量|类别|种类|全称|不含|转融通|出借|情况|状态|^[（(]?\s*%\s*[）)]?$|^[增减量份数股东性质无]$/;
 
-// Holder-nature cells (国有法人 etc.). Kept distinct from names so they land in
-// the `nature` field rather than starting a spurious row.
-const CN_OWNER_NATURE_RE =
-  /^(?:国有法人|国有股东|境内非?国有法人|境内一般法人|境内自然人|境外法人|境外自然人|境内法人|自然人|国有|其他|未知|无|境内|境外)$/;
+// Row-level 股东性质 fragments. The extractor splits 国有法人 across two cells
+// (国有 / 法人), so fragments are collected and re-joined at finalize time; a
+// stray fragment must never be mistaken for the start of a new holder name.
+const CN_OWNER_NATURE_FRAGMENT_RE =
+  /^(?:国有法人|国有股东|境内非国有法人|境内国有法人|境内一般法人|境内自然人|境外自然人|境内法人|境外法人|一般法人|境内一般|境外一般|境内非|自然人|法人|国有|其他|未知|无|境内|境外)$/;
+
+/** Nature values that stand on their own once fragments are re-joined. */
+const CN_OWNER_NATURE_FULL = new Set([
+  "国有法人",
+  "国有股东",
+  "境内非国有法人",
+  "境内国有法人",
+  "境内一般法人",
+  "境内自然人",
+  "境外自然人",
+  "境内法人",
+  "境外法人",
+  "一般法人",
+  "自然人",
+  "国有",
+  "其他",
+]);
 
 const CN_NUMBER_CELL_RE = /^-?\d[\d,]*(?:\.\d+)?%?$/;
-const CJK_LEADING_RE = /^[㐀-鿿豈-﫿·（(]/;
+// A real 期末持股数量 for a top-10 holder of a listed issuer is always
+// thousands-grouped in these tables. Requiring the grouping comma is what keeps
+// page furniture (a footer's "2026" + page number "110") out of the table.
+const CN_GROUPED_CELL_RE = /^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+const CJK_LEADING_RE = /^[㐀-鿿豈-﫿·（(]/;
 
 interface OwnerNumberToken {
   value: number;
   hasPercent: boolean;
   hasFraction: boolean;
+  /** True when the source cell carried thousands-grouping commas. */
+  grouped: boolean;
 }
 
 function classifyOwnerNumber(token: string): OwnerNumberToken | undefined {
@@ -1013,7 +1037,12 @@ function classifyOwnerNumber(token: string): OwnerNumberToken | undefined {
   const bare = token.replace(/%/g, "");
   const value = parseCninfoNumber(bare);
   if (value === undefined) return undefined;
-  return { value, hasPercent, hasFraction: /\.\d/.test(bare) };
+  return {
+    value,
+    hasPercent,
+    hasFraction: /\.\d/.test(bare),
+    grouped: CN_GROUPED_CELL_RE.test(bare),
+  };
 }
 
 interface OwnerRowBuffer {
@@ -1022,26 +1051,56 @@ interface OwnerRowBuffer {
   natures: string[];
 }
 
+/** Re-join split 股东性质 fragments (国有 + 法人 → 国有法人). */
+function resolveNature(natures: readonly string[]): string | undefined {
+  for (let i = natures.length - 1; i >= 1; i -= 1) {
+    const joined = `${natures[i - 1]}${natures[i]}`;
+    if (CN_OWNER_NATURE_FULL.has(joined)) return joined;
+  }
+  for (let i = natures.length - 1; i >= 0; i -= 1) {
+    const single = natures[i]!;
+    if (CN_OWNER_NATURE_FULL.has(single)) return single;
+  }
+  return undefined;
+}
+
+/**
+ * A short personal-shareholder name and its 股东性质 can land in ONE extracted
+ * cell (黄世霖境内自然人), because the two columns are narrow enough that the
+ * layout emits no gap between them. Split a trailing nature value off the name
+ * and return it so the row still reports both fields correctly.
+ */
+function splitTrailingNature(
+  name: string,
+): { name: string; nature?: string } {
+  for (const candidate of CN_OWNER_NATURE_FULL) {
+    if (name.length > candidate.length && name.endsWith(candidate)) {
+      return { name: name.slice(0, -candidate.length), nature: candidate };
+    }
+  }
+  return { name };
+}
+
 function finalizeOwnerRow(buffer: OwnerRowBuffer): CninfoOwnerRow | undefined {
-  const holderName = buffer.nameParts.join("").trim();
+  const joined = buffer.nameParts.join("").trim();
+  const split = splitTrailingNature(joined);
+  const holderName = split.name.trim();
   if (holderName.length < 2 || holderName.length > 48) return undefined;
-  // Percentage: a value in (0,100], preferring an explicit % or a fractional
-  // one, never 0 (a no-change 增减 cell is 0 and ≤100 but is not the ratio).
-  const pctCandidates = buffer.numbers.filter((n) => n.value > 0 && n.value <= 100);
-  const pctToken = pctCandidates.find((n) => n.hasPercent)
-    ?? pctCandidates.find((n) => n.hasFraction)
-    ?? pctCandidates[pctCandidates.length - 1];
-  // Holding count: the largest integer that is not the chosen percentage.
+  // Percentage: a value in (0,100] that is explicitly a percent or fractional.
+  // Requiring one of those rejects a bare integer (a page number, a no-change
+  // 0 增减 cell) that merely happens to fall in range.
+  const pctToken = buffer.numbers.find((n) =>
+    n.value > 0 && n.value <= 100 && (n.hasPercent || n.hasFraction)
+  );
+  // Holding count: the largest comma-grouped figure that is not the percentage.
   const countCandidates = buffer.numbers
-    .filter((n) => n !== pctToken)
-    .map((n) => n.value);
-  const shareCount = countCandidates.length
-    ? Math.max(...countCandidates.map((v) => Math.abs(v)))
-    : undefined;
+    .filter((n) => n !== pctToken && n.grouped)
+    .map((n) => Math.abs(n.value));
+  const shareCount = countCandidates.length ? Math.max(...countCandidates) : undefined;
   if (pctToken === undefined || shareCount === undefined || shareCount <= 0) {
     return undefined;
   }
-  const nature = [...buffer.natures].reverse().find((n) => CN_OWNER_NATURE_RE.test(n));
+  const nature = resolveNature(buffer.natures) ?? split.nature;
   return {
     holderName,
     shareCount,
@@ -1052,34 +1111,60 @@ function finalizeOwnerRow(buffer: OwnerRowBuffer): CninfoOwnerRow | undefined {
 
 /** Locate the 前十名股东 region on a whitespace-free sliding-window match. */
 function topShareholderRegion(lines: readonly string[]): readonly string[] | undefined {
+  // Issuers word and wrap this heading differently, and the extractor breaks it
+  // at unpredictable points: an SSE half-year keeps 前十名股东持股情况 on one
+  // line, while CATL prints "持股5%以上的股东或前" / "10" / "名股东持股情况（不
+  // 含…）" — the count as an Arabic numeral, split across three lines. Anchor on
+  // the invariant TAIL (名股东持股情况 / 名股东情况), which every variant ends
+  // with, and require a preceding 前十/前10 within a short lookback so an
+  // unrelated 无限售条件股东 sub-table is not mistaken for the main one. The
+  // region starts AT the tail line, so heading fragments never enter the cell
+  // stream as name parts.
   for (let i = 0; i < lines.length; i += 1) {
-    const window = `${lines[i] ?? ""}${lines[i + 1] ?? ""}${lines[i + 2] ?? ""}`
+    const line = (lines[i] ?? "").replace(/\s/g, "");
+    if (!line.includes("名股东持股情况") && !line.includes("名股东情况")) continue;
+    const lookback = lines
+      .slice(Math.max(0, i - 4), i + 1)
+      .join("")
       .replace(/\s/g, "");
-    if (window.includes("前十名股东持股情况") || window.includes("前十名股东情况")) {
-      return lines.slice(i, i + 160);
-    }
+    if (!/前\s*(?:十|10)/.test(lookback)) continue;
+    // 无限售条件 (unrestricted-shares) is a SEPARATE follow-on table; skip it.
+    if (line.includes("无限售条件")) continue;
+    return lines.slice(i, i + 200);
   }
   return undefined;
 }
 
 /**
- * Parse up to ten 前十名股东 rows out of a periodic report's extracted text.
- * Operates on a flat cell stream (each line split on 2+-space gaps) so both the
- * line-per-cell shape and the same-line-with-gaps shape parse identically. A new
- * shareholder name after ≥1 numeric cell finalizes the prior row; a CJK cell
- * before any number is treated as a wrapped-name fragment. Emits only rows that
- * carry both a matched percentage and holding count. Empty ⇒ no readable table.
+ * Drop the table's header block. Real reports wrap header labels across many
+ * one-per-line fragments (股东名称 / （全称） / 报告期内增 / 减 / 期末持股数 / 量 /
+ * 比例 / ( % ) / … / 股东 / 性质 / 数量) before the first data row. Left in the
+ * stream those fragments accumulate into the FIRST holder's name buffer and
+ * push it over the length guard — silently losing the largest shareholder. So
+ * everything up to and including the last header-ish cell that precedes the
+ * first comma-grouped figure is discarded.
  */
+function stripOwnerHeader(cells: readonly string[]): readonly string[] {
+  const firstFigure = cells.findIndex((cell) => CN_GROUPED_CELL_RE.test(cell));
+  if (firstFigure <= 0) return cells;
+  let lastHeader = -1;
+  for (let i = 0; i < firstFigure; i += 1) {
+    if (CN_OWNER_HEADER_RE.test(cells[i]!)) lastHeader = i;
+  }
+  return lastHeader === -1 ? cells : cells.slice(lastHeader + 1);
+}
+
 export function parseCninfoTopShareholders(text: string): CninfoOwnerRow[] {
   const region = topShareholderRegion(normalizeCninfoText(text).split("\n"));
   if (!region) return [];
-  const cells: string[] = [];
+  const rawCells: string[] = [];
   for (const line of region) {
     for (const cell of line.split(/\s{2,}/)) {
       const trimmed = cell.trim();
-      if (trimmed) cells.push(trimmed);
+      if (trimmed) rawCells.push(trimmed);
     }
   }
+  const cells = stripOwnerHeader(rawCells);
   const rows: CninfoOwnerRow[] = [];
   let buffer: OwnerRowBuffer | undefined;
   const flush = (): void => {
@@ -1095,7 +1180,7 @@ export function parseCninfoTopShareholders(text: string): CninfoOwnerRow[] {
       if (num && buffer && buffer.nameParts.length) buffer.numbers.push(num);
       continue;
     }
-    if (CN_OWNER_NATURE_RE.test(cell)) {
+    if (CN_OWNER_NATURE_FRAGMENT_RE.test(cell)) {
       if (buffer) buffer.natures.push(cell);
       continue;
     }
