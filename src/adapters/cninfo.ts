@@ -1359,7 +1359,7 @@ const CN_ROLE_RE =
   /董事|监事|高管|高级管理|经理|总监|董秘|秘书|总裁|首席|书记|主席|独立|职工|副总|总工|财务负责|法定代表/;
 const CN_PERSON_NAME_RE = /^[㐀-鿿·]{2,6}$/;
 const CN_INSIDER_HEADER_RE =
-  /姓名|职务|性别|年龄|任期|持股|报告期|薪酬|期初|期末|增减|变动|股数|原因|合计|单位|简称|代码/;
+  /姓名|职务|性别|年龄|任期|持股|报告期|薪酬|期初|期末|增减|变动|股数|原因|合计|单位|简称|代码|减持|增持|名誉|离任|现任|说明|情况|前个人|本期|其中|不适用|适用/;
 
 /**
  * Locate the roster region. The section heading is NOT stable across issuers or
