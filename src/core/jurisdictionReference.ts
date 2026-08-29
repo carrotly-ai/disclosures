@@ -375,6 +375,8 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "companies are in Ticaret Sicili/MERSIS (paid), and MKK e-YATIRIMCI is " +
       "login-gated. A company may carry several stock codes (GARAN and TGB); " +
       "all resolve to the same issuer.",
+  },
+  {
     code: "AE",
     name: "United Arab Emirates — Dubai only (DFM)",
     source: "Dubai Financial Market (keyless api2.dfm.ae efsah JSON + feeds.dfm.ae PDFs)",

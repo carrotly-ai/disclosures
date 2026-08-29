@@ -284,6 +284,7 @@ import {
   turkishNameKey,
 } from "../adapters/kapTurkey.js";
 import type { KapEntity } from "../adapters/kapTurkey.js";
+import {
   DFM_DISCLOSURES_PAGE_URL,
   DFM_DOCUMENT_CONTENT_WARNING,
   getDfmDocumentMetadata,
@@ -2324,6 +2325,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "— to find a disclosure id, browse the issuer's KAP " +
                 "notifications page" +
                 (lead ? `: ${kapCompanyDisclosuresUrl(lead.permalink)}` : "."),
+            ),
+          ), entitiesStructured(top));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
       if (jurisdiction === "AE") {
         try {
           const results = await searchDfmCompanies(company, options);
@@ -4426,6 +4433,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "TR") {
         return textResult(TR_FINANCIALS_UNSUPPORTED);
+      }
       if (jurisdiction === "AE") {
         return textResult(AE_FINANCIALS_UNSUPPORTED);
       }
@@ -4851,8 +4859,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
         jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
         jurisdiction === "ID" || jurisdiction === "MY" ||
-        jurisdiction === "TR"
-        jurisdiction === "ID" || jurisdiction === "AE"
+        jurisdiction === "TR" || jurisdiction === "AE"
       ) {
         if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
         const registry = jurisdiction === "GB"
@@ -4881,8 +4888,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                                 ? "DBD (Thailand)"
                                 : jurisdiction === "ID"
                                   ? "IDX (Indonesia)"
-                                  : "KAP (Türkiye)";
-                                  : "DFM (Dubai)";
+                                  : jurisdiction === "TR"
+                                    ? "KAP (Türkiye)"
+                                    : "DFM (Dubai)";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +
@@ -5662,14 +5670,13 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .min(1)
         .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR/CN)"),
       jurisdiction: z
-        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR"])
-        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "AE"])
+        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE"])
         .optional()
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
             "\"KR\" (OpenDART), \"FR\" (info-financiere OAM), \"HK\" (HKEXnews), " +
-            "\"CN\" (cninfo SSE/SZSE), or \"TR\" (KAP, by numeric disclosure id)",
-            "\"CN\" (cninfo SSE/SZSE), or \"AE\" (DFM Dubai — Dubai only)",
+            "\"CN\" (cninfo SSE/SZSE), \"TR\" (KAP, by numeric disclosure id), " +
+            "or \"AE\" (DFM Dubai — Dubai only)",
         ),
       transaction_id: z
         .string()
@@ -5682,10 +5689,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             "(e.g. /listedco/listconews/…/….pdf), or CN cninfo announcement PDF " +
             "URL / adjunctUrl path (finalpage/YYYY-MM-DD/ID.PDF) — all from " +
             "CompanyFilings; for TR, the numeric KAP disclosure id (e.g. 1446919), " +
-            "which comes from the issuer's KAP page rather than CompanyFilings",
-            "(e.g. /listedco/listconews/…/….pdf), CN cninfo announcement PDF " +
-            "URL / adjunctUrl path (finalpage/YYYY-MM-DD/ID.PDF), or AE DFM " +
-            "efsah r_path (/YYYY/Mon/D/<uuid>/<name>.pdf) — all from CompanyFilings",
+            "which comes from the issuer's KAP page rather than CompanyFilings; " +
+            "for AE, the DFM efsah r_path (/YYYY/Mon/D/<uuid>/<name>.pdf)",
         ),
       document_id: z
         .string()
@@ -5737,6 +5742,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "TR") {
         return companyDocumentTr(transaction_id, mode, text_offset, output_path);
+      }
       if (jurisdiction === "AE") {
         return companyDocumentAe(company, transaction_id, mode, text_offset, output_path);
       }
