@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Added
+
+- Southeast Asia triage finding ([`SEASIA-TRIAGE.md`](SEASIA-TRIAGE.md)) across five client-priority markets, live-verified 2026-08-29. **Indonesia (IDX): build** — Incapsula-walled to bare curl but fully served to a browser-class fetch from this box's regional egress: 965-issuer company-profile JSON resolver, announcement feed, and financial reports exposing **actual XBRL instances** (the only SE Asian market with machine-readable financials; reuses the shipped XBRL machinery); AHU registry paid. **Malaysia (Bursa): build** — Cloudflare-challenged but browser-solvable; a 2.09M-row announcements search covers filings plus structured categories for **directors' interest changes (§219) and substantial-shareholder changes (§138)** — uniquely both insiders and owners; SSM registry paid. **Thailand: partial** — the **DBD OpenAPI is a keyless JSON national company resolver** (listed + private, TH/EN, verified live); SET is Incapsula-walled, SEC's idisc filings endpoint is keyless but brittle, and api.sec.or.th (free key) is mostly fund data. **Philippines: technically fully buildable, ToS-disqualified** — PSE Edge is keyless end-to-end (resolve/filings/insiders/owners/financials/documents all verified) but its terms are ASX-class personal/non-commercial with explicit no-transmit/no-distribute, the same legal bar the repo honored for ASX; held pending an explicit decision, documented with verbatim quotes. **Vietnam: skip** — registry captcha-looped, HOSE/HNX unreachable or API-less. Cross-cutting: the decisive variable is egress-IP reputation (IDX/Bursa serve a residential-class IP via browser fetch; the BSE India `fetchFn` precedent applies). Finding only — no adapter ships with it.
+
 ## 0.7.0 - 2026-08-21
 
 The HK/CN deep-dive release: the PDF extractor learns compressed object streams (ObjStm), unlocking bounded financials extraction for Hong Kong (results announcements) and China (periodic reports — the largest previously-unfilled market), plus Hong Kong custodian-level owners via CCASS. All changes backward-compatible.
