@@ -1,0 +1,596 @@
+<!-- 
+    <!DOCTYPE ..> 을 추가할 때는 반드시 HTML이 아닌 XHTML Doctype을 추가할 것. HTML Doctype을 추가하면
+      PDF 생성할 때 오류 발생. DOCTYPE을 추가하지 않아도 아무 문제없으므로 가능한 추가하지 말 것.
+--><!DOCTYPE html PUBLIC "-//W3C//ENTITIES Latin 1 for XHTML//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml-lat1.ent">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko" lang="ko">
+ <head> 
+  <meta charset="utf-8" /> 
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /> 
+  <!-- css-desktop-start --> 
+  <style type="text/css">
+  @charset "utf-8";
+
+html,body{color:#333; background-color: #fff;}
+body,input,textarea,select { font:normal 0.9em thoma, arial, Verdana, sans-serif;}
+
+/* for PDF */
+tr { page-break-inside: avoid; }  
+
+
+img{border:0; vertical-align:middle;}
+address,caption,cite,code,dfn,em,var{font-style:normal;font-weight:normal;}
+li{list-style:none;}
+
+
+input,textarea,select{ vertical-align:middle;}
+input[type="radio"]{margin-right:3px; vertical-align:top;}
+/*IE7 Hack*/
+*:first-child+html input[type="radio"]{margin-right:0px; vertical-align:middle;}
+*:first-child+html input[type="checkbox"]{margin:-5px 0px;}
+
+
+ 
+
+#contentBox{width:688px; border:2px solid #ccc; padding: 8px; }
+#contentBox h1,#contentBox h2,#contentBox h3, #contentBox h4{border-bottom:1px solid #ccc; padding-bottom:15px; text-align:center;}
+#contentBox h1 span,#contentBox h2 span{display:block; font-size:0.8em; margin:5px;}
+#contentBox h4 span{display:block;}
+
+#contentBox .textleft{text-align:left;}
+#contentBox caption{font-weight:bold;}
+#contentBox caption img{ float:right;}
+
+#contentBox th { text-align: center; }
+#contentBox  table{width:100%; border-collapse:collapse; border:1px solid #ccc; margin:15px 0px;}
+#contentBox .type1 th, th.ex { width: 20%; text-align: left; }
+#contentBox .type2 th { text-align: left; }
+#contentBox th {background-color:#eee; color:#444; }
+#contentBox th, #contentBox td {border:1px solid #ccc; padding:3px; font-size:0.8em; }
+caption{text-align:left; margin-bottom:5px; font-size:0.8em; color:#222;}
+
+
+#contentBox h1 img{  display:block; margin:0px auto 8px ;}
+#contentBox p.info{font-size:0.8em;text-align:justify;font-style:italic;}
+#contentBox p.just{text-align:justify;}
+
+
+#contentBox p.reportType {font-weight:bold;  margin:5px 0px;}
+
+#contentBox ul.reportType, #contentBox ul.reportTypeL{ padding:5px;  margin:0px; font-size:0.8em;font-weight:normal; border:1px dashed #bbb; overflow:auto; }
+#contentBox .reportType  span,#contentBox .reportTypeL  span{padding:0px 10px 0px 5px; width:60px; display:inline-block; white-space: nowrap; }
+
+#contentBox .reportType li {
+  margin: 0.8em 0em 0.8em 0em;
+}
+#contentBox .reportTypeL li:first-child {
+    float: left;
+
+    padding-right: 50px;
+    margin: 0.8em 0em 0.8em 0em;
+}
+#contentBox .reportTypeL li {
+    padding-right: 50px;
+    margin: 0.8em 0em 0.8em 0em;
+}
+
+#contentBox ul.status{ padding:0px; margin:0px; }
+#contentBox .status li {float:left;  padding-right:50px;}
+
+#contentBox  dl.choice{border:none; margin:0px; padding:0px}
+
+
+#contentBox dl{border:2px solid #bbb; padding:15px; }
+#contentBox dl.none{border:none; padding:8px; }
+
+#contentBox dd{margin:5px ;}
+#contentBox dd span{padding:0px 10px;}
+#contentBox dl table{ margin:5px 0px;}
+#contentBox dd.hline{float:left;  padding: 0px 15px;}
+#contentBox .clear{clear:both}
+
+#contentBox .indent15{text-indent:15px;}
+#contentBox .indent20{text-indent:20px;}
+#contentBox .em{font-size:110%; font-weight:bold; text-align:center; padding:10px 100px;}
+#contentBox .sub{font-weight:bold;}
+
+
+#contentBox ul.choice{ padding:0px; }
+#contentBox ul.choice span{padding:0px 10px 0px 5px;}
+
+
+
+
+
+
+#contentBox hr{margin:10px 0px; height:1px; border-width:0;  background-color:#ccc; }
+
+
+#remarkContents {width: 688px; margin: 10px; }
+#remarkContents li {list-style-type: circle; margin-top: 3px;}
+
+  </style> 
+  <!-- css-desktop-end --> 
+  <style type="text/css">
+    input { border: none; }
+
+    .fmtNumber {
+      text-align: right;
+    }
+
+    .alignRight {
+      text-align: right;
+    }
+    
+    span.valInput {
+      font-size: 1.1em;
+      display: block;
+    }
+    p.valText {
+      font-size: 1.1em;
+      white-space: pre-line;
+    }
+    span.valSelect {
+      font-size: 1.1em;
+      display: block;
+    }
+    textarea {
+      color: black;
+      border: none; 
+      white-space: pre-line; 
+      overflow-y: auto; 
+      word-wrap: break-word; 
+      resize: none;
+    }
+  </style> 
+ </head> 
+ <body><a href="https://edge.pse.com.ph/cdn-cgi/content?id=JRVLatMkYsBL1TsUdmdcWPq4bF8uKrhjQh.0Bl8RdmA-1788018334.034452-1.2.1.1-.9rUxR1RTQCivsa4ZRY88.vTKS56yfTFYtxyZvZvD.AZb8NWp8d4dwCDMdX8zgYA" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a>
+<div id="remarkContents" style="">       <table style="width: 100%; margin-bottom: 7px; font-weight: bold; "> <tr style="padding: 0px;">                                        <td></td>                                       <td style="text-align:right;">CR02190-2026</td>              </tr>                     </table>                      <span style="font-size: 1.0em; margin-left: 20px;"></span> <ul style="margin-top: 0;">                 </ul>     </div> 
+  <div id="form1" action="/submission/accomplish"> 
+   <div id="contentBox"> 
+    <h2>SECURITIES AND EXCHANGE COMMISSION<span>SEC FORM 17-A, AS AMENDED</span></h2> 
+    <h4>ANNUAL REPORT PURSUANT TO SECTION 17<br /> OF THE SECURITIES REGULATION CODE AND SECTION 141<br /> OF THE CORPORATION CODE OF THE PHILIPPINES </h4> 
+    <dl> 
+     <dt>
+       1. For the fiscal year ended 
+     </dt> 
+     <dd> 
+      <span class="valInput ">Dec 31, 2025</span> 
+     </dd> 
+     <dt>
+       2. SEC Identification Number 
+     </dt> 
+     <dd> 
+      <span class="valInput ">AS094-000088</span> 
+     </dd> 
+     <dt>
+       3. BIR Tax Identification No. 
+     </dt> 
+     <dd> 
+      <span class="valInput ">003-058-789</span> 
+     </dd> 
+     <dt>
+       4. Exact name of issuer as specified in its charter 
+     </dt> 
+     <dd> 
+      <span class="valInput ">SM Prime Holdings, Inc.</span> 
+     </dd> 
+     <dt>
+       5. Province, country or other jurisdiction of incorporation or organization 
+     </dt> 
+     <dd> 
+      <span class="valInput ">Philippines</span> 
+     </dd> 
+     <dt>
+       6. Industry Classification Code(SEC Use Only) 
+     </dt> 
+     <dd> 
+      <input readonly="" disabled="disabled" type="text" value="" name="id5" /> 
+     </dd> 
+     <dt>
+       7. Address of principal office 
+     </dt> 
+     <dd> 
+      <span class="valInput ">7/F MOA Square, Seashell Lane cor. Coral Way, Mall of Asia Complex, Brgy. 76 Zone 10, CBP 1-A, Pasay City, Metro Manila, Philippines</span> 
+      <span>Postal Code</span> 
+      <span><span class="valInput ">1300</span></span> 
+     </dd> 
+     <dt>
+       8. Issuer's telephone number, including area code 
+     </dt> 
+     <dd> 
+      <span class="valInput ">(632) 8831-1000</span> 
+     </dd> 
+     <dt>
+       9. Former name or former address, and former fiscal year, if changed since last report 
+     </dt> 
+     <dd> 
+      <span class="valInput ">N/A</span> 
+     </dd> 
+     <dt>
+       10. Securities registered pursuant to Sections 8 and 12 of the SRC or Sections 4 and 8 of the RSA 
+     </dt> 
+     <dd> 
+      <table id="Securities"> 
+       <caption></caption> 
+       <tbody> 
+        <tr> 
+         <th>Title of Each Class</th> 
+         <th>Number of Shares of Common Stock Outstanding and Amount of Debt Outstanding</th> 
+         <th></th> 
+        </tr> 
+        <tr> 
+         <td><span class="valInput ">COMMON STOCK, P1 PAR VALUE</span></td> 
+         <td><span class="valInput fmtNumber">28,820,859,294</span></td> 
+         <td></td> 
+        </tr> 
+        <tr> 
+         <td><span class="valInput ">DEBT SECURITIES - RETAIL BONDS</span></td> 
+         <td><span class="valInput fmtNumber">140,396,480,000</span></td> 
+         <td><a href="javascript:void(0);" id="remNew"></a></td> 
+        </tr> 
+       </tbody> 
+      </table> 
+     </dd> 
+     <dt>
+       11. Are any or all of registrant's securities listed on a Stock Exchange? 
+     </dt> 
+     <dd class="hline" style="background-color: white;"> 
+      <input readonly="readonly" disabled="disabled" type="radio" name="ListedinExchange14" value="YES" data-type="RADIO" checked="checked" style="background-color: white;" /> Yes 
+     </dd> 
+     <dd class="hline" style="background-color: white;"> 
+      <input readonly="readonly" disabled="disabled" type="radio" name="ListedinExchange15" value="NO" data-type="RADIO" style="background-color: white;" /> No 
+     </dd> 
+     <dt class="clear indent20">
+       If yes, state the name of such stock exchange and the classes of securities listed therein: 
+     </dt> 
+     <dd class="indent15"> 
+      <span class="valInput ">PHILIPPINE STOCK EXCHANGE / COMMON SHARES</span> 
+     </dd> 
+     <dt>
+       12. Check whether the issuer: 
+     </dt> 
+     <dd> 
+      <dl class="none"> 
+       <dt> 
+        <p class="just">(a) has filed all reports required to be filed by Section 17 of the SRC and SRC Rule 17.1 thereunder or Section 11 of the RSA and RSA Rule 11(a)-1 thereunder, and Sections 26 and 141 of The Corporation Code of the Philippines during the preceding twelve (12) months (or for such shorter period that the registrant was required to file such reports)</p> 
+       </dt> 
+       <dd class="hline" style="background-color: white;"> 
+        <input readonly="readonly" disabled="disabled" type="radio" name="FiledReports17" value="YES" data-type="RADIO" checked="checked" style="background-color: white;" /> Yes 
+       </dd> 
+       <dd class="hline" style="background-color: white;"> 
+        <input readonly="readonly" disabled="disabled" type="radio" name="FiledReports18" value="NO" data-type="RADIO" style="background-color: white;" /> No 
+       </dd> 
+      </dl> 
+     </dd> 
+     <dd class="clear"> 
+      <dl class="none"> 
+       <dt>
+         (b) has been subject to such filing requirements for the past ninety (90) days 
+       </dt> 
+       <dd class="hline" style="background-color: white;"> 
+        <input readonly="readonly" disabled="disabled" type="radio" name="Filing90days19" value="YES" data-type="RADIO" checked="checked" style="background-color: white;" /> Yes 
+       </dd> 
+       <dd class="hline" style="background-color: white;"> 
+        <input readonly="readonly" disabled="disabled" type="radio" name="Filing90days20" value="NO" data-type="RADIO" style="background-color: white;" /> No 
+       </dd> 
+      </dl> 
+     </dd> 
+     <dt class="clear"> 
+      <p class="just">13. State the aggregate market value of the voting stock held by non-affiliates of the registrant. The aggregate market value shall be computed by reference to the price at which the stock was sold, or the average bid and asked prices of such stock, as of a specified date within sixty (60) days prior to the date of filing. If a determination as to whether a particular person or entity is an affiliate cannot be made without involving unreasonable effort and expense, the aggregate market value of the common stock held by non-affiliates may be calculated on the basis of assumptions reasonable under the circumstances, provided the assumptions are set forth in this Form</p> 
+     </dt> 
+     <dd> 
+      <span class="valInput ">227,109,076,365</span> 
+     </dd> 
+     <dt class="em">
+       APPLICABLE ONLY TO ISSUERS INVOLVED IN INSOLVENCY SUSPENSION OF PAYMENTS PROCEEDINGS DURING THE PRECEDING FIVE YEARS 
+     </dt> 
+     <dt> 
+      <p class="just">14. Check whether the issuer has filed all documents and reports required to be filed by Section 17 of the Code subsequent to the distribution of securities under a plan confirmed by a court or the Commission.</p> 
+     </dt> 
+     <dd class="hline" style="background-color: white;"> 
+      <input readonly="readonly" disabled="disabled" type="radio" name="AllDocs22" value="YES" data-type="RADIO" style="background-color: white;" /> Yes 
+     </dd> 
+     <dd class="hline" style="background-color: white;"> 
+      <input readonly="readonly" disabled="disabled" type="radio" name="AllDocs23" value="NO" data-type="RADIO" checked="checked" style="background-color: white;" /> No 
+     </dd> 
+     <dt class="clear em">
+       DOCUMENTS INCORPORATED BY REFERENCE 
+     </dt> 
+     <dt>
+       15. If any of the following documents are incorporated by reference, briefly describe them and identify the part of SEC Form 17-A into which the document is incorporated: 
+     </dt> 
+     <dd> 
+      <dl class="none"> 
+       <dt>
+         (a) Any annual report to security holders 
+       </dt> 
+       <dd> 
+        <span class="valInput ">N/A</span> 
+       </dd> 
+      </dl> 
+     </dd> 
+     <dd> 
+      <dl class="none"> 
+       <dt>
+         (b) Any information statement filed pursuant to SRC Rule 20 
+       </dt> 
+       <dd> 
+        <span class="valInput ">N/A</span> 
+       </dd> 
+      </dl> 
+     </dd> 
+     <dd> 
+      <dl class="none"> 
+       <dt>
+         (c) Any prospectus filed pursuant to SRC Rule 8.1 
+       </dt> 
+       <dd> 
+        <span class="valInput ">N/A</span> 
+       </dd> 
+      </dl> 
+     </dd> 
+    </dl> 
+    <p class="info">The Exchange does not warrant and holds no responsibility for the veracity of the facts and representations contained in all corporate disclosures, including financial reports. All data contained herein are prepared and submitted by the disclosing party to the Exchange, and are disseminated solely for purposes of information. Any questions on the data contained herein should be addressed directly to the Corporate Information Officer of the disclosing party.</p> 
+    <h1><img src="clogo/112/cl53197f55r962.jpg" alt="" id="companyLogo" width="175" /><span id="companyName">SM Prime Holdings, Inc.</span><span id="companyStockSymbol">SMPH</span></h1> 
+    <h4>PSE Disclosure Form 17-1 - Annual Report <span><i>References: SRC Rule 17 and <br /> Section 17.2 and 17.8 of the Revised Disclosure Rules</i></span> </h4> 
+    <table class="type1"> 
+     <tbody> 
+      <tr> 
+       <th>For the fiscal year ended</th> 
+       <td><span class="valInput ">Dec 31, 2025</span></td> 
+      </tr> 
+      <tr> 
+       <th>Currency</th> 
+       <td><span class="valInput ">Php (in thousands)</span></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1" id="BS"> 
+     <caption>
+       Balance Sheet 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th rowspan="2" class="ex"></th> 
+       <th>Year Ending</th> 
+       <th>Previous Year Ending</th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Dec 31, 2025</span></td> 
+       <td><span class="valInput ">Dec 31, 2024</span></td> 
+      </tr> 
+      <tr> 
+       <th>Current Assets</th> 
+       <td><span class="valInput ">211,201,669</span></td> 
+       <td><span class="valInput ">230,681,830</span></td> 
+      </tr> 
+      <tr> 
+       <th>Total Assets</th> 
+       <td><span class="valInput ">1,093,878,665</span></td> 
+       <td><span class="valInput ">1,019,430,730</span></td> 
+      </tr> 
+      <tr> 
+       <th>Current Liabilities</th> 
+       <td><span class="valInput ">205,054,713</span></td> 
+       <td><span class="valInput ">211,995,083</span></td> 
+      </tr> 
+      <tr> 
+       <th>Total Liabilities</th> 
+       <td><span class="valInput ">624,799,978</span></td> 
+       <td><span class="valInput ">583,190,240</span></td> 
+      </tr> 
+      <tr> 
+       <th>Retained<br />Earnings/(Deficit)</th> 
+       <td><span class="valInput ">378,990,805</span></td> 
+       <td><span class="valInput ">343,991,970</span></td> 
+      </tr> 
+      <tr> 
+       <th>Stockholders' Equity</th> 
+       <td><span class="valInput ">469,078,687</span></td> 
+       <td><span class="valInput ">436,240,490</span></td> 
+      </tr> 
+      <tr> 
+       <th>Stockholders' Equity - Parent</th> 
+       <td><span class="valInput ">465,557,625</span></td> 
+       <td><span class="valInput ">433,093,072</span></td> 
+      </tr> 
+      <tr> 
+       <th>Book Value Per Share</th> 
+       <td><span class="valInput ">16.15</span></td> 
+       <td><span class="valInput ">15</span></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1" id="IS"> 
+     <caption>
+       Income Statement 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th rowspan="2" class="ex"></th> 
+       <th>Year Ending</th> 
+       <th>Previous Year Ending</th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Dec 31, 2025</span></td> 
+       <td><span class="valInput ">Dec 31, 2024</span></td> 
+      </tr> 
+      <tr> 
+       <th>Gross Revenue</th> 
+       <td><span class="valInput ">143,499,187</span></td> 
+       <td><span class="valInput ">142,619,595</span></td> 
+      </tr> 
+      <tr> 
+       <th>Gross Expense</th> 
+       <td><span class="valInput ">82,501,246</span></td> 
+       <td><span class="valInput ">85,777,130</span></td> 
+      </tr> 
+      <tr> 
+       <th>Non-Operating Income</th> 
+       <td><span class="valInput ">2,392,172</span></td> 
+       <td><span class="valInput ">2,228,723</span></td> 
+      </tr> 
+      <tr> 
+       <th>Non-Operating Expense</th> 
+       <td><span class="valInput ">13,124,997</span></td> 
+       <td><span class="valInput ">13,423,376</span></td> 
+      </tr> 
+      <tr> 
+       <th>Income/(Loss) Before Tax</th> 
+       <td><span class="valInput ">60,997,941</span></td> 
+       <td><span class="valInput ">56,842,465</span></td> 
+      </tr> 
+      <tr> 
+       <th>Income Tax Expense</th> 
+       <td><span class="valInput ">11,271,408</span></td> 
+       <td><span class="valInput ">10,303,029</span></td> 
+      </tr> 
+      <tr> 
+       <th>Net Income/(Loss) After Tax</th> 
+       <td><span class="valInput ">49,726,533</span></td> 
+       <td><span class="valInput ">46,539,436</span></td> 
+      </tr> 
+      <tr> 
+       <th>Net Income/(Loss) Attributable to Parent Equity Holder </th> 
+       <td><span class="valInput ">48,847,730</span></td> 
+       <td><span class="valInput ">45,631,764</span></td> 
+      </tr> 
+      <tr> 
+       <th>Earnings/(Loss) Per Share (Basic)</th> 
+       <td><span class="valInput ">1.69</span></td> 
+       <td><span class="valInput ">1.58</span></td> 
+      </tr> 
+      <tr> 
+       <th>Earnings/(Loss) Per Share (Diluted)</th> 
+       <td><span class="valInput ">1.69</span></td> 
+       <td><span class="valInput ">1.58</span></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1" id="FR"> 
+     <caption>
+       Financial Ratios 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th rowspan="2" class="ex"></th> 
+       <th rowspan="2" class="ex">Formula</th> 
+       <th>Fiscal Year Ended </th> 
+       <th>Previous Fiscal Year</th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">Dec 31, 2025</span></td> 
+       <td><span class="valInput ">Dec 31, 2024</span></td> 
+      </tr> 
+      <tr> 
+       <th colspan="4" class="textleft">Liquidity Analysis Ratios:</th> 
+      </tr> 
+      <tr> 
+       <th>&nbsp;&nbsp; Current Ratio or<br />Working Capital Ratio</th> 
+       <th>Current Assets / Current Liabilities</th> 
+       <td><span class="valInput ">2</span></td> 
+       <td><span class="valInput ">2.19</span></td> 
+      </tr> 
+      <tr> 
+       <th>&nbsp;&nbsp; Quick Ratio</th> 
+       <th>(Current Assets - Inventory - Prepayments) / Current Liabilities</th> 
+       <td><span class="valInput ">1.08</span></td> 
+       <td><span class="valInput ">1.18</span></td> 
+      </tr> 
+      <tr> 
+       <th>&nbsp;&nbsp; Solvency Ratio</th> 
+       <th>Total Assets / Total Liabilities</th> 
+       <td><span class="valInput ">1.75</span></td> 
+       <td><span class="valInput ">1.75</span></td> 
+      </tr> 
+      <tr> 
+       <th colspan="4" class="textleft">Financial Leverage Ratios</th> 
+      </tr> 
+      <tr> 
+       <th>&nbsp;&nbsp; Debt Ratio</th> 
+       <th>Total Debt/Total Assets</th> 
+       <td><span class="valInput ">0.39</span></td> 
+       <td><span class="valInput ">0.38</span></td> 
+      </tr> 
+      <tr> 
+       <th>&nbsp;&nbsp; Debt-to-Equity Ratio</th> 
+       <th>Total Debt/Total Stockholders' Equity</th> 
+       <td><span class="valInput ">0.91</span></td> 
+       <td><span class="valInput ">0.9</span></td> 
+      </tr> 
+      <tr> 
+       <th>&nbsp;&nbsp; Interest Coverage</th> 
+       <th>Earnings Before Interest and Taxes (EBIT) / Interest Charges</th> 
+       <td><span class="valInput ">6.61</span></td> 
+       <td><span class="valInput ">5.9</span></td> 
+      </tr> 
+      <tr> 
+       <th> &nbsp;&nbsp; Asset to Equity Ratio</th> 
+       <th>Total Assets / Total Stockholders' Equity</th> 
+       <td><span class="valInput ">2.35</span></td> 
+       <td><span class="valInput ">2.35</span></td> 
+      </tr> 
+      <tr> 
+       <th colspan="4" class="textleft">Profitability Ratios</th> 
+      </tr> 
+      <tr> 
+       <th> &nbsp;&nbsp; Gross Profit Margin</th> 
+       <th>Sales - Cost of Goods Sold or Cost of Service / Sales</th> 
+       <td><span class="valInput ">0.57</span></td> 
+       <td><span class="valInput ">0.58</span></td> 
+      </tr> 
+      <tr> 
+       <th>&nbsp;&nbsp; Net Profit Margin</th> 
+       <th>Net Profit / Sales</th> 
+       <td><span class="valInput ">0.35</span></td> 
+       <td><span class="valInput ">0.33</span></td> 
+      </tr> 
+      <tr> 
+       <th> &nbsp;&nbsp; Return on Assets</th> 
+       <th>Net Income / Total Assets</th> 
+       <td><span class="valInput ">0.05</span></td> 
+       <td><span class="valInput ">0.05</span></td> 
+      </tr> 
+      <tr> 
+       <th>&nbsp;&nbsp; Return on Equity</th> 
+       <th>Net Income / Total Stockholders' Equity</th> 
+       <td><span class="valInput ">0.11</span></td> 
+       <td><span class="valInput ">0.11</span></td> 
+      </tr> 
+      <tr> 
+       <th>Price/Earnings Ratio</th> 
+       <th>Price Per Share / Earnings Per Common Share</th> 
+       <td><span class="valInput ">13.43</span></td> 
+       <td><span class="valInput ">15.9</span></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1"> 
+     <tbody> 
+      <tr> 
+       <th>Other Relevant Information</th> 
+      </tr> 
+      <tr> 
+       <td><p class="valText">N/A</p></td> 
+      </tr> 
+     </tbody> 
+    </table>  
+    <div style="margin-top: 48px;"> 
+     <span style="font-weight: bold; font-size: 0.8em;">Filed on behalf by:</span> 
+     <table class="type2" style="margin-top: 3px;"> 
+      <tbody> 
+       <tr> 
+        <th style="width: 40%;">Name</th> 
+        <td>Jhoane Marie Samson</td> 
+       </tr> 
+       <tr> 
+        <th>Designation</th> 
+        <td>Assistant Manager</td> 
+       </tr> 
+      </tbody> 
+     </table> 
+    </div>
+   </div> 
+  </div>  
+ </body>
+</html>

@@ -204,8 +204,39 @@ financials can parse real detail rather than linking out.
 | Hans T. Sy | Principal/Substantial Stockholders | 101,951,900 | 8.38% |
 | Herbert T. Sy | Principal/Substantial Stockholders | 101,865,772 | 8.38% |
 
-`CompanyFinancials` (17-A, period ended 2025-12-31): Total Assets ₱1,811,801,000;
-Gross Revenue ₱681,733,000; Net Income After Tax ₱123,772,000; EPS (basic) ₱74.16.
+`CompanyFinancials` (17-A, period ended 2025-12-31), **as filed**: Total Assets 1,811,801;
+Gross Revenue 681,733; Net Income After Tax 123,772; EPS (basic) 74.16.
+
+### ⚠️ PSE's declared scale is unreliable — figures are returned as filed
+
+PSE's form prints a `Currency` line such as `Php (in thousands)`. That label is
+**issuer-declared, varies between issuers, and is sometimes simply wrong** — so this adapter
+applies **no multiplier**, returns every figure exactly as printed, and surfaces PSE's own
+wording alongside it.
+
+**First: the scale genuinely differs by issuer** (verified live 2026-08-29).
+
+| Issuer | Total Assets, as printed | Declared scale | Real magnitude |
+|---|---|---|---|
+| SM Prime (`SMPH`) | 1,093,878,665 | `Php (in thousands)` | ~₱1.09 trillion |
+| SM Investments (`SM`) | 1,811,801 | `Php (in Millions)` | ~₱1.81 trillion |
+
+Two issuers of comparable size, printed ~600× apart. Raw figures are **not comparable across
+issuers**, and no single multiplier is right for both.
+
+**Second, and decisive: the label itself is not dependable.** SM's *original* FY2025 17-A
+(`CR02738-2026`) printed **`Php (in thousands)`** against those same `1,811,801` figures —
+which reads as ₱1.81 **billion** against actual total assets of ~₱1.8 **trillion**. SM's own
+**amended** filing later corrected the label to **`Php (in Millions)`**, with the figures
+byte-identical. **The issuer's own amendment proves the original label was a 1000× error.**
+
+Had this adapter trusted the declared scale, it would have reported SM's balance sheet a
+thousandfold too small — a confident, plausible, wrong number, which is exactly the failure
+this package exists to avoid.
+
+**Consequence for callers:** figures are directly comparable *within* one report, but **not
+across issuers** without first reading each report's stated scale. Every PH
+`CompanyFinancials` response says so and repeats the issuer's declared scale verbatim.
 
 ## Threshold / disclosure regime
 

@@ -1567,6 +1567,11 @@ export interface PseFinancialsResult {
     periodEnd?: string;
     sourceUrl: string;
   };
+  /**
+   * PSE's own currency/scale wording, verbatim (e.g. "Php (in thousands)").
+   * Reported, NOT applied — see PSE_SCALE_CAVEAT for why it cannot be trusted.
+   */
+  scaleLabel?: string;
   /** Honest reason when no figures could be extracted. */
   reason?: "no-report" | "unparsed";
 }
@@ -1610,12 +1615,41 @@ const PSE_FINANCIAL_CONCEPTS: ReadonlyArray<
   },
 ];
 
-/** Per-share figures are stated per share, not in the thousands multiplier. */
-const PSE_PER_SHARE_CONCEPTS = new Set([
-  "BookValuePerShare",
-  "EarningsPerShareBasic",
-  "EarningsPerShareDiluted",
-]);
+/**
+ * PSE's scale is ISSUER-DECLARED, VARIES BETWEEN ISSUERS, AND IS SOMETIMES
+ * WRONG — so this adapter reports figures EXACTLY AS FILED and never applies a
+ * multiplier.
+ *
+ * Verified live 2026-08-29. The scale genuinely differs by issuer:
+ *
+ *   SM Prime (SMPH)  Total Assets 1,093,878,665, "Php (in thousands)" → 1.09tn
+ *   SM Investments   Total Assets     1,811,801, "Php (in Millions)"  → 1.81tn
+ *
+ * — two issuers, the same real magnitude, ~600x apart as printed. So a caller
+ * cannot compare raw figures across issuers, and a fixed multiplier is simply
+ * wrong.
+ *
+ * Worse, the label itself is not dependable. SM's ORIGINAL FY2025 17-A
+ * (CR02738-2026) printed `Php (in thousands)` against those same 1,811,801
+ * figures — which would read as PHP 1.81bn, against actual total assets of
+ * ~PHP 1.8tn — and its later AMENDED filing corrected the label to
+ * `Php (in Millions)` with the figures unchanged. The issuer's own amendment
+ * proves the original label was a 1000x error.
+ *
+ * Silently trusting that label would emit confident, plausible, wrong numbers —
+ * the exact failure this package exists to avoid. So the value is the number as
+ * printed, `scaleLabel` carries PSE's wording verbatim, and the rendered
+ * response tells the caller the scale is issuer-declared and unverified.
+ */
+export const PSE_SCALE_CAVEAT =
+  "Figures are reported EXACTLY AS FILED — no scale multiplier is applied. " +
+  "PSE's scale is issuer-declared, differs between issuers (SM Prime files in " +
+  "thousands, SM Investments in millions), and is sometimes wrong: SM's " +
+  "original FY2025 17-A labelled its columns \"Php (in thousands)\" and its own " +
+  "amendment corrected that to \"Php (in Millions)\" with the figures unchanged " +
+  "— a 1000x difference in what the same numbers mean. Figures are therefore " +
+  "comparable WITHIN this report, but NOT across issuers: read each report's " +
+  "stated scale before comparing or computing ratios across them.";
 
 /**
  * Extract headline figures from a 17-A/17-Q body.
@@ -1624,18 +1658,23 @@ const PSE_PER_SHARE_CONCEPTS = new Set([
  * "Year Ending / Previous Year Ending" header naming the two period-end dates.
  * Only the CURRENT period's figure is returned per concept — the comparative is
  * the prior report's own current figure, so emitting both would double-count.
- * The "(in thousands)" currency note is applied as a multiplier; when the note
- * is absent the raw figure is used and the unit is still PHP.
+ *
+ * Values are returned AS FILED with no scale multiplier applied; the issuer's
+ * own scale wording is returned separately as `scaleLabel`. See
+ * PSE_SCALE_CAVEAT for the live evidence that the declared scale cannot be
+ * trusted.
  */
 export function parsePseFinancialFacts(
   body: PseDocumentBody,
   row: PseDisclosureRow,
   companyId: string,
-): { facts: FinancialFact[]; periodEnd?: string } {
+): { facts: FinancialFact[]; periodEnd?: string; scaleLabel?: string } {
   const text = body.text;
-  const inThousands = /Currency\s*\n\s*Php\s*\(in thousands\)/i.test(text) ||
-    /\(in thousands\)/i.test(text);
-  const multiplier = inThousands ? 1_000 : 1;
+  // PSE's own wording, verbatim, e.g. "Php (in thousands)" — reported to the
+  // caller rather than acted on.
+  const scaleLabel = text
+    .match(/Currency\s*\n\s*([^\n]{1,60})/i)?.[1]
+    ?.trim();
 
   // The first "Year Ending / Previous Year Ending" pair names the period ends.
   const periods = text.match(
@@ -1663,12 +1702,12 @@ export function parsePseFinancialFacts(
     if (index === -1) continue;
     const current = parseNumeric(lines[index + 1] ?? "");
     if (current === undefined) continue;
-    const perShare = PSE_PER_SHARE_CONCEPTS.has(concept);
     facts.push({
       concept,
       label,
       periodEnd: periodEnd ?? "",
-      value: perShare ? current : current * multiplier,
+      // As filed — no scale multiplier. See PSE_SCALE_CAVEAT.
+      value: current,
       unit: "PHP",
       filedDate,
       form,
@@ -1682,7 +1721,11 @@ export function parsePseFinancialFacts(
       },
     });
   }
-  return { facts, ...(periodEnd ? { periodEnd } : {}) };
+  return {
+    facts,
+    ...(periodEnd ? { periodEnd } : {}),
+    ...(scaleLabel ? { scaleLabel } : {}),
+  };
 }
 
 export interface PseFinancialsInput {
@@ -1786,7 +1829,11 @@ export async function getPseFinancials(
   } catch {
     return { entity, facts: [], report, reason: "unparsed" };
   }
-  const { facts, periodEnd } = parsePseFinancialFacts(body, row, companyId);
+  const { facts, periodEnd, scaleLabel } = parsePseFinancialFacts(
+    body,
+    row,
+    companyId,
+  );
   if (!facts.length) {
     return { entity, facts: [], report, reason: "unparsed" };
   }
@@ -1794,5 +1841,6 @@ export async function getPseFinancials(
     entity,
     facts,
     report: { ...report, ...(periodEnd ? { periodEnd } : {}) },
+    ...(scaleLabel ? { scaleLabel } : {}),
   };
 }

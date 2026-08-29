@@ -25,6 +25,7 @@ import {
   PSE_DIRECTORY_URL,
   PSE_DISCLOSURES_URL,
   PSE_FINANCIAL_REPORTS_URL,
+  PSE_SCALE_CAVEAT,
   pseDefaultFinancialsWindow,
   pseViewerUrl,
   PseApiError,
@@ -54,6 +55,8 @@ const VIEWER_17_A = loadFixture("pse", "viewer-17-a-attachments.html");
 const BODY_13_1 = loadFixture("pse", "body-13-1.html");
 const BODY_POR_1 = loadFixture("pse", "body-por-1.html");
 const BODY_17_A = loadFixture("pse", "body-17-a.html");
+const BODY_17_A_SMPH = loadFixture("pse", "body-17-a-smph.html");
+const BODY_17_A_SM_AMENDED = loadFixture("pse", "body-17-a-sm-amended.html");
 const BODY_17_7 = loadFixture("pse", "body-17-7-attachment-only.html");
 
 /** The edge_no of SM's most recent form 13-1 in the fixtures. */
@@ -661,23 +664,81 @@ describe("PSE EDGE CompanyFinancials (17-A / 17-Q)", () => {
     expect(body).toMatch(/toDate=\d{2}-\d{2}-\d{4}/);
   });
 
-  test("extracts headline figures and scales the thousands multiplier", () => {
+  test("extracts headline figures exactly as filed, applying no scale", () => {
     const shell = parsePseDocumentShell(VIEWER_17_A, "annual");
     const body = parsePseDocumentBody(BODY_17_A, shell);
-    const { facts, periodEnd } = parsePseFinancialFacts(
+    const { facts, periodEnd, scaleLabel } = parsePseFinancialFacts(
       body,
       { edgeNo: "annual", template: "Annual Report", formNumber: "17-A", filedDate: "2026-04-16" },
       "599",
     );
     expect(periodEnd).toBe("2025-12-31");
     const assets = facts.find((fact) => fact.concept === "Assets");
-    // The form prints 1,811,801 "in thousands" → 1,811,801,000 pesos.
-    expect(assets?.value).toBe(1_811_801_000);
+    // The form prints 1,811,801. It is NOT multiplied by the declared scale:
+    // SM labels its column "Php (in thousands)" but files in MILLIONS (its real
+    // total assets are ~PHP 1.8tn, not the 1.81bn that scaling would imply),
+    // while SM Prime's identically-labelled column really is thousands. The
+    // declared scale is unreliable, so the value is reported as filed.
+    expect(assets?.value).toBe(1_811_801);
     expect(assets?.unit).toBe("PHP");
     expect(assets?.basis).toBe("consolidated");
-    // Per-share figures are NOT scaled by the thousands multiplier.
+    // PSE's own wording is surfaced to the caller rather than acted on.
+    expect(scaleLabel).toBe("Php (in thousands)");
     const eps = facts.find((fact) => fact.concept === "EarningsPerShareBasic");
     expect(eps?.value).toBe(74.16);
+  });
+
+  test("the issuer's own amendment proves the scale label can be wrong", () => {
+    // SM's ORIGINAL FY2025 17-A labelled its columns "Php (in thousands)"; the
+    // AMENDED filing corrected that to "Php (in Millions)" with the figures
+    // byte-identical. Trusting the original label would have understated SM by
+    // 1000x. This is the concrete reason no multiplier is applied.
+    const shell = parsePseDocumentShell(VIEWER_17_A, "annual");
+    const original = parsePseFinancialFacts(
+      parsePseDocumentBody(BODY_17_A, shell),
+      { edgeNo: "orig", template: "Annual Report" },
+      "599",
+    );
+    const amended = parsePseFinancialFacts(
+      parsePseDocumentBody(BODY_17_A_SM_AMENDED, shell),
+      { edgeNo: "amend", template: "Annual Report" },
+      "599",
+    );
+    expect(original.scaleLabel).toBe("Php (in thousands)");
+    expect(amended.scaleLabel).toBe("Php (in Millions)");
+    // Same figures, contradictory labels — so the figures are passed through
+    // untouched and the label is reported rather than acted on.
+    const assetsOf = (r: typeof original) =>
+      r.facts.find((fact) => fact.concept === "Assets")?.value;
+    expect(assetsOf(original)).toBe(1_811_801);
+    expect(assetsOf(amended)).toBe(1_811_801);
+  });
+
+  test("two issuers declare different scales, so raw figures are not comparable", () => {
+    // SM Prime      1,093,878,665 "Php (in thousands)" → ~PHP 1.09tn
+    // SM Investments    1,811,801 "Php (in Millions)"  → ~PHP 1.81tn
+    // Same real magnitude, ~600x apart as printed: a fixed multiplier would be
+    // wrong for one of them, so neither is scaled.
+    const shell = parsePseDocumentShell(VIEWER_17_A, "annual");
+    const sm = parsePseFinancialFacts(
+      parsePseDocumentBody(BODY_17_A, shell),
+      { edgeNo: "sm", template: "Annual Report" },
+      "599",
+    );
+    const smph = parsePseFinancialFacts(
+      parsePseDocumentBody(BODY_17_A_SMPH, shell),
+      { edgeNo: "smph", template: "Annual Report" },
+      "112",
+    );
+    expect(sm.scaleLabel).toBe("Php (in thousands)");
+    expect(smph.scaleLabel).toBe("Php (in thousands)");
+    // (SM's fixture is its ORIGINAL, mislabelled filing — see the test above.)
+    expect(sm.facts.find((fact) => fact.concept === "Assets")?.value)
+      .toBe(1_811_801);
+    expect(smph.facts.find((fact) => fact.concept === "Assets")?.value)
+      .toBe(1_093_878_665);
+    // ~600x apart as printed — the label cannot be load-bearing.
+    expect(PSE_SCALE_CAVEAT).toContain("EXACTLY AS FILED");
   });
 
   test("takes only the current period, never the comparative column", () => {
@@ -690,7 +751,7 @@ describe("PSE EDGE CompanyFinancials (17-A / 17-Q)", () => {
     const concepts = facts.map((fact) => fact.concept);
     expect(new Set(concepts).size).toBe(concepts.length);
     const revenue = facts.find((fact) => fact.concept === "Revenue");
-    expect(revenue?.value).toBe(681_733_000);
+    expect(revenue?.value).toBe(681_733);
   });
 
   test("an exact label match does not absorb a ratio formula line", () => {
@@ -701,7 +762,7 @@ describe("PSE EDGE CompanyFinancials (17-A / 17-Q)", () => {
     );
     // "Total Assets / Total Liabilities" is the solvency-ratio formula; the
     // Assets fact must be the balance-sheet figure, not the ratio's 2.1.
-    expect(facts.find((fact) => fact.concept === "Assets")?.value).toBe(1_811_801_000);
+    expect(facts.find((fact) => fact.concept === "Assets")?.value).toBe(1_811_801);
   });
 
   test("returns facts through the full call path", async () => {

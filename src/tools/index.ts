@@ -286,6 +286,7 @@ import {
   PSE_INSIDER_FORM,
   PSE_MAX_DETAIL_FETCHES,
   PSE_OWNER_FORM,
+  PSE_SCALE_CAVEAT,
   PSE_TERMS_NOTE,
   PSE_THRESHOLD_REGIME,
   searchPseCompanies,
@@ -4925,11 +4926,13 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             "_Figures are the headline statement PSE's own disclosure form " +
               "carries (balance sheet + income statement), consolidated and in " +
-              "Philippine pesos. PSE states most of them \"in thousands\"; " +
-              "those are scaled to whole pesos here, while per-share figures " +
-              "are left as filed. This is the form's summary, not the full " +
+              "Philippine pesos. This is the form's summary, not the full " +
               "audited financial statements — those are in the report's PDF " +
               "attachments._",
+            result.scaleLabel
+              ? `_Scale, as the issuer declared it: **${result.scaleLabel}**._`
+              : "",
+            `_⚠️ ${PSE_SCALE_CAVEAT}_`,
             result.report
               ? `_Report: ${link("open", result.report.sourceUrl)} ` +
                 `(transaction_id ${result.report.edgeNo})._`
