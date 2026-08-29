@@ -587,7 +587,11 @@ function stripEnumerator(line: string): string {
     .replace(/^[（(]\s*(?:[一二三四五六七八九十]+|\d+)\s*[）)]\s*/, "");
 }
 
-const CJK_ISH_START = /^[㐀-鿿豈-﫿　-〿！-￯]/;
+// Escaped rather than literal: U+8C48 (豈, a CJK ideograph) and U+F900 (豈,
+// the CJK Compatibility Ideographs block start) render identically, so a
+// literal range silently covered Hangul, Yi and the surrogate/private-use
+// blocks between them.
+const CJK_ISH_START = /^[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f\uff01-\uffef]/;
 
 /** Index of the next non-blank line at or after `from`, or -1. */
 function nextNonBlank(lines: readonly string[], from: number): number {
@@ -1022,7 +1026,7 @@ const CN_NUMBER_CELL_RE = /^-?\d[\d,]*(?:\.\d+)?%?$/;
 // thousands-grouped in these tables. Requiring the grouping comma is what keeps
 // page furniture (a footer's "2026" + page number "110") out of the table.
 const CN_GROUPED_CELL_RE = /^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
-const CJK_LEADING_RE = /^[㐀-鿿豈-﫿·（(]/;
+const CJK_LEADING_RE = /^[\u3400-\u9fff\uf900-\ufaff\u00b7\uff08(]/;
 
 interface OwnerNumberToken {
   value: number;
