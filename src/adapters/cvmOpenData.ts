@@ -710,13 +710,21 @@ export function freYearsToScan(currentYear: number): number[] {
   return years;
 }
 
-/** Strip the CVM "Pertence apenas a/ao" wrapper from an órgão classification. */
+/**
+ * Strip the CVM "Pertence (apenas) à/ao" wrapper from an órgão classification.
+ * The live feed carries four values, one of which is a dual membership with no
+ * "apenas" ("Pertence à Diretoria e ao Conselho de Administração"), so the
+ * leading article is dropped in its own step — and the article after the "e"
+ * too, or the dual value would keep an internal "ao" and read awkwardly.
+ */
 function normalizeOrgan(value: string | undefined): string {
   const text = (value ?? "").trim();
   if (!text) return "—";
   return text
-    .replace(/^Pertence\s+apenas\s+[àaeoà]+\s+/i, "")
     .replace(/^Pertence\s+/i, "")
+    .replace(/^apenas\s+/i, "")
+    .replace(/^(?:à|a|ao|aos|às)\s+/i, "")
+    .replace(/\se\s+(?:à|a|ao|aos|às)\s+/i, " e ")
     .trim() || text;
 }
 
@@ -916,16 +924,24 @@ export interface CvmInsidersResult {
   year?: number;
 }
 
-const ORGAN_ORDER: readonly string[] = [
-  "Conselho de Administração",
-  "Diretoria e Conselho de Administração",
-  "Diretoria",
-  "Conselho Fiscal",
+/**
+ * Display order for the four órgãos the live feed carries: board, dual
+ * membership, officers, then the statutory audit board — the order a reader
+ * scans a Brazilian governance section in. Listed longest-match-first so the
+ * dual membership is not caught by its own "Conselho de Administração"
+ * substring and mis-sorted as a plain board seat; `rank` carries the display
+ * position independently of that matching order.
+ */
+const ORGAN_ORDER: ReadonlyArray<{ name: string; rank: number }> = [
+  { name: "Diretoria e Conselho de Administração", rank: 1 },
+  { name: "Conselho de Administração", rank: 0 },
+  { name: "Diretoria", rank: 2 },
+  { name: "Conselho Fiscal", rank: 3 },
 ];
 
 function organRank(organ: string): number {
-  const index = ORGAN_ORDER.findIndex((name) => organ.includes(name));
-  return index === -1 ? ORGAN_ORDER.length : index;
+  return ORGAN_ORDER.find((entry) => organ.includes(entry.name))?.rank
+    ?? ORGAN_ORDER.length;
 }
 
 /**

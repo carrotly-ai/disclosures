@@ -464,6 +464,17 @@ const ADMIN_2025 = [
     Prazo_Mandato: "Até a AGO de 2027",
     Eleito_Controlador: "N",
   }),
+  // The fourth live órgão value: a dual membership with no "apenas", whose
+  // article must still be stripped and which must not sort as a plain board seat.
+  admRow({
+    Orgao_Administracao: "Pertence à Diretoria e ao Conselho de Administração",
+    Nome: "BEATRIZ DUAL MEMBRO",
+    CPF: "555.555.555-55",
+    Cargo_Eletivo_Ocupado: "19 - Outros Diretores",
+    Data_Eleicao: "2025-04-30",
+    Prazo_Mandato: "26/05/2027",
+    Eleito_Controlador: "N",
+  }),
   // A superseded version — ignored.
   admRow({
     Versao: "1",
@@ -664,14 +675,18 @@ describe("getCvmInsiders", () => {
     expect(referenceDate).toBe("2025-12-31");
     expect(year).toBe(2025);
 
-    // Sorted: Conselho de Administração, Diretoria, Conselho Fiscal.
+    // Sorted: board, dual membership, Diretoria, Conselho Fiscal.
     expect(administrators.map((admin) => admin.name)).toEqual([
       "DANIEL ANDRÉ STIELER", // accent decoded
+      "BEATRIZ DUAL MEMBRO",
       "GUSTAVO DUARTE PIMENTA",
       "RAPHAEL MANHÃES MARTINS", // accent decoded
     ]);
+    // Every "Pertence (apenas) à/ao" wrapper is stripped, including the dual
+    // membership that carries no "apenas" — no dangling article survives.
     expect(administrators.map((admin) => admin.organ)).toEqual([
       "Conselho de Administração",
+      "Diretoria e Conselho de Administração",
       "Diretoria",
       "Conselho Fiscal",
     ]);
