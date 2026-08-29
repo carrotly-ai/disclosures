@@ -55,9 +55,25 @@ interface FontDecoder {
  * Latin-1 decode round-trips every byte 1:1 to a char code, so string indices
  * equal byte offsets. That lets us scan structure with string ops while still
  * slicing exact binary stream ranges out of the original `Uint8Array`.
+ *
+ * `new TextDecoder("latin1")` does NOT do this: the WHATWG Encoding Standard
+ * aliases "latin1" to windows-1252, which remaps the 0x80–0x9F range to typographic
+ * characters (0x95 → U+2022 BULLET). Bytes in that window then no longer equal
+ * their char codes, silently corrupting glyph ids in Identity-H content streams —
+ * a Turkish "Ö" (glyph 0x0095) decoded as "e". Build the string from the raw
+ * bytes instead so the 1:1 invariant above actually holds.
  */
 function latin1(bytes: Uint8Array): string {
-  return new TextDecoder("latin1").decode(bytes);
+  let out = "";
+  // Chunked to keep String.fromCharCode's argument list within engine limits
+  // on large (multi-MB) content streams.
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    out += String.fromCharCode(
+      ...bytes.subarray(i, Math.min(i + CHUNK, bytes.length)),
+    );
+  }
+  return out;
 }
 
 function isWhitespace(code: number): boolean {

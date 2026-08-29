@@ -237,6 +237,63 @@ export function buildTextLayoutPdf(lines: string[]): Uint8Array {
 }
 
 /**
+ * A KAP-shaped disclosure PDF: a Type0 (Identity-H) font whose two-byte glyph
+ * codes are written into the content stream as a **raw binary literal string**
+ * — the high byte 0x00 plus a glyph byte emitted verbatim, not octal-escaped.
+ * That is exactly how KAP's `BildirimPdf` renders Turkish text, and it is the
+ * shape that catches a decoder treating bytes 0x80–0x9F as windows-1252: a
+ * glyph id in that window (Turkish "Ö" is 0x0095) must survive byte-for-byte.
+ *
+ * Glyph codes are assigned per distinct character, so `text` round-trips
+ * exactly when the extractor is byte-faithful.
+ */
+export function buildRawByteGlyphPdf(text: string): Uint8Array {
+  const charset = new Map<string, number>();
+  const bfchar: Array<{ code: string; unicode: string }> = [];
+  const bytes: number[] = [];
+  // Start glyph ids high enough that the run covers the 0x80-0x9F window where
+  // windows-1252 diverges from Latin-1 — the exact trap this fixture exists for.
+  const FIRST_GLYPH = 0x90;
+  for (const ch of text) {
+    let code = charset.get(ch);
+    if (code === undefined) {
+      code = FIRST_GLYPH + charset.size;
+      charset.set(ch, code);
+      bfchar.push({
+        code: code.toString(16).padStart(4, "0"),
+        unicode: ch.codePointAt(0)!.toString(16).padStart(4, "0"),
+      });
+    }
+    bytes.push(0x00, code);
+  }
+  const cmap = toUnicodeCmap(bfchar);
+  // Escape only the PDF literal delimiters; every other byte stays verbatim.
+  const literal: number[] = [];
+  for (const b of bytes) {
+    if (b === 0x28 || b === 0x29 || b === 0x5c) literal.push(0x5c);
+    literal.push(b);
+  }
+  const content = concat([
+    enc.encode("BT /F1 12 Tf ("),
+    new Uint8Array(literal),
+    enc.encode(") Tj ET"),
+  ]);
+  return concat([
+    enc.encode("%PDF-1.7\n"),
+    enc.encode("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"),
+    enc.encode("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"),
+    enc.encode(
+      "3 0 obj\n<< /Type /Page /Parent 2 0 R /Contents 4 0 R " +
+        "/Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n",
+    ),
+    streamObject(4, "", content),
+    enc.encode("5 0 obj\n<< /Type /Font /Subtype /Type0 /ToUnicode 6 0 R >>\nendobj\n"),
+    streamObject(6, "", enc.encode(cmap)),
+    enc.encode("%%EOF"),
+  ]);
+}
+
+/**
  * A CN-shaped periodic-report PDF: a Type0 font with a `/ToUnicode` CMap, whose
  * content stream positions **every glyph individually** (each character is a
  * separate item in a `TJ` array, and every space in the source line is a large
