@@ -147,6 +147,7 @@ describe("jurisdiction-neutral foundations", () => {
       "OpenDART",
       "EDINET",
       "cninfo",
+      "SZSE",
       "BSE India",
       "FCA NSM",
       "filings.xbrl.org",

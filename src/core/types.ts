@@ -31,6 +31,7 @@ export const DATA_SOURCES = {
   OPEN_DART: "OpenDART",
   EDINET: "EDINET",
   CNINFO: "cninfo",
+  SZSE: "SZSE",
   BSE: "BSE India",
   FCA_NSM: "FCA NSM",
   XBRL_FILINGS: "filings.xbrl.org",
