@@ -433,6 +433,31 @@ export function looksLikeBistTicker(value: string): boolean {
 }
 
 /**
+ * Does this candidate share anything real with the query — the query appearing
+ * in its name, or at least one whole word in common? Names are compared with
+ * Turkish i-folding and legal forms removed, so "Türkiye İş Bankası" is
+ * reachable as "turkiye is bankasi" and a query is not defeated by "A.Ş.".
+ *
+ * Matching is one-directional on purpose. Testing whether the CANDIDATE is a
+ * substring of the QUERY lets a short ticker match almost anything: NETAŞ's
+ * secondary code "NE" sits inside "TURKISH AIRLINES", which surfaced a telecoms
+ * company as the top hit for the national carrier. A candidate therefore only
+ * matches by containing the query, or by sharing a whole word with it.
+ */
+function hasNameOverlap(query: string, entity: KapEntity): boolean {
+  const needle = turkishNameKey(query);
+  if (!needle) return false;
+  const haystacks = [entity.legalName, ...entity.tickers, ...(entity.aliases ?? [])]
+    .map(turkishNameKey)
+    .filter(Boolean);
+  if (haystacks.some((name) => name.includes(needle))) return true;
+  const queryWords = new Set(needle.split(" ").filter(Boolean));
+  return haystacks.some((name) =>
+    name.split(" ").some((word) => word && queryWords.has(word)),
+  );
+}
+
+/**
  * Resolve against the directory: exact ticker first (the highest-confidence
  * signal a caller can give), then KAP company id, then shared name ranking.
  */
@@ -470,9 +495,17 @@ export async function searchKapCompanies(
     }
   }
 
-  return rankEntities(trimmed, directory, {
+  // rankEntities orders but never filters, so on a query that matches nothing it
+  // would return the whole 750-company directory in arbitrary order — which
+  // reads as "here are your results". Keep only candidates that actually share
+  // something with the query; an empty list is the honest answer for a miss.
+  const ranked = rankEntities(trimmed, directory, {
     fallbackReason: "KAP BIST directory name match",
-  }).slice(0, KAP_MAX_RESULTS) as KapEntity[];
+  }) as KapEntity[];
+  const matched = ranked.filter((entity) =>
+    hasNameOverlap(trimmed, entity),
+  );
+  return matched.slice(0, KAP_MAX_RESULTS);
 }
 
 export async function resolveKapCompany(
@@ -565,10 +598,12 @@ export interface KapDisclosureMetadata {
 export function parseDisclosurePage(html: string): Partial<KapDisclosureMetadata> {
   const start = html.indexOf("disclosureBasic");
   if (start === -1) return {};
-  // The block runs to the sibling key; bound the scan so a later, unrelated
-  // occurrence of a field name cannot be read as this disclosure's value.
-  const endMarker = html.indexOf("disclosureDetail", start);
-  const block = html.slice(start, endMarker === -1 ? start + 4000 : endMarker);
+  // The block spans `disclosureBasic` AND its sibling `disclosureDetail` (which
+  // is where relatedDisclosureIndex lives), ending at `disclosureBody`. Bounding
+  // the scan stops a later, unrelated occurrence of a field name elsewhere on
+  // the page from being read as this disclosure's value.
+  const endMarker = html.indexOf("disclosureBody", start);
+  const block = html.slice(start, endMarker === -1 ? start + 6000 : endMarker);
 
   const readString = (key: string): string | undefined => {
     // Matches both the escaped (\"key\":\"value\") and plain ("key":"value")
