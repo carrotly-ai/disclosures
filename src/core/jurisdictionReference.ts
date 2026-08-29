@@ -428,7 +428,10 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "TWO SOURCES, OPPOSITE LICENCES. The ASX half is NOT open data: ASX's " +
       "Terms of Use permit only \"personal, non-commercial use\" and prohibit " +
       "reproducing, downloading, transmitting or distributing site content, " +
-      "which conflicts with redistributing ASX content through this package — " +
+      "and prohibit using any \"spider, screen scraper, robot ... or other " +
+      "similar process\" to access the site — which conflicts with " +
+      "redistributing ASX content through this package, and with programmatic " +
+      "access generally — " +
       "the operator is responsible for having rights to use ASX data (full " +
       "quotes in docs/jurisdictions/AU.md). The ASIC half on data.gov.au IS " +
       "CC BY 3.0 AU and freely redistributable with attribution. Separately, " +

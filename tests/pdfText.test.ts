@@ -7,6 +7,7 @@ import {
   buildShortfallObjStmPdf,
   buildSimplePdf,
   buildToUnicodePdf,
+  buildEncryptedPdf,
 } from "./helpers/pdfFixture.js";
 
 describe("extractPdfText", () => {
@@ -122,5 +123,38 @@ describe("extractPdfText", () => {
     const result = extractPdfText(new TextEncoder().encode("not a pdf at all"));
     expect(result.text).toBe("");
     expect(result.notes.length).toBeGreaterThan(0);
+  });
+});
+
+describe("extractPdfText — encrypted documents (empty user password)", () => {
+  // Some issuers publish owner-password-protected PDFs: encrypted, but with an
+  // EMPTY user password, so any reader opens them without prompting. Australia's
+  // ASX announcement PDFs are all like this (AES-256, /R 5 /V 5, /P -540).
+  // Before decryption support the extractor inflated ciphertext, recovered
+  // nothing, and reported "no extractable text layer (likely scanned/image
+  // PDF)" — a confidently WRONG answer about documents full of text.
+  test("decrypts an AES-256 document whose user password is empty", () => {
+    const pdf = buildEncryptedPdf("BT (Change of Director's Interest Notice) Tj ET");
+    const result = extractPdfText(pdf);
+    expect(result.text).toContain("Change of Director's Interest Notice");
+    expect(result.notes.join(" ")).toContain("empty user password");
+    // Crucially, it must NOT claim the document has no text layer.
+    expect(result.notes.join(" ")).not.toContain("no extractable text layer");
+  });
+
+  test("reports a genuinely password-protected file as locked, not text-less", () => {
+    const pdf = buildEncryptedPdf("BT (Secret) Tj ET", { wrongPassword: true });
+    const result = extractPdfText(pdf);
+    expect(result.text).toBe("");
+    expect(result.notes.join(" ")).toContain("password-protected");
+    // The distinction is the whole point: a locked document is not a scan.
+    expect(result.notes.join(" ")).not.toContain("scanned/image PDF");
+  });
+
+  test("leaves unencrypted documents entirely unaffected", () => {
+    const result = extractPdfText(buildSimplePdf("BT (Plain text) Tj ET"));
+    expect(result.text).toContain("Plain text");
+    expect(result.notes.join(" ")).not.toContain("password");
+    expect(result.notes.join(" ")).not.toContain("encrypted");
   });
 });

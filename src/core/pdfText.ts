@@ -1,3 +1,4 @@
+import { createDecipheriv, createHash } from "node:crypto";
 import { inflateZlib } from "./zip.js";
 
 /**
@@ -37,6 +38,8 @@ const SCANNED_PDF_SIZE_HINT = 20 * 1024;
 
 interface PdfObject {
   num: number;
+  /** Generation number, needed to derive per-object decryption keys. */
+  gen?: number;
   dict: string;
   /** Raw (still-encoded) stream bytes, when the object carries a stream. */
   stream?: Uint8Array;
@@ -142,12 +145,306 @@ function winAnsiChar(code: number): string {
  * offsets. Later definitions of the same object number win (mimicking an
  * updated xref).
  */
+// --- Standard-security decryption (empty user password) --------------------
+//
+// Some issuers publish PDFs with owner-password protection: the document is
+// encrypted, but the USER password is empty, so any reader opens it without
+// prompting and the "protection" only restricts editing/printing. Australia's
+// ASX announcement PDFs are all like this (verified live: AES-256, /R 5 /V 5,
+// /P -540). Without decryption support the extractor inflates ciphertext,
+// recovers nothing, and reports "no extractable text layer (likely scanned/
+// image PDF)" — which is FALSE and the kind of confidently-wrong answer this
+// library exists not to give. `pdftotext` opens the same files fine.
+//
+// So: when a document declares standard security AND the empty user password
+// validates, the file key is derived and streams/strings are decrypted. If the
+// empty password does NOT validate, the document is genuinely password-
+// protected and that is reported as its own note — never as "no text layer".
+//
+// Scope is deliberately narrow: /Filter /Standard only, revisions 4 (AESV2,
+// 128-bit) and 5/6 (AESV3, 256-bit), plus RC4 for older revisions 2-4. No
+// public-key (/Filter /Adobe.PubSec) handling, and no password cracking — the
+// only password tried is the empty one every reader tries first.
+
+interface PdfDecryptor {
+  /** Decrypt one object's stream or string bytes. */
+  decrypt(data: Uint8Array, objNum: number, gen: number): Uint8Array;
+}
+
+/** Parse a PDF string value (`(literal)` or `<hex>`) following `key`. */
+function readDictString(dict: string, key: string): Uint8Array | undefined {
+  const index = dict.indexOf(key);
+  if (index === -1) return undefined;
+  let cursor = index + key.length;
+  while (cursor < dict.length && isWhitespace(dict.charCodeAt(cursor))) cursor += 1;
+  if (dict[cursor] === "<") {
+    const end = dict.indexOf(">", cursor);
+    if (end === -1) return undefined;
+    const hex = dict.slice(cursor + 1, end).replace(/[^0-9a-fA-F]/g, "");
+    const bytes = new Uint8Array(Math.floor(hex.length / 2));
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Number.parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return bytes;
+  }
+  if (dict[cursor] === "(") {
+    // readLiteralString starts INSIDE the string (its depth already counts the
+    // opening paren), so skip past it.
+    const { bytes } = readLiteralString(dict, cursor + 1);
+    return Uint8Array.from(bytes);
+  }
+  return undefined;
+}
+
+function aesDecrypt(key: Uint8Array, data: Uint8Array): Uint8Array {
+  // AES-CBC with the IV as the first 16 bytes, PKCS#7 padded.
+  if (data.length <= 16) return new Uint8Array(0);
+  const algorithm = key.length === 32 ? "aes-256-cbc" : "aes-128-cbc";
+  const decipher = createDecipheriv(algorithm, key, data.subarray(0, 16));
+  decipher.setAutoPadding(false);
+  const out = Buffer.concat([
+    decipher.update(Buffer.from(data.subarray(16))),
+    decipher.final(),
+  ]);
+  const pad = out[out.length - 1] ?? 0;
+  return new Uint8Array(pad >= 1 && pad <= 16 ? out.subarray(0, out.length - pad) : out);
+}
+
+/** RC4, for pre-AES revisions. Small enough to inline; no dependency. */
+function rc4(key: Uint8Array, data: Uint8Array): Uint8Array {
+  const state = new Uint8Array(256);
+  for (let i = 0; i < 256; i += 1) state[i] = i;
+  let j = 0;
+  for (let i = 0; i < 256; i += 1) {
+    j = (j + (state[i] as number) + (key[i % key.length] as number)) & 0xff;
+    const tmp = state[i] as number;
+    state[i] = state[j] as number;
+    state[j] = tmp;
+  }
+  const out = new Uint8Array(data.length);
+  let a = 0;
+  let b = 0;
+  for (let k = 0; k < data.length; k += 1) {
+    a = (a + 1) & 0xff;
+    b = (b + (state[a] as number)) & 0xff;
+    const tmp = state[a] as number;
+    state[a] = state[b] as number;
+    state[b] = tmp;
+    out[k] = (data[k] as number) ^ (state[((state[a] as number) + (state[b] as number)) & 0xff] as number);
+  }
+  return out;
+}
+
+/** PDF standard security padding string (Algorithm 2, revisions 2-4). */
+const PDF_PAD = Uint8Array.from([
+  0x28, 0xbf, 0x4e, 0x5e, 0x4e, 0x75, 0x8a, 0x41, 0x64, 0x00, 0x4e, 0x56,
+  0xff, 0xfa, 0x01, 0x08, 0x2e, 0x2e, 0x00, 0xb6, 0xd0, 0x68, 0x3e, 0x80,
+  0x2f, 0x0c, 0xa9, 0xfe, 0x64, 0x53, 0x69, 0x7a,
+]);
+
+function md5(...parts: Uint8Array[]): Uint8Array {
+  const hash = createHash("md5");
+  for (const part of parts) hash.update(Buffer.from(part));
+  return new Uint8Array(hash.digest());
+}
+
+function sha256(...parts: Uint8Array[]): Uint8Array {
+  const hash = createHash("sha256");
+  for (const part of parts) hash.update(Buffer.from(part));
+  return new Uint8Array(hash.digest());
+}
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
+function int32le(value: number): Uint8Array {
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setInt32(0, value, true);
+  return out;
+}
+
+export interface PdfDecryptionSetup {
+  decryptor?: PdfDecryptor;
+  /** Set when the document is encrypted and the empty password did NOT open it. */
+  passwordRequired?: boolean;
+  note?: string;
+}
+
+/**
+ * Build a decryptor for a document that declares `/Encrypt`, trying only the
+ * empty user password. Returns `{}` for an unencrypted document.
+ */
+export function setUpPdfDecryption(
+  text: string,
+  objects: Map<number, PdfObject>,
+): PdfDecryptionSetup {
+  const trailerRef = text.match(/\/Encrypt\s+(\d+)\s+(\d+)\s*R/);
+  if (!trailerRef) return {};
+  const encrypt = objects.get(Number(trailerRef[1]));
+  if (!encrypt) {
+    return { note: "the PDF declares /Encrypt but its encryption dictionary could not be read" };
+  }
+  const dict = encrypt.dict;
+  if (!/\/Filter\s*\/Standard/.test(dict)) {
+    return {
+      passwordRequired: true,
+      note: "the PDF uses a non-standard security handler this extractor cannot open",
+    };
+  }
+  const revision = Number(dict.match(/\/R\s+(\d+)/)?.[1] ?? 0);
+  const version = Number(dict.match(/\/V\s+(\d+)/)?.[1] ?? 0);
+  const permissions = Number(dict.match(/\/P\s+(-?\d+)/)?.[1] ?? 0);
+  const ownerKey = readDictString(dict, "/O");
+  const userKey = readDictString(dict, "/U");
+  if (!ownerKey || !userKey) {
+    return { passwordRequired: true, note: "the PDF's encryption dictionary is incomplete" };
+  }
+  // AESV3 (256-bit) uses /CFM /AESV3; AESV2 (128-bit) uses /CFM /AESV2.
+  const usesAes = /\/AESV[23]/.test(dict);
+
+  if (revision >= 5) {
+    // Algorithm 2.A with an empty password: validate against /U's validation
+    // salt, then unwrap the file key from /UE with /U's key salt.
+    if (userKey.length < 48) {
+      return { passwordRequired: true, note: "the PDF's /U entry is malformed" };
+    }
+    const validationSalt = userKey.subarray(32, 40);
+    const keySalt = userKey.subarray(40, 48);
+    const valid = bytesEqual(sha256(validationSalt), userKey.subarray(0, 32));
+    const intermediate = sha256(keySalt);
+    if (!valid && revision === 6) {
+      // R6 hardens the hash (Algorithm 2.B). Not implemented; report honestly.
+      return {
+        passwordRequired: true,
+        note: "the PDF uses PDF 2.0 (revision 6) encryption this extractor cannot open",
+      };
+    }
+    if (!valid) {
+      return {
+        passwordRequired: true,
+        note: "the PDF is password-protected (the empty user password did not open it)",
+      };
+    }
+    const wrapped = readDictString(dict, "/UE");
+    if (!wrapped || wrapped.length < 32) {
+      return { passwordRequired: true, note: "the PDF's /UE entry is malformed" };
+    }
+    const decipher = createDecipheriv(
+      "aes-256-cbc",
+      Buffer.from(intermediate),
+      Buffer.alloc(16),
+    );
+    decipher.setAutoPadding(false);
+    const fileKey = new Uint8Array(
+      Buffer.concat([decipher.update(Buffer.from(wrapped)), decipher.final()]),
+    );
+    // AESV3 uses the file key directly for every object — no per-object salt.
+    return {
+      decryptor: { decrypt: (data) => aesDecrypt(fileKey, data) },
+      note: "the PDF was encrypted with an empty user password and was decrypted to read its text",
+    };
+  }
+
+  // Revisions 2-4 (Algorithm 2): derive the key from the padded empty password.
+  const lengthBits = Number(dict.match(/\/Length\s+(\d+)/)?.[1] ?? 40);
+  const keyLength = revision === 2 ? 5 : Math.max(5, Math.floor(lengthBits / 8));
+  const idMatch = text.match(/\/ID\s*\[\s*<([0-9a-fA-F\s]*)>/);
+  const idHex = (idMatch?.[1] ?? "").replace(/[^0-9a-fA-F]/g, "");
+  const idBytes = new Uint8Array(Math.floor(idHex.length / 2));
+  for (let i = 0; i < idBytes.length; i += 1) {
+    idBytes[i] = Number.parseInt(idHex.substr(i * 2, 2), 16);
+  }
+  const encryptMetadata = !/\/EncryptMetadata\s+false/.test(dict);
+  const parts: Uint8Array[] = [
+    PDF_PAD,
+    ownerKey.subarray(0, 32),
+    int32le(permissions),
+    idBytes,
+  ];
+  if (revision >= 4 && !encryptMetadata) {
+    parts.push(Uint8Array.from([0xff, 0xff, 0xff, 0xff]));
+  }
+  let key = md5(...parts).subarray(0, keyLength);
+  if (revision >= 3) {
+    for (let i = 0; i < 50; i += 1) key = md5(key.subarray(0, keyLength)).subarray(0, keyLength);
+  }
+  const fileKey = key.slice(0, keyLength);
+
+  // Validate the empty user password (Algorithm 6 / 4).
+  let opens: boolean;
+  if (revision === 2) {
+    opens = bytesEqual(rc4(fileKey, PDF_PAD), userKey.subarray(0, 32));
+  } else {
+    let check = md5(PDF_PAD, idBytes);
+    let derived = rc4(fileKey, check);
+    for (let i = 1; i <= 19; i += 1) {
+      const rotated = Uint8Array.from(fileKey, (byte) => byte ^ i);
+      derived = rc4(rotated, derived);
+    }
+    opens = bytesEqual(derived.subarray(0, 16), userKey.subarray(0, 16));
+  }
+  if (!opens) {
+    return {
+      passwordRequired: true,
+      note: "the PDF is password-protected (the empty user password did not open it)",
+    };
+  }
+
+  const perObjectKey = (objNum: number, gen: number): Uint8Array => {
+    const salt: Uint8Array[] = [
+      fileKey,
+      Uint8Array.from([objNum & 0xff, (objNum >> 8) & 0xff, (objNum >> 16) & 0xff,
+        gen & 0xff, (gen >> 8) & 0xff]),
+    ];
+    if (usesAes) salt.push(Uint8Array.from([0x73, 0x41, 0x6c, 0x54])); // "sAlT"
+    return md5(...salt).subarray(0, Math.min(fileKey.length + 5, 16));
+  };
+
+  return {
+    decryptor: {
+      decrypt: (data, objNum, gen) => {
+        const key = perObjectKey(objNum, gen);
+        return usesAes ? aesDecrypt(key, data) : rc4(key, data);
+      },
+    },
+    note: "the PDF was encrypted with an empty user password and was decrypted to read its text",
+  };
+}
+
+/**
+ * Decrypt every object stream in place. The encryption dictionary itself and
+ * cross-reference streams are never encrypted, so both are skipped.
+ */
+function decryptObjects(
+  objects: Map<number, PdfObject>,
+  decryptor: PdfDecryptor,
+  encryptObjNum: number | undefined,
+): void {
+  for (const obj of objects.values()) {
+    if (!obj.stream) continue;
+    if (obj.num === encryptObjNum) continue;
+    if (/\/Type\s*\/XRef/.test(obj.dict)) continue;
+    try {
+      obj.stream = decryptor.decrypt(obj.stream, obj.num, obj.gen ?? 0);
+    } catch {
+      // A stream we cannot decrypt is left as-is; downstream inflation will
+      // simply skip it, and the caller still gets whatever else decoded.
+    }
+  }
+}
+
 function parseObjects(bytes: Uint8Array, text: string): Map<number, PdfObject> {
   const objects = new Map<number, PdfObject>();
   const objRe = /(\d+)\s+(\d+)\s+obj\b/g;
   let match: RegExpExecArray | null;
   while ((match = objRe.exec(text)) !== null) {
     const num = Number(match[1]);
+    const gen = Number(match[2] ?? 0);
     const bodyStart = match.index + match[0].length;
     const endObj = text.indexOf("endobj", bodyStart);
     const bodyEnd = endObj === -1 ? text.length : endObj;
@@ -162,11 +459,12 @@ function parseObjects(bytes: Uint8Array, text: string): Map<number, PdfObject> {
       const dataEnd = findStreamEnd(text, dict, dataStart);
       objects.set(num, {
         num,
+        gen,
         dict,
         stream: bytes.subarray(dataStart, dataEnd),
       });
     } else {
-      objects.set(num, { num, dict: text.slice(bodyStart, bodyEnd) });
+      objects.set(num, { num, gen, dict: text.slice(bodyStart, bodyEnd) });
     }
     objRe.lastIndex = bodyEnd;
   }
@@ -922,6 +1220,23 @@ export function extractPdfText(bytes: Uint8Array): PdfTextResult {
   let objects: Map<number, PdfObject>;
   try {
     objects = parseObjects(bytes, text);
+    // Decryption must run BEFORE object streams are merged: an /ObjStm's own
+    // bytes are encrypted too, so merging first would inflate ciphertext.
+    const encryption = setUpPdfDecryption(text, objects);
+    if (encryption.note) notes.push(encryption.note);
+    if (encryption.passwordRequired) {
+      // Say the document is locked. Reporting "no text layer" here would be a
+      // confidently wrong answer about a document that may be full of text.
+      return { text: "", notes: [...new Set(notes)] };
+    }
+    if (encryption.decryptor) {
+      const encryptObjNum = Number(text.match(/\/Encrypt\s+(\d+)\s+\d+\s*R/)?.[1]);
+      decryptObjects(
+        objects,
+        encryption.decryptor,
+        Number.isFinite(encryptObjNum) ? encryptObjNum : undefined,
+      );
+    }
     mergeObjectStreams(objects);
   } catch {
     return { text: "", notes: ["could not parse PDF object structure"] };

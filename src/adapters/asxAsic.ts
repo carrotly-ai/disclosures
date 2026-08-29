@@ -13,7 +13,11 @@ import type { AdapterOptions, Entity, Filing, Insider } from "../core/types.js";
 //      keyless. It is the only aggregated place Australian listed-company
 //      announcements live. Its Terms of Use grant ONLY "personal,
 //      non-commercial use" and expressly prohibit reproducing, downloading,
-//      transmitting or distributing site content. See
+//      transmitting or distributing site content, prohibit commercial use
+//      without written consent, and — the clause the merged finding did NOT
+//      quote, and the one most directly on point for a tool like this —
+//      prohibit using any "spider, screen scraper, robot, other similar
+//      software or device, or other similar process" to access the site. See
 //      docs/jurisdictions/AU.md § "ASX Terms of Use conflict" for the verbatim
 //      quotes. This is a REAL, UNRESOLVED legal conflict with redistributing
 //      ASX-derived content through this package; the repository owner has
@@ -77,12 +81,16 @@ export const ASX_TERMS_NOTE =
   "SOURCE + TERMS: this row comes from the ASX website's own JSON API " +
   "(asx.api.markitdigital.com). ASX asserts copyright over the site and its " +
   "content, and its Terms of Use " +
-  `(${ASX_TERMS_URL}) permit only "personal, non-commercial use" and prohibit ` +
-  "reproducing, downloading, transmitting or distributing site content. That " +
-  "conflicts with redistributing ASX content through this package. YOU, the " +
-  "operator, are responsible for having the rights to use ASX data for your " +
-  "purpose. This is NOT the CC-BY ASIC open data that backs AU " +
-  "CompanyResolve for unlisted companies and PersonAppointments.";
+  `(${ASX_TERMS_URL}) permit only "personal, non-commercial use", prohibit ` +
+  "reproducing, downloading, transmitting or distributing site content, " +
+  "prohibit commercial use without written consent, and prohibit using any " +
+  "\"spider, screen scraper, robot, other similar software or device, or " +
+  "other similar process\" to access the site. That conflicts with " +
+  "redistributing ASX content through this package, and with programmatic " +
+  "access generally. YOU, the operator, are responsible for having the rights " +
+  "to use ASX data for your purpose. This is NOT the CC-BY ASIC open data " +
+  "that backs AU CompanyResolve for unlisted companies and " +
+  "PersonAppointments.";
 
 export const ASX_FIVE_ITEM_NOTE =
   "THESE ARE THE 5 MOST RECENT ANNOUNCEMENTS ONLY — NOT A COMPLETE FILING " +

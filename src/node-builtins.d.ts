@@ -19,9 +19,36 @@ declare module "node:zlib" {
 declare module "node:crypto" {
   interface Hash {
     update(data: string): Hash;
+    update(data: Uint8Array): Hash;
     digest(encoding: "hex"): string;
+    digest(): Uint8Array;
   }
   export function createHash(algorithm: string): Hash;
+  // Used by the PDF text extractor to open documents encrypted with an empty
+  // user password (owner-password-protected filings). Node's Decipher accepts
+  // and returns Buffer, which is a Uint8Array at runtime.
+  interface Decipher {
+    update(data: Uint8Array): Buffer;
+    final(): Buffer;
+    setAutoPadding(autoPadding: boolean): Decipher;
+  }
+  export function createDecipheriv(
+    algorithm: string,
+    key: Uint8Array,
+    iv: Uint8Array,
+  ): Decipher;
+  // Test-fixture side only (tests/helpers/pdfFixture.ts builds an encrypted PDF).
+  interface Cipher {
+    update(data: Uint8Array): Buffer;
+    final(): Buffer;
+    setAutoPadding(autoPadding: boolean): Cipher;
+  }
+  export function createCipheriv(
+    algorithm: string,
+    key: Uint8Array,
+    iv: Uint8Array,
+  ): Cipher;
+  export function randomBytes(size: number): Buffer;
 }
 
 declare module "node:fs/promises" {
@@ -62,6 +89,8 @@ declare module "node:os" {
 interface Buffer extends Uint8Array {}
 declare const Buffer: {
   concat(list: readonly Uint8Array[]): Buffer;
+  alloc(size: number): Buffer;
+  from(data: Uint8Array | ArrayLike<number>): Buffer;
 };
 
 declare module "node:http" {

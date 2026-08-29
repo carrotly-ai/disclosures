@@ -16,7 +16,11 @@ import {
 import { JURISDICTION_REFERENCE } from "../src/core/jurisdictionReference.js";
 import type { AdapterOptions, ToolResult } from "../src/core/types.js";
 import { loadFixture } from "./helpers/loadFixture.js";
-import { buildImagePdf, buildTextLayoutPdf } from "./helpers/pdfFixture.js";
+import {
+  buildEncryptedPdf,
+  buildImagePdf,
+  buildTextLayoutPdf,
+} from "./helpers/pdfFixture.js";
 import { routedFetch } from "./helpers/routedFetch.js";
 import type { Route } from "./helpers/routedFetch.js";
 
@@ -502,6 +506,28 @@ describe("AU CompanyDocument", () => {
     expect(text).toContain("12,345 ordinary shares");
     expect(text).toContain("BEGIN UNTRUSTED DOCUMENT TEXT");
     expect(text).toContain("issuer-authored");
+  });
+
+  test("extracts text from an encrypted announcement (ASX's real shape)", async () => {
+    // EVERY ASX announcement PDF is AES-256 encrypted with an empty user
+    // password (owner-password protection). Before the extractor learned to
+    // open those, this path reported "no extractable text layer" for documents
+    // that are full of text — verified against the live BHP/CSL/CBA PDFs.
+    const pdf = buildEncryptedPdf(
+      "BT (Form 603 Notice of initial substantial holder) Tj ET",
+    );
+    const fetchFn = routedFetch([{ pattern: `file/${BHP_DOCUMENT_KEY}`, body: pdf }]);
+    const result = await toolByName(tools(fetchFn), "CompanyDocument").handler({
+      company: "BHP",
+      jurisdiction: "AU",
+      transaction_id: BHP_DOCUMENT_KEY,
+      mode: "xhtml",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Form 603 Notice of initial substantial holder");
+    expect(text).toContain("BEGIN UNTRUSTED DOCUMENT TEXT");
+    expect(text).not.toContain("no extractable text layer");
+    expect(result.isError).toBeUndefined();
   });
 
   test("reports a scanned announcement with no text layer honestly", async () => {

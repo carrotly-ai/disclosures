@@ -9,29 +9,31 @@ an empty or fabricated result.
 Three further **filed-document / register tools** — `CompanyDocument`, `CompanyCharges`, and
 `PersonAppointments` — originated as Companies House features. `CompanyDocument` now also
 serves **US** (SEC EDGAR), **JP** (EDINET), **KR** (OpenDART), **FR** (info-financiere
-OAM), **HK** (HKEXnews), **CN** (cninfo), and **TR** (KAP); `PersonAppointments` also serves **US** (SEC EDGAR reporting
-owners), **DE** (BaFin DealingsInfo notifying persons), and **FR** (recherche-entreprises
-*dirigeants*), all via a `jurisdiction` parameter (default `GB`). `CompanyCharges` remains
+OAM), **HK** (HKEXnews), **CN** (cninfo), **TR** (KAP), **AE** (DFM), and **AU** (ASX);
+`PersonAppointments` also serves **US** (SEC EDGAR reporting
+owners), **DE** (BaFin DealingsInfo notifying persons), **FR** (recherche-entreprises
+*dirigeants*), and **AU** (ASIC banned/disqualified persons — `disqualifications` mode only),
+all via a `jurisdiction` parameter (default `GB`). `CompanyCharges` remains
 UK-only for now. See [GB.md](GB.md), [US.md](US.md), [JP.md](JP.md), [KR.md](KR.md),
-[FR.md](FR.md), [HK.md](HK.md), and [AE.md](AE.md) for the per-jurisdiction document / person
-paths.
+[FR.md](FR.md), [HK.md](HK.md), [AE.md](AE.md), and [AU.md](AU.md) for the per-jurisdiction
+document / person paths.
 
 This directory documents each jurisdiction in depth. For the quickstart, client
 configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID | MY | TR | AE |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ✅ | — | ✅ |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | ✅ | — | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — | ✅ | — | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ | — | — | — |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID | MY | TR | AE | AU |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ✅ | — | ✅ | ⚠️ |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | ✅ | — | — | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — | ✅ | — | — | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ | — | — | — | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | ✅ |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | ⚠️ |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -112,9 +114,10 @@ depository channel, not a clean IDX feed). Verified live through the built artif
 BBCA FY2025, consolidated, in IDR — including BBCA's banking revenue variant. See
 [ID.md](ID.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, and `TR`;
-`PersonAppointments` accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is
-UK-only and takes no `jurisdiction` parameter.
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, `TR`, `AE`, and
+`AU`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, `FR`, and `AU`
+(`disqualifications` mode only); `CompanyCharges` is UK-only and takes no `jurisdiction`
+parameter.
 
 NL `CompanyOwners` / `CompanyInsiders` come from the AFM's **keyless whole-file register
 exports**, which support **no server-side filtering** (an `?issuer=` parameter is ignored and
@@ -145,9 +148,41 @@ precedent**, every MY intent detects the interstitial and returns an honest mess
 documents, not a normalized feed — and SSM, the national registry, is paid, so
 private-company lookups are honest unsupported. See [MY.md](MY.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
-accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no
-`jurisdiction` parameter.
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, `TR`, `AE`, and
+`AU`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, `FR`, and `AU`
+(`disqualifications` mode only); `CompanyCharges` is UK-only and takes no `jurisdiction`
+parameter.
+
+AU is **two sources with opposite licences**, and the coverage matrix hides how much that
+matters. The **ASX** half (`asx.api.markitdigital.com`) backs listed-company
+`CompanyResolve`, `CompanyFilings` and `CompanyDocument` — and is **not open data**: ASX's
+Terms of Use permit only *"personal, non-commercial use"*, prohibit *"modify, copy,
+reproduce, republish, frame, download onto a computer, upload to a third party, post,
+transmit or distribute any content on the Site"*, prohibit commercial use without written
+consent, and separately prohibit using any *"spider, screen scraper, robot … or other
+similar process"* to access the site. **That conflicts with what this package does**, and
+the conflict is documented rather than resolved: the repository owner decided to build the
+ASX path anyway, every ASX-derived response carries a source-and-terms note, and the
+operator is responsible for having the rights to use ASX data. The **ASIC** half
+(data.gov.au) is **CC BY 3.0 AU** and freely redistributable with attribution; it backs
+`CompanyResolve` for **any** Australian company (4.4M rows, listed and unlisted) and
+`PersonAppointments` `disqualifications`. `CompanyResolve` renders the two halves as
+**separate labelled tables** so no row's licence is ambiguous. See [AU.md](AU.md).
+
+AU `CompanyFilings` is **partial for a hard upstream reason**: the ASX per-company
+announcements feed returns **exactly the 5 most recent announcements and no more** —
+`count=5/20/50/200`, `pageSize`/`page` and every `timescale` variant all return the same
+five rows (verified live on BHP and CBA). So it is a *latest-five view, not a filing
+history*, and every response says so — including empty ones — while a `limit` above 5 is
+explicitly told it **cannot be honoured upstream** rather than silently truncated. Appendix
+3Y director-interest and Form 603/604/605 substantial-holder notices are real and do appear
+in that feed, but only as announcement **PDFs** inside the same cap, which is why AU
+`CompanyInsiders` and `CompanyOwners` are honest unsupported. Australia has no ESEF/XBRL
+regime (SBR is business-to-government), so `CompanyFinancials` points at SEC EDGAR Form 20-F
+for dual-listed issuers; the PPSR (charges) is pay-per-search; ASIC's directorship extract is
+a paid product, so AU `PersonAppointments` answers `disqualifications` only. Notably, the
+**399 MB ASIC bulk CSV is never downloaded** — CKAN `datastore_search` is live on both ASIC
+resources, so a resolve is one or two small JSON queries. See [AU.md](AU.md).
 
 `OwnershipChain` takes no `jurisdiction` parameter: it is GLEIF Level-2 relationship data
 for any entity worldwide. It reports accounting-consolidation parents and children, which
@@ -174,6 +209,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | NL | AFM disclosure registers (keyless CSV/XML exports) | None | [NL.md](NL.md) |
 | ID | IDX / Bursa Efek Indonesia (`/primary` JSON + XBRL instances) | None (host is anti-bot; inject a `fetchFn` if blocked) | [ID.md](ID.md) |
 | MY | Bursa Malaysia company announcements | None (keyless), but Cloudflare-challenged — inject a browser-backed `fetchFn` | [MY.md](MY.md) |
+| AU | ASX company announcements (**restrictive ToU — not open data**) + ASIC registers on data.gov.au (**CC BY 3.0 AU**) | None (both keyless) | [AU.md](AU.md) |
 
 ## Honesty invariants (all jurisdictions)
 
