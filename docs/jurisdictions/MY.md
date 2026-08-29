@@ -196,7 +196,9 @@ package should not add to the pressure that exists for.
 
 Bursa Malaysia site content is **exchange copyright with no open-data licence** — the same
 posture as the already-shipped BSE India, cninfo, TWSE and HKEXnews adapters, and *not*
-the "personal, non-commercial, no-redistribute" class that disqualified ASX and PSE Edge.
+the "personal, non-commercial, no-redistribute" class that disqualified ASX — and that PH
+(PSE EDGE) sits in, which is why PH ships with an explicit terms-of-use conflict recorded in
+[PH.md](PH.md) while MY needs no such warning.
 Under this package's link-first, fetch-on-demand model (return the official source link,
 fetch content for the end user, cite the source) MY sits on the accepted side of that line.
 Every rendered MY response carries the `© Bursa Malaysia` attribution.

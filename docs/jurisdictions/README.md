@@ -9,29 +9,30 @@ an empty or fabricated result.
 Three further **filed-document / register tools** — `CompanyDocument`, `CompanyCharges`, and
 `PersonAppointments` — originated as Companies House features. `CompanyDocument` now also
 serves **US** (SEC EDGAR), **JP** (EDINET), **KR** (OpenDART), **FR** (info-financiere
-OAM), **HK** (HKEXnews), **CN** (cninfo), and **TR** (KAP); `PersonAppointments` also serves **US** (SEC EDGAR reporting
+OAM), **HK** (HKEXnews), **CN** (cninfo), **TR** (KAP), **AE** (DFM), and **PH** (PSE EDGE);
+`PersonAppointments` also serves **US** (SEC EDGAR reporting
 owners), **DE** (BaFin DealingsInfo notifying persons), and **FR** (recherche-entreprises
 *dirigeants*), all via a `jurisdiction` parameter (default `GB`). `CompanyCharges` remains
 UK-only for now. See [GB.md](GB.md), [US.md](US.md), [JP.md](JP.md), [KR.md](KR.md),
-[FR.md](FR.md), [HK.md](HK.md), and [AE.md](AE.md) for the per-jurisdiction document / person
-paths.
+[FR.md](FR.md), [HK.md](HK.md), [AE.md](AE.md), and [PH.md](PH.md) for the per-jurisdiction
+document / person paths.
 
 This directory documents each jurisdiction in depth. For the quickstart, client
 configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID | MY | TR | AE |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ✅ | — | ✅ |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | ✅ | — | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — | ✅ | — | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ | — | — | — |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID | MY | TR | AE | PH |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ✅ | — | ✅ | ✅ |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | ✅ | — | — | ✅ |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — | ✅ | — | — | ✅ |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ | — | — | — | ⚠️ |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | ✅ |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -145,9 +146,22 @@ precedent**, every MY intent detects the interstitial and returns an honest mess
 documents, not a normalized feed — and SSM, the national registry, is paid, so
 private-company lookups are honest unsupported. See [MY.md](MY.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
-accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no
-`jurisdiction` parameter.
+**PH carries an unresolved terms-of-use conflict — read [PH.md](PH.md) before using it.**
+PSE EDGE is technically the most turnkey source in this package: one fully keyless host, no
+bot wall, serving six intents including per-transaction insiders (form 13-1) and a NAMED
+ownership roster (POR-1). Its terms are the problem. PSE restricts the site's contents to
+*"personal, non-commercial use"* and forbids transmitting or reproducing them *"to any third
+person, including others in your company or organization"* without prior written consent —
+wording near-identical to the ASX Terms of Use that **this project treated as disqualifying
+when it declined to build AU**, and which the Southeast Asia triage independently judged
+disqualifying for PSE too. PH was nevertheless built, as an explicit maintainer decision; the
+asymmetry with AU is acknowledged, not resolved. Every PH response carries a source/terms
+note, the PH jurisdiction card opens its caveat with `TERMS-OF-USE CONFLICT`, and **the
+operator deploying this package is responsible for holding the rights to use PSE data**.
+On coverage: `CompanyFinancials` is **partial** — it returns the headline statement PSE's own
+form carries (balance sheet + income statement, in PHP), not the full audited statements,
+which live in the report's PDF attachments. Unlisted Philippine companies are out of scope
+(the SEC's eFAST is login-walled and paid). See [PH.md](PH.md).
 
 `OwnershipChain` takes no `jurisdiction` parameter: it is GLEIF Level-2 relationship data
 for any entity worldwide. It reports accounting-consolidation parents and children, which
@@ -174,6 +188,9 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | NL | AFM disclosure registers (keyless CSV/XML exports) | None | [NL.md](NL.md) |
 | ID | IDX / Bursa Efek Indonesia (`/primary` JSON + XBRL instances) | None (host is anti-bot; inject a `fetchFn` if blocked) | [ID.md](ID.md) |
 | MY | Bursa Malaysia company announcements | None (keyless), but Cloudflare-challenged — inject a browser-backed `fetchFn` | [MY.md](MY.md) |
+| TR | KAP (Kamuyu Aydınlatma Platformu) | None | [TR.md](TR.md) |
+| AE | Dubai Financial Market (`api2.dfm.ae` efsah + `feeds.dfm.ae`) | None | [AE.md](AE.md) |
+| PH | PSE EDGE (`edge.pse.com.ph`) | None (fully keyless, no browser needed) — but ⚠️ **PSE's terms restrict use to personal, non-commercial and forbid redistribution to third parties; see [PH.md](PH.md)** | [PH.md](PH.md) |
 
 ## Honesty invariants (all jurisdictions)
 
