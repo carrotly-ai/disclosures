@@ -1711,9 +1711,19 @@ const AE_FINANCIALS_UNSUPPORTED =
  * Bounded to the top few candidates — one GLEIF call each — and best-effort: a
  * GLEIF failure or an ambiguous name leaves the exchange match untouched rather
  * than failing the resolve. A hit is accepted only when GLEIF places the entity
- * in AE, so a same-named foreign company cannot attach a wrong LEI.
+ * in the UAE, so a same-named foreign company cannot attach a wrong LEI.
  */
 const AE_GLEIF_ENRICH_LIMIT = 3;
+
+/**
+ * GLEIF records UAE entities under ISO 3166-2 emirate subdivisions as often as
+ * the bare country code — Emaar Properties (P.J.S.C.) is `AE-DU` (Dubai), and
+ * Abu Dhabi entities are `AE-AZ` — so an equality test against "AE" would
+ * reject nearly every genuine UAE match.
+ */
+function isUaeJurisdiction(value: string | undefined): boolean {
+  return value === "AE" || (value?.startsWith("AE-") ?? false);
+}
 
 async function enrichAeCandidatesWithGleif(
   candidates: DfmEntity[],
@@ -1725,7 +1735,7 @@ async function enrichAeCandidatesWithGleif(
       try {
         const matches = await searchGleifEntities(candidate.legalName, runtime);
         const match = matches.find(
-          (entity) => entity.lei && entity.jurisdiction === "AE",
+          (entity) => entity.lei && isUaeJurisdiction(entity.jurisdiction),
         );
         if (!match?.lei) return candidate;
         return {

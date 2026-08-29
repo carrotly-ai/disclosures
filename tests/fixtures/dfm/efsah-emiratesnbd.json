@@ -1,0 +1,516 @@
+﻿{"root" :
+[
+{
+"id" : "8342799e-4486-41a6-81a2-90ecc48204ba",
+"publication_date" : "2026-08-02 15:58:22",
+"headline" : "Press release",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emirates NBD To Acquire Retail Banking Business Of",
+"c_date" : "2026-08-02 15:58:13",
+"r_path" : "/2026/Aug/2/8342799e-4486-41a6-81a2-90ecc48204ba/Emirates NBD To Acquire Retail Banking Business Of.pdf",
+"id" : "d609deda-a1be-472f-8c1e-563a081d69a9",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "42c5f492-483b-4770-909b-d725608a4da9",
+"publication_date" : "2026-07-23 07:48:10",
+"headline" : "Press release regarding financial results for the Q2 of 2026",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "4. Press Release   Emirates NBD Announces H1 2026 ",
+"c_date" : "2026-07-23 07:47:57",
+"r_path" : "/2026/Jul/23/42c5f492-483b-4770-909b-d725608a4da9/4. Press Release   Emirates NBD Announces H1 2026 .pdf",
+"id" : "903be9a1-d17a-4d84-ac7a-ff902e0b10f0",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "84be7db5-d011-45db-a4a9-748eefcee75e",
+"publication_date" : "2026-07-23 07:47:49",
+"headline" : "Financial statements for the 2nd QTR of 2026",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q2",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "3. Emirates NBD H1 2026 Results Presentation.Pdf",
+"c_date" : "2026-07-23 07:47:39",
+"r_path" : "/2026/Jul/23/84be7db5-d011-45db-a4a9-748eefcee75e/3. Emirates NBD H1 2026 Results Presentation.Pdf.pdf",
+"id" : "0b9869b4-e0bf-4beb-bb37-0eb27d587cfa",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+},{
+"description" : "1. Emirates NBD H1 2026 Financial Statements  Engl",
+"c_date" : "2026-07-23 07:47:39",
+"r_path" : "/2026/Jul/23/84be7db5-d011-45db-a4a9-748eefcee75e/1. Emirates NBD H1 2026 Financial Statements  Engl.pdf",
+"id" : "e46f57d2-30f3-4bf3-9dc1-eb096ab367e4",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "e41aa33c-2f9c-4ade-9b53-31769eb2da2d",
+"publication_date" : "2026-07-23 07:47:22",
+"headline" : "Results of BOD Meeting",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "3  ENBD BOD 3. 2026  Results.Pdf",
+"c_date" : "2026-07-23 07:47:16",
+"r_path" : "/2026/Jul/23/e41aa33c-2f9c-4ade-9b53-31769eb2da2d/3  ENBD BOD 3. 2026  Results.Pdf.pdf",
+"id" : "c13f4aea-bb11-4b08-b21d-6640e09a2e11",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "26a1e2b7-678a-45b6-a87d-77444c624886",
+"publication_date" : "2026-07-17 15:02:20",
+"headline" : "Earnings Call",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "2  ENBD Earnings Call Meeting  BOD 3.2026.Pdf",
+"c_date" : "2026-07-17 12:44:56",
+"r_path" : "/2026/Jul/17/26a1e2b7-678a-45b6-a87d-77444c624886/2  ENBD Earnings Call Meeting  BOD 3.2026.Pdf.pdf",
+"id" : "bdb2f274-87f9-4967-bf74-c93f2353a93c",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "83f38638-313c-4bbe-aa70-e790c561c1d5",
+"publication_date" : "2026-07-17 09:24:33",
+"headline" : "BOD meeting",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "1  ENBD BOD 03.2026   Announcement  22.07.2026.Pdf",
+"c_date" : "2026-07-17 09:24:27",
+"r_path" : "/2026/Jul/17/83f38638-313c-4bbe-aa70-e790c561c1d5/1  ENBD BOD 03.2026   Announcement  22.07.2026.Pdf.pdf",
+"id" : "8b20b1cb-a8da-4012-ada9-c2bc1e709d4c",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "a67bb6e7-4d6c-43a0-8a31-2be6a54c8385",
+"publication_date" : "2026-07-02 16:49:49",
+"headline" : "Notification from the company",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "ENBD Notification  Market Speculations.Pdf",
+"c_date" : "2026-07-02 16:49:46",
+"r_path" : "/2026/Jul/2/a67bb6e7-4d6c-43a0-8a31-2be6a54c8385/ENBD Notification  Market Speculations.Pdf.pdf",
+"id" : "e899e1bd-2f96-4564-a9bc-600295671c0e",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "2044cc79-ac5d-4372-ad6c-1b19798072e5",
+"publication_date" : "2026-06-18 09:56:01",
+"headline" : "Press release",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emirates NBD And RBL Bank Announce The Successful ",
+"c_date" : "2026-06-18 09:51:35",
+"r_path" : "/2026/Jun/18/2044cc79-ac5d-4372-ad6c-1b19798072e5/Emirates NBD And RBL Bank Announce The Successful .pdf",
+"id" : "33c50682-6c56-49a3-bab5-8f316faf249c",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "5c493c15-f3a4-4fbc-9e55-9c3c24e97215",
+"publication_date" : "2026-06-18 09:55:05",
+"headline" : "Disclosure For The Completion Of Emirates NBD Bank (P.J.S.C.)’s Acquisition Of 60% Stake In RBL Bank Limited",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Disclosure For The Completion Of Emirates NBD Bank",
+"c_date" : "2026-06-18 09:50:33",
+"r_path" : "/2026/Jun/18/5c493c15-f3a4-4fbc-9e55-9c3c24e97215/Disclosure For The Completion Of Emirates NBD Bank.pdf",
+"id" : "71c17480-5d97-4357-91ec-3023a0ac6ebe",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "ee2699ad-c8c4-41d0-9e47-164fe7ff5fe6",
+"publication_date" : "2026-05-15 17:29:24",
+"headline" : "Press release",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Press Release   Emirates NBD Receives All Regulato",
+"c_date" : "2026-05-15 17:28:46",
+"r_path" : "/2026/May/15/ee2699ad-c8c4-41d0-9e47-164fe7ff5fe6/Press Release   Emirates NBD Receives All Regulato.pdf",
+"id" : "faf1e4d6-3558-4fae-b5cc-0642ddd6efb9",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "8aebc179-fdbe-4faa-8e77-a1dbbb79b124",
+"publication_date" : "2026-04-23 07:56:00",
+"headline" : "Press release regarding financial results for the 1st QTR of 2026",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Press release",
+"c_date" : "2026-04-23 09:07:47",
+"r_path" : "/2026/Apr/22/8aebc179-fdbe-4faa-8e77-a1dbbb79b124/Press Release - Emirates NBD Announces Q1 2026 Results - English.pdf",
+"id" : "7c6ed90d-5f22-46e3-ab46-e941700f7ffe",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "0561fe7b-97b6-4652-8c8f-60d913335a60",
+"publication_date" : "2026-04-23 07:55:00",
+"headline" : "Financial statements for the 1st QTR of 2026",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q1",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Financial statements for the 1st QTR of 2026",
+"c_date" : "2026-04-23 08:16:37",
+"r_path" : "/2026/Apr/22/0561fe7b-97b6-4652-8c8f-60d913335a60/Emirates NBD Q1 2026 Financial Statements English.pdf",
+"id" : "6c435556-aafe-4015-9655-e3da68b64e0e",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "c043eeb8-0535-45ed-a05e-b3a120164599",
+"publication_date" : "2026-04-23 07:54:05",
+"headline" : "Results of BOD Meeting",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "ENBD BOD.2.2026  Res",
+"c_date" : "2026-04-22 20:51:44",
+"r_path" : "/2026/Apr/22/c043eeb8-0535-45ed-a05e-b3a120164599/ENBD BOD.2.2026  Res.pdf",
+"id" : "cef8a78d-0c63-406a-becd-51a68bc1a206",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "52440d03-4f83-4000-9f00-e6aea9acec74",
+"publication_date" : "2026-04-17 15:02:23",
+"headline" : "BOD meeting",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "ENBD BOD 2.2026  Ann",
+"c_date" : "2026-04-17 12:29:46",
+"r_path" : "/2026/Apr/17/52440d03-4f83-4000-9f00-e6aea9acec74/ENBD BOD 2.2026  Ann.pdf",
+"id" : "71e6a3bd-3c09-4319-ab68-ecb3ccad9881",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "bcb4748c-de98-4777-8f85-0a088a321092",
+"publication_date" : "2026-04-17 15:02:09",
+"headline" : "Earnings Call",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "EMIRATESNBD - Emirates NBD PJSC",
+"issuer_ar" : "EMIRATESNBD - الامارات دبي الوطني ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "5  ENBD Earnings Cal",
+"c_date" : "2026-04-17 12:33:10",
+"r_path" : "/2026/Apr/17/bcb4748c-de98-4777-8f85-0a088a321092/5  ENBD Earnings Cal.pdf",
+"id" : "3f98ebe1-ff7f-4f55-9875-ce81084016db",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "10de2363-0373-4ac6-827f-b6c63910f23b",
+"publication_date" : "2026-03-04 10:50:19",
+"headline" : "Press release",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "Emirates NBD",
+"issuer_ar" : "الامارات دبي الوطني",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "ENBD Notification On",
+"c_date" : "2026-03-04 10:48:26",
+"r_path" : "/2026/Mar/4/10de2363-0373-4ac6-827f-b6c63910f23b/ENBD Notification On.pdf",
+"id" : "3ecb9768-f760-44a0-9de8-f765c10ba494",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "bd7e4dbd-587e-4724-90ca-12cff8f6efe6",
+"publication_date" : "2026-02-18 07:56:05",
+"headline" : "Resolutions of General Assembly",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "Emirates NBD",
+"issuer_ar" : "الامارات دبي الوطني",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "ENBD GAM Results 17.",
+"c_date" : "2026-02-17 21:08:45",
+"r_path" : "/2026/Feb/17/bd7e4dbd-587e-4724-90ca-12cff8f6efe6/ENBD GAM Results 17..pdf",
+"id" : "6b311da4-1c30-4b24-b734-715e63eb399e",
+"category" : "cap",
+"language" : "en",
+"type" : "general_meetings"
+}]
+},
+{
+"id" : "d745c42b-a21c-4f13-9137-204dec0d9619",
+"publication_date" : "2026-01-27 08:35:00",
+"headline" : "Invitation of General Assembly",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "Emirates NBD",
+"issuer_ar" : "الامارات دبي الوطني",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "ENBD 19 GAM Notice.P",
+"c_date" : "2026-01-27 08:35:08",
+"r_path" : "/2026/Jan/27/d745c42b-a21c-4f13-9137-204dec0d9619/ENBD 19 GAM Notice.P.pdf",
+"id" : "1022bc0d-9ceb-42ff-874a-8187eca8fb91",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+},{
+"description" : "ENBD Proxy   26 .Pdf",
+"c_date" : "2026-01-27 08:35:08",
+"r_path" : "/2026/Jan/27/d745c42b-a21c-4f13-9137-204dec0d9619/ENBD Proxy   26 .Pdf.pdf",
+"id" : "a00d4d98-fc3b-416b-af32-98ba1602a03f",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "42b94908-19a3-4f87-8e05-2c96d482b530",
+"publication_date" : "2026-01-26 19:17:17",
+"headline" : "Integrated report for the year 2025",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "Emirates NBD",
+"issuer_ar" : "الامارات دبي الوطني",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : 2025,
+"integrated_language" : "English",
+"integrated_report_type" : "Annual financial statements,Auditors report,Board of directors report,Governance report,Shariah supervisory committee report",
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "1. Emirates NBD Grou",
+"c_date" : "2026-01-26 19:17:10",
+"r_path" : "/2026/Jan/26/42b94908-19a3-4f87-8e05-2c96d482b530/1. Emirates NBD Grou.pdf",
+"id" : "dec6f194-5600-48b8-a13c-49c7286f0d73",
+"category" : "cap",
+"language" : "en",
+"type" : "integrated_reports"
+}]
+},
+{
+"id" : "4bc82d19-0d79-4f3e-b4fa-49299b485f88",
+"publication_date" : "2026-01-26 19:15:00",
+"headline" : "Press release regarding financial results for 2025",
+"issuer_symbol" : "EMIRATESNBD",
+"issuer" : "Emirates NBD",
+"issuer_ar" : "الامارات دبي الوطني",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "7. Due Zakat On ENBD",
+"c_date" : "2026-01-26 19:14:04",
+"r_path" : "/2026/Jan/26/4bc82d19-0d79-4f3e-b4fa-49299b485f88/7. Due Zakat On ENBD.pdf",
+"id" : "ba79a48a-b2f8-402a-afc6-469d8c8016b0",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+},{
+"description" : "5. Press Release   E",
+"c_date" : "2026-01-26 19:14:04",
+"r_path" : "/2026/Jan/26/4bc82d19-0d79-4f3e-b4fa-49299b485f88/5. Press Release   E.pdf",
+"id" : "f057d50c-47d5-4767-be25-65b374769f95",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+},{
+"description" : "4. Emirates NBD YE 2",
+"c_date" : "2026-01-26 19:14:04",
+"r_path" : "/2026/Jan/26/4bc82d19-0d79-4f3e-b4fa-49299b485f88/4. Emirates NBD YE 2.pdf",
+"id" : "3680284b-04e1-4050-83b0-6d23dbae9f90",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+}
+]
+}

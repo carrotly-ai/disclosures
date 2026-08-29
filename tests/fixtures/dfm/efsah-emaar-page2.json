@@ -1,0 +1,484 @@
+﻿{"root" :
+[
+{
+"id" : "bccea791-00d3-48f2-b868-c7b6a8d1e9e7",
+"publication_date" : "2025-12-16 22:02:37",
+"headline" : "News Clarification",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "251216 Disclosure To",
+"c_date" : "2025-12-16 22:01:41",
+"r_path" : "/2025/Dec/16/bccea791-00d3-48f2-b868-c7b6a8d1e9e7/251216 Disclosure To.pdf",
+"id" : "1d8dd4f3-973f-45fd-8e93-3be853e7b839",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "a66e441e-5cf2-4f33-b798-ebc2fc8294a2",
+"publication_date" : "2025-12-05 10:00:11",
+"headline" : "Press release",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Dubai Square PRL EN ",
+"c_date" : "2025-12-05 09:58:05",
+"r_path" : "/2025/Dec/5/a66e441e-5cf2-4f33-b798-ebc2fc8294a2/Dubai Square PRL EN .pdf",
+"id" : "21c7bd7a-9597-41be-bcf5-ab0010b73df3",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "c19bb8c2-cd6f-442b-b799-55639e2aac34",
+"publication_date" : "2025-11-06 15:24:57",
+"headline" : "Press release regarding financial results for the third quarter of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar PR 9M 2025   E",
+"c_date" : "2025-11-06 15:23:57",
+"r_path" : "/2025/Nov/6/c19bb8c2-cd6f-442b-b799-55639e2aac34/Emaar PR 9M 2025   E.pdf",
+"id" : "0c69b5e8-8a9e-4ccd-abe2-d36f6d073644",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "cb85e993-0b5f-49f5-bea4-bf26479119a8",
+"publication_date" : "2025-11-06 15:23:12",
+"headline" : "Financial statements for the 3rd QTR of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q3",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2025-11-06 15:22:09",
+"r_path" : "/2025/Nov/6/cb85e993-0b5f-49f5-bea4-bf26479119a8/Emaar Properties PJS.pdf",
+"id" : "d7f71fd5-2ea6-4a6b-a327-be6823b45890",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "ac54bcaf-9aba-4c18-8b33-0f6439571a52",
+"publication_date" : "2025-11-03 15:34:08",
+"headline" : "Notice Regarding the Date of Disclosure of the Financial Statements for the Period Ending September 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EP Disclosure To DFM",
+"c_date" : "2025-11-03 15:33:14",
+"r_path" : "/2025/Nov/3/ac54bcaf-9aba-4c18-8b33-0f6439571a52/EP Disclosure To DFM.pdf",
+"id" : "3f75b34d-7f78-400a-9119-d2caaae2dafc",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "234c4037-ff2d-420f-872e-8a0ea77c0e8d",
+"publication_date" : "2025-10-30 16:09:16",
+"headline" : "Analysts’ Earnings Call",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EP Earnings Call 6 N",
+"c_date" : "2025-10-30 16:08:12",
+"r_path" : "/2025/Oct/30/234c4037-ff2d-420f-872e-8a0ea77c0e8d/EP Earnings Call 6 N.pdf",
+"id" : "0ed34027-cefc-4c87-a3e7-6bad5e435fed",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "659c9078-a3b0-4268-b121-fed69cec955d",
+"publication_date" : "2025-10-24 09:27:11",
+"headline" : "News Confirmation",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "News Confirmation 24",
+"c_date" : "2025-10-24 09:26:06",
+"r_path" : "/2025/Oct/24/659c9078-a3b0-4268-b121-fed69cec955d/News Confirmation 24.pdf",
+"id" : "b3b09dd1-c21b-4955-a070-e77e1e8e4a8c",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "453d73a1-65bd-4f2a-a04c-1b7a14a62e3d",
+"publication_date" : "2025-09-18 09:24:37",
+"headline" : "News Confirmation",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Disclosure To DFM   ",
+"c_date" : "2025-09-18 09:23:35",
+"r_path" : "/2025/Sep/18/453d73a1-65bd-4f2a-a04c-1b7a14a62e3d/Disclosure To DFM   .pdf",
+"id" : "4c8498a3-57db-4dff-bf6a-3d72d2f7d0dd",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "f1441a65-15da-4b49-bc64-07ffb394d6b7",
+"publication_date" : "2025-09-12 17:47:00",
+"headline" : "Notification from the company",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Disclosure To DFM Re",
+"c_date" : "2025-09-12 17:46:01",
+"r_path" : "/2025/Sep/12/f1441a65-15da-4b49-bc64-07ffb394d6b7/Disclosure To DFM Re.pdf",
+"id" : "af880005-01ba-47fe-8bac-621a06e9c20f",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "16558318-927d-4c49-83af-61cd7790a804",
+"publication_date" : "2025-08-08 15:12:02",
+"headline" : "Earnings Call",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Earnings Call EP 15 ",
+"c_date" : "2025-08-08 15:11:02",
+"r_path" : "/2025/Aug/8/16558318-927d-4c49-83af-61cd7790a804/Earnings Call EP 15 .pdf",
+"id" : "a62f7b2c-75ac-4bcb-8c51-15067eaf78dd",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "f66ee989-e9ee-4997-bee9-97f6b7dfed09",
+"publication_date" : "2025-08-06 17:25:00",
+"headline" : "Financial statements for the 2nd QTR of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q2",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2025-08-07 09:17:50",
+"r_path" : "/2025/Aug/06/f66ee989-e9ee-4997-bee9-97f6b7dfed09/EMAAR_FS_Q2_E_06_08_2025.pdf",
+"id" : "84971e9e-5743-486a-988f-6dd9a90512f8",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "974e0cd6-bfb1-4208-9560-cb037db8a1e7",
+"publication_date" : "2025-08-06 16:09:07",
+"headline" : "Press release regarding financial results for the first half of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar PR H1 2025 Eng",
+"c_date" : "2025-08-06 16:08:00",
+"r_path" : "/2025/Aug/6/974e0cd6-bfb1-4208-9560-cb037db8a1e7/Emaar PR H1 2025 Eng.pdf",
+"id" : "8404929a-ec10-4c0f-9d82-030d34a252f2",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "90ed73f0-92fe-45fa-9fa8-218f1f50dbd2",
+"publication_date" : "2025-08-01 08:54:51",
+"headline" : "Notice Regarding the Date of Disclosure of the Financial Statements for the Period Ending June 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Disclosure To DFM Re",
+"c_date" : "2025-08-01 08:54:05",
+"r_path" : "/2025/Aug/1/90ed73f0-92fe-45fa-9fa8-218f1f50dbd2/Disclosure To DFM Re.pdf",
+"id" : "0c91e000-1ecf-4bb3-9775-89248fc07c98",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "605fb389-4d01-4120-a613-9b297dbe1bab",
+"publication_date" : "2025-07-22 09:24:51",
+"headline" : "Resignation and appointment of a Board member",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Resignation And Appo",
+"c_date" : "2025-07-22 09:23:49",
+"r_path" : "/2025/Jul/22/605fb389-4d01-4120-a613-9b297dbe1bab/Resignation And Appo.pdf",
+"id" : "956da3b6-c538-41a5-aec2-1895f878df58",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "227ea0dd-ea1c-4f0d-b2fe-a372d413a519",
+"publication_date" : "2025-06-11 09:17:58",
+"headline" : "Press release",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Rating Agency Upgrad",
+"c_date" : "2025-06-11 09:16:52",
+"r_path" : "/2025/Jun/11/227ea0dd-ea1c-4f0d-b2fe-a372d413a519/Rating Agency Upgrad.pdf",
+"id" : "c77c45ed-89ec-47c7-8857-7bcfaf89ab80",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "0f8b4934-3573-4e4f-8dde-849148b48c11",
+"publication_date" : "2025-05-14 16:49:33",
+"headline" : "Financial statements for the 1st QTR of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q1",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2025-05-14 16:48:29",
+"r_path" : "/2025/May/14/0f8b4934-3573-4e4f-8dde-849148b48c11/Emaar Properties PJS.pdf",
+"id" : "ac7ef0e7-0c85-4448-adcf-7ab8c2a1c289",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "4f36f232-b361-4905-b445-40d449443c02",
+"publication_date" : "2025-05-12 15:48:46",
+"headline" : "Earnings Call",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EP Earnings Call Q1 ",
+"c_date" : "2025-05-12 15:47:53",
+"r_path" : "/2025/May/12/4f36f232-b361-4905-b445-40d449443c02/EP Earnings Call Q1 .pdf",
+"id" : "769aebb5-e9bd-4b85-a078-2f11510d856a",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "19bb9657-34d7-4edb-8f0e-64de1dfcc0ee",
+"publication_date" : "2025-05-08 15:01:40",
+"headline" : "Press release regarding financial results for the first quarter of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EP Q1 2025 Press Rel",
+"c_date" : "2025-05-08 15:00:36",
+"r_path" : "/2025/May/8/19bb9657-34d7-4edb-8f0e-64de1dfcc0ee/EP Q1 2025 Press Rel.pdf",
+"id" : "142a7887-526b-4d9b-9ad4-b9d5a571aadd",
+"category" : "cap",
+"language" : "en",
+"type" : "news"
+}]
+},
+{
+"id" : "91d29077-64d8-4175-881f-745f78efead3",
+"publication_date" : "2025-03-25 22:39:00",
+"headline" : "Resolutions of General Assembly",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2025-03-26 10:30:45",
+"r_path" : "/2025/Mar/26/91d29077-64d8-4175-881f-745f78efead3/Emaar Properties PJS.pdf",
+"id" : "9db1a890-e094-4a8b-b3f8-1f4fc2934923",
+"category" : "cap",
+"language" : "en",
+"type" : "general_meetings"
+}]
+},
+{
+"id" : "fc88f257-0af1-43d3-806d-4ee8dfd1861d",
+"publication_date" : "2025-03-14 15:30:02",
+"headline" : "Integrated report for the year 2024",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : null,
+"integrated_period" : 2024,
+"integrated_language" : "English,Arabic",
+"integrated_report_type" : "Annual financial statements,Auditors report,Board of directors report,Governance report,Sustainability report",
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties IR ",
+"c_date" : "2025-03-14 15:29:05",
+"r_path" : "/2025/Mar/14/fc88f257-0af1-43d3-806d-4ee8dfd1861d/Emaar Properties IR .pdf",
+"id" : "75bc4cd0-f06a-432b-9cff-ec8328f9c4ba",
+"category" : "cap",
+"language" : "en",
+"type" : "integrated_reports"
+}]
+}
+]
+}

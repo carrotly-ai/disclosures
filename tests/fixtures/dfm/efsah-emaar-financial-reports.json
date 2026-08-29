@@ -1,0 +1,508 @@
+﻿{"root" :
+[
+{
+"id" : "11340cb3-ebb9-4519-ba35-6472803fd7b0",
+"publication_date" : "2026-08-07 08:51:16",
+"headline" : "Financial statements for the 2nd QTR of 2026",
+"issuer_symbol" : "EMAAR",
+"issuer" : "EMAAR - Emaar Properties PJSC",
+"issuer_ar" : "EMAAR - إعمار العقارية ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q2",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJSC And Its Subsidiaries 30 June",
+"c_date" : "2026-08-07 07:53:14",
+"r_path" : "/2026/Aug/7/11340cb3-ebb9-4519-ba35-6472803fd7b0/Emaar Properties PJSC And Its Subsidiaries 30 June.pdf",
+"id" : "2472d63b-47cd-477a-a9fd-46c6b4a0a964",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "ca83f2b5-7d91-4674-86d5-810f5ee11c99",
+"publication_date" : "2026-05-11 08:07:27",
+"headline" : "Financial statements for the 1st QTR of 2026",
+"issuer_symbol" : "EMAAR",
+"issuer" : "EMAAR - Emaar Properties PJSC",
+"issuer_ar" : "EMAAR - إعمار العقارية ش.م.ع",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q1",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "FS   Emaar Properties PJSC And Its Subsidiaries 31",
+"c_date" : "2026-05-11 08:07:17",
+"r_path" : "/2026/May/11/ca83f2b5-7d91-4674-86d5-810f5ee11c99/FS   Emaar Properties PJSC And Its Subsidiaries 31.pdf",
+"id" : "7e2834d2-fe5d-404d-b190-47c4c067c604",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "9e0de168-d6ee-4ebe-a343-58b56a84ab2f",
+"publication_date" : "2026-02-12 16:48:46",
+"headline" : "Financial statements for the year of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Yearly",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2026-02-12 16:47:54",
+"r_path" : "/2026/Feb/12/9e0de168-d6ee-4ebe-a343-58b56a84ab2f/Emaar Properties PJS.pdf",
+"id" : "4c6aa060-5a70-4f8b-ae4c-a23669544609",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "cb85e993-0b5f-49f5-bea4-bf26479119a8",
+"publication_date" : "2025-11-06 15:23:12",
+"headline" : "Financial statements for the 3rd QTR of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q3",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2025-11-06 15:22:09",
+"r_path" : "/2025/Nov/6/cb85e993-0b5f-49f5-bea4-bf26479119a8/Emaar Properties PJS.pdf",
+"id" : "d7f71fd5-2ea6-4a6b-a327-be6823b45890",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "f66ee989-e9ee-4997-bee9-97f6b7dfed09",
+"publication_date" : "2025-08-06 17:25:00",
+"headline" : "Financial statements for the 2nd QTR of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q2",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2025-08-07 09:17:50",
+"r_path" : "/2025/Aug/06/f66ee989-e9ee-4997-bee9-97f6b7dfed09/EMAAR_FS_Q2_E_06_08_2025.pdf",
+"id" : "84971e9e-5743-486a-988f-6dd9a90512f8",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "0f8b4934-3573-4e4f-8dde-849148b48c11",
+"publication_date" : "2025-05-14 16:49:33",
+"headline" : "Financial statements for the 1st QTR of 2025",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q1",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2025-05-14 16:48:29",
+"r_path" : "/2025/May/14/0f8b4934-3573-4e4f-8dde-849148b48c11/Emaar Properties PJS.pdf",
+"id" : "ac7ef0e7-0c85-4448-adcf-7ab8c2a1c289",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "e1041b92-34b1-4122-8f5c-c929398e2bcd",
+"publication_date" : "2025-02-14 18:12:23",
+"headline" : "Financial statements for the year of 2024",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Yearly",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2025-02-14 18:11:27",
+"r_path" : "/2025/Feb/14/e1041b92-34b1-4122-8f5c-c929398e2bcd/Emaar Properties PJS.pdf",
+"id" : "3f6f80a7-8c7a-4919-8f16-b66765e3292f",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "1b6605ea-32f6-46fb-ae59-6a6aa7b116d8",
+"publication_date" : "2024-11-14 16:05:38",
+"headline" : "Financial statements for the 3rd QTR of 2024",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q3",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2024-11-14 16:04:39",
+"r_path" : "/2024/Nov/14/1b6605ea-32f6-46fb-ae59-6a6aa7b116d8/Emaar Properties PJS.pdf",
+"id" : "4f5a3730-3d04-4e16-9dc9-644635490217",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "9ff8747c-3e36-4eed-af7c-6f68bb4e1ed8",
+"publication_date" : "2024-08-12 17:23:00",
+"headline" : "Financial statements for the 2nd QTR of 2024",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q2",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJS",
+"c_date" : "2024-08-12 17:22:56",
+"r_path" : "/2024/Aug/12/9ff8747c-3e36-4eed-af7c-6f68bb4e1ed8/Emaar Properties PJS.pdf",
+"id" : "1b7df233-9cb9-4be9-a02e-27b3ccdc5597",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "e2bbb39f-9349-4704-ab66-6fc407a2724b",
+"publication_date" : "2024-05-15 15:57:04",
+"headline" : "Financial statements for the first QTR of 2024",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q1",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Financial statements for the first QTR of 2024",
+"c_date" : "2024-05-15 15:55:26",
+"r_path" : "/2024/May/15/e2bbb39f-9349-4704-ab66-6fc407a2724b/Emaar Properties PJSC_31 March 2024_Consolidated English FS.pdf",
+"id" : "b4a66396-e8e7-4e00-bc0d-33f97276dbe1",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "93e7ffb5-5df5-4b5c-92be-aad9fdd52529",
+"publication_date" : "2024-03-15 01:10:00",
+"headline" : "Financial statements for the year of 2023",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Yearly",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Financial statements for the year of 2023",
+"c_date" : "2024-03-15 01:05:50",
+"r_path" : "/2024/Mar/15/93e7ffb5-5df5-4b5c-92be-aad9fdd52529/Emaar Properties PJSC - FS 2023 - English.pdf",
+"id" : "3e9ced92-a2bc-4332-8d9b-780bbcf1376c",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "2de1015f-8310-4b93-8e8c-fdec5168c65a",
+"publication_date" : "2024-02-14 15:52:04",
+"headline" : "Preliminary financial results for the year of 2023",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Preliminary financial results",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Preliminary financial results for the year of 2023",
+"c_date" : "2024-02-14 15:48:25",
+"r_path" : "/2024/Feb/14/2de1015f-8310-4b93-8e8c-fdec5168c65a/EMAAR_PFR__E_14_02_24.pdf",
+"id" : "5d1edefe-4017-4d56-90a6-8314ab186311",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "f9e11872-0273-4525-b73f-930606b709be",
+"publication_date" : "2023-11-14 20:15:00",
+"headline" : "Financial statements for the third QTR of 2023",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q3",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Financial statements for the third QTR of 2023",
+"c_date" : "2023-11-14 20:10:28",
+"r_path" : "/2023/Nov/14/f9e11872-0273-4525-b73f-930606b709be/Emaar Properties  FS Q3 2023 English.pdf",
+"id" : "cb79af4f-0efb-4c25-86b6-31e9d1b77ce6",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "576ffee4-f52e-4bb4-b755-6f4c7634b92c",
+"publication_date" : "2023-08-14 18:51:10",
+"headline" : "Financial statements for the 2nd QTR of 2023",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q2",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties - FS - Q2 2023 English.pdf",
+"c_date" : "2023-08-14 18:39:27",
+"r_path" : "/2023/Aug/14/576ffee4-f52e-4bb4-b755-6f4c7634b92c/Emaar Properties - FS - Q2 2023 English.pdf",
+"id" : "cf4f0886-7a1c-4c95-ba47-e63ab8b9e209",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "d13ad731-26e3-4849-a0aa-a93075a43473",
+"publication_date" : "2023-05-15 08:38:00",
+"headline" : "Financial statements for the 1st QTR of 2023",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q1",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EMAAR_FS_E_15_05_2023.pdf",
+"c_date" : "2023-05-15 08:29:47",
+"r_path" : "/2023/May/12/d13ad731-26e3-4849-a0aa-a93075a43473/EMAAR_FS_E_15_05_2023.pdf",
+"id" : "09bbbc80-740d-4a70-85b4-2ca6b53cbdb2",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "6756744c-e514-4131-be98-a9caf119517b",
+"publication_date" : "2023-03-17 07:51:07",
+"headline" : "Financial statements for the year of 2022",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Yearly",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJSC - FS YE DEC 2022 - English.pdf",
+"c_date" : "2023-03-16 18:37:48",
+"r_path" : "/2023/Mar/16/6756744c-e514-4131-be98-a9caf119517b/Emaar Properties PJSC - FS YE DEC 2022 - English.pdf",
+"id" : "1f5f9df2-fdcb-4c54-8cb1-5f7dfee78e39",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "31c2c4b2-fbb8-4eaf-a224-5dc98d102bb8",
+"publication_date" : "2023-02-14 16:30:05",
+"headline" : "Preliminary financial results for the year of 2022",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Preliminary financial results",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EMAAR_FS_PRE_ANN_2022_E_14_02_2023.pdf",
+"c_date" : "2023-02-14 16:21:15",
+"r_path" : "/2023/Feb/14/31c2c4b2-fbb8-4eaf-a224-5dc98d102bb8/EMAAR_FS_PRE_ANN_2022_E_14_02_2023.pdf",
+"id" : "788deceb-faf5-4b2d-8d9f-29c0cd3fdaad",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+},{
+"description" : "EMAAR-COVER-LETTER- PFR__E_14_02_23.pdf",
+"c_date" : "2023-02-14 16:06:21",
+"r_path" : "/2023/Feb/14/31c2c4b2-fbb8-4eaf-a224-5dc98d102bb8/EMAAR-COVER-LETTER- PFR__E_14_02_23.pdf",
+"id" : "0094e2ac-b88b-4e8a-b2f5-b8180a71f3e3",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "00e1591e-ae69-4d9b-9575-b6c2ffd1e33d",
+"publication_date" : "2022-11-14 19:00:08",
+"headline" : "Financial statements for the 3rd QTR of 2022",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q3",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "Emaar Properties PJSC FS 30-Sep-2022 - English.pdf",
+"c_date" : "2022-11-14 18:43:59",
+"r_path" : "/2022/Nov/14/00e1591e-ae69-4d9b-9575-b6c2ffd1e33d/Emaar Properties PJSC FS 30-Sep-2022 - English.pdf",
+"id" : "cd259588-6007-4fa1-96df-b65c0383e5eb",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+},{
+"description" : "EMAAR-EP_COVER LETTER_FS__Q3.pdf",
+"c_date" : "2022-11-14 18:44:07",
+"r_path" : "/2022/Nov/14/00e1591e-ae69-4d9b-9575-b6c2ffd1e33d/EMAAR-EP_COVER LETTER_FS__Q3.pdf",
+"id" : "312d6b55-f28e-433d-b51f-ec6f2a92e9da",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "2fefe481-8e89-47a6-b618-26613e963ced",
+"publication_date" : "2022-08-12 16:51:05",
+"headline" : "Financial statements for the 2nd QTR of 2022",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q2",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EMAAR_FS_E_12_08_2022.pdf",
+"c_date" : "2022-08-12 16:34:17",
+"r_path" : "/2022/Aug/12/2fefe481-8e89-47a6-b618-26613e963ced/EMAAR_FS_E_12_08_2022.pdf",
+"id" : "e05e617e-629d-47f6-97cc-0cdcedeaa0c2",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+},{
+"description" : "EMAAR_FS_CL_12_08_2022.pdf",
+"c_date" : "2022-08-12 16:34:22",
+"r_path" : "/2022/Aug/12/2fefe481-8e89-47a6-b618-26613e963ced/EMAAR_FS_CL_12_08_2022.pdf",
+"id" : "d6eb1c9b-2891-4272-b3a7-f3f1eab90b70",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+},
+{
+"id" : "e7915f8f-cdb6-41e4-9289-6114e24893f2",
+"publication_date" : "2022-05-13 16:14:00",
+"headline" : "Financial statements for the 1st QTR of 2022",
+"issuer_symbol" : "EMAAR",
+"issuer" : "Emaar Properties ",
+"issuer_ar" : " إعمار العقارية",
+"announcement_type" : "Disclosure",
+"report_interval" : "Q1",
+"integrated_period" : null,
+"integrated_language" : null,
+"integrated_report_type" : null,
+"dividends_payment_date" : null,
+"resources" : 
+[{
+"description" : "EMAAR_FS_E_13_05_2022.pdf",
+"c_date" : "2022-05-13 16:10:11",
+"r_path" : "/2022/May/13/e7915f8f-cdb6-41e4-9289-6114e24893f2/EMAAR_FS_E_13_05_2022.pdf",
+"id" : "f5e264c5-6f0f-4194-b345-255ef6ab1167",
+"category" : "cap",
+"language" : "en",
+"type" : "financial_reports"
+}]
+}
+]
+}
