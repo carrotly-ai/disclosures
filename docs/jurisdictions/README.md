@@ -9,27 +9,28 @@ an empty or fabricated result.
 Three further **filed-document / register tools** — `CompanyDocument`, `CompanyCharges`, and
 `PersonAppointments` — originated as Companies House features. `CompanyDocument` now also
 serves **US** (SEC EDGAR), **JP** (EDINET), **KR** (OpenDART), **FR** (info-financiere
-OAM), **HK** (HKEXnews), and **CN** (cninfo); `PersonAppointments` also serves **US** (SEC EDGAR reporting
+OAM), **HK** (HKEXnews), **CN** (cninfo), and **AE** (DFM Dubai); `PersonAppointments` also serves **US** (SEC EDGAR reporting
 owners), **DE** (BaFin DealingsInfo notifying persons), and **FR** (recherche-entreprises
 *dirigeants*), all via a `jurisdiction` parameter (default `GB`). `CompanyCharges` remains
 UK-only for now. See [GB.md](GB.md), [US.md](US.md), [JP.md](JP.md), [KR.md](KR.md),
-[FR.md](FR.md), and [HK.md](HK.md) for the per-jurisdiction document / person paths.
+[FR.md](FR.md), [HK.md](HK.md), and [AE.md](AE.md) for the per-jurisdiction document / person
+paths.
 
 This directory documents each jurisdiction in depth. For the quickstart, client
 configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID | AE |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | ✅ |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -110,7 +111,27 @@ depository channel, not a clean IDX feed). Verified live through the built artif
 BBCA FY2025, consolidated, in IDR — including BBCA's banking revenue variant. See
 [ID.md](ID.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, and `CN`;
+**AE is Dubai only, and every AE response says so.** The UAE has two exchanges; only
+**DFM** (Dubai Financial Market, plus Nasdaq Dubai) is reachable keyless from a server.
+**ADX** (Abu Dhabi) answers `403` from an Imperva/Cloudflare edge, the **DIFC** public
+register answers a persistent `429` Cloudflare bot-wall, and the **ADGM** registration
+authority answers `403`. That gap is material rather than cosmetic, because ADX carries the
+UAE's largest issuers (ADNOC group, IHC, Aldar, Alpha Dhabi, e&) — so an `AE` caller may be
+asking for exactly the half this library cannot see. Consequently every AE response carries
+the Dubai-only note with those status codes and states that an absence is a **coverage gap,
+not evidence the issuer has nothing filed**; and `CompanyResolve` detects the specific
+failure this creates — a result that matched only on shared generic words ("Properties",
+"Holding", "PJSC") is headed with an explicit **"No confident match … do not read these rows
+as the issuer you searched for"** warning naming ADX, instead of quietly ranking Emaar first
+for "Aldar Properties". Within DFM the feed is clean and keyless: `CompanyFilings` returns
+per-issuer efsah (`إفصاح`) disclosures with a direct PDF per attachment, and
+`CompanyDocument` fetches it by its `r_path`. `CompanyOwners` / `CompanyInsiders` /
+`CompanyFinancials` are honest unsupported — DFM has one structured `announcement_type`
+(`Disclosure`) and results, board changes and ownership all arrive as free-text PDFs, with no
+XBRL and no SCA threshold register. Verified live: Emaar, Emirates NBD, Salik, and both an
+Arabic filing's text layer and a 2011 archive ZIP. See [AE.md](AE.md).
+
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, and `AE`;
 `PersonAppointments` accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is
 UK-only and takes no `jurisdiction` parameter.
 
@@ -149,6 +170,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | TH | DBD juristic-person register (openapi.dbd.go.th) | None for the by-id lookup; `DBD_API_KEY` for name search | [TH.md](TH.md) |
 | NL | AFM disclosure registers (keyless CSV/XML exports) | None | [NL.md](NL.md) |
 | ID | IDX / Bursa Efek Indonesia (`/primary` JSON + XBRL instances) | None (host is anti-bot; inject a `fetchFn` if blocked) | [ID.md](ID.md) |
+| AE | Dubai Financial Market (`api2.dfm.ae` efsah JSON + `feeds.dfm.ae` PDFs) — **Dubai only** | None | [AE.md](AE.md) |
 
 ## Honesty invariants (all jurisdictions)
 
