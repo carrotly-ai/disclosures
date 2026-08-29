@@ -201,7 +201,7 @@ gets presented as a match. (Caught by a test, fixed.)
 |---|---|---|
 | `CompanyResolve` | **Two tables.** ASX-listed: code, name, industry, listing date, market cap, plus **ISIN** for the top match (from `key-statistics`) and a **GLEIF LEI** where a confident match exists. ASIC register: ACN, name, status, type/class, registration date, ABN, and the register's current-name cross-reference. | ASX restricted / ASIC CC-BY, labelled per table |
 | `CompanyFilings` | The **5 most recent** ASX announcements only — released date, headline, announcement type, price-sensitive flag, size, and the `documentKey`. `forms`, `start_date`, `end_date` filter *within* those five. | ASX restricted |
-| `CompanyDocument` | An announcement PDF by its `documentKey`: `metadata`, `xhtml` (text-layer extraction, paged, fenced as untrusted), `pdf` (download to disk, 25 MB cap). | ASX restricted |
+| `CompanyDocument` | An announcement PDF by its `documentKey`: `metadata`, `xhtml` (text-layer extraction, paged, fenced as untrusted — the PDFs are encrypted with an empty user password and are decrypted to read, see below), `pdf` (download to disk, 25 MB cap). | ASX restricted |
 | `PersonAppointments` (`disqualifications`) | ASIC's Banned and Disqualified Persons register: name, ban type, start/end date, locality, ASIC document number, comments. | **ASIC CC-BY** |
 | `CompanyInsiders` | Unsupported — see below. | — |
 | `CompanyOwners` | Unsupported — see below. | — |
@@ -244,6 +244,28 @@ with an **arbitrary** token (`?access_token=deadbeef`), and with **no token at
 all**. The adapter sends the front end's token anyway so requests look exactly
 like the site's own — but no part of the route depends on it, and it is not a
 credential this package is circumventing.
+
+### Every ASX announcement PDF is encrypted (empty user password)
+
+Verified on the live BHP dividend notice, a BHP Appendix 3Y, a CBA Form 603 and a
+CBA press release: **all ASX announcement PDFs carry AES-256 standard security**
+(`/R 5 /V 5 /P -540`) with an **empty user password**. That is owner-password
+protection — any reader opens the file without prompting, and the "protection"
+only restricts editing and printing.
+
+This mattered, and it was caught by live verification rather than by the offline
+tests. The shipped extractor was inflating ciphertext, recovering nothing, and
+reporting *"no extractable text layer (likely scanned/image PDF)"* — a
+**confidently wrong claim** about documents that are full of text (`pdftotext`
+reads them fine). Reporting a locked document as a scan is exactly the failure
+mode this library exists not to have.
+
+`src/core/pdfText.ts` now derives the file key when a document declares standard
+security and the empty user password validates, decrypts the object streams, and
+records in its notes that it did so. A document whose empty password does **not**
+validate is reported as **password-protected** — a distinct, honest outcome, no
+longer conflated with "scanned". This is a general extractor improvement, not an
+AU special case; unencrypted PDFs are unaffected.
 
 ### `HEAD` is not supported on the document route
 
@@ -350,7 +372,10 @@ rejected without a request.
   `PersonAppointments` `disqualifications`). Two corrections to the merged
   finding: the ASIC bulk 399 MB CSV is **not** needed (CKAN `datastore_search` is
   live on both resources, so per-company queries work), and the ASX `access_token`
-  gates nothing. One addition to the recorded ToU analysis: the **anti-scraping
+  gates nothing. Live verification also found that every ASX announcement PDF is
+  AES-256 encrypted with an empty user password, which the shipped extractor was
+  misreporting as "no text layer" — fixed in `src/core/pdfText.ts` (a general
+  improvement, not AU-specific). One addition to the recorded ToU analysis: the **anti-scraping
   clause**, which the finding did not quote. Built with the ASX terms conflict
   documented rather than resolved, per an explicit decision by the repository
   owner.
