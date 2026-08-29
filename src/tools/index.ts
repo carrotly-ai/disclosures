@@ -2339,7 +2339,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ), insidersStructured(dealings, "DE"));
         }
         if (jurisdiction === "NL") {
-          const insiders = await getAfmInsiders(company, options);
+          const { issuerName, rows: insiders } = await getAfmInsiders(company, options);
           if (!insiders.length) {
             return textResult(joinSections(
               `No AFM insider notifications found for "${company}".`,
@@ -2348,7 +2348,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ));
           }
           return textResult(joinSections(
-            `# Insider notifications (AFM): ${company}`,
+            `# Insider notifications (AFM): ${issuerName}`,
+            issuerName.toLowerCase() !== company.trim().toLowerCase()
+              ? `_Matched "${company}" to the AFM register issuer **${issuerName}**._`
+              : "",
             markdownTable(
               ["Person", "Function / role", "Notification", "Position detail", "Date"],
               insiders.map((insider) => [
@@ -2731,7 +2734,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ), ownersStructured(owners, "DE"));
         }
         if (jurisdiction === "NL") {
-          const owners = await getAfmOwners(company, options);
+          const { issuerName, rows: owners } = await getAfmOwners(company, options);
           if (!owners.length) {
             return textResult(joinSections(
               `No AFM substantial-holdings notifications (Wft ch. 5.3) found for ` +
@@ -2742,7 +2745,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ));
           }
           return textResult(joinSections(
-            `# Substantial holdings (Wft ch. 5.3, AFM): ${company}`,
+            `# Substantial holdings (Wft ch. 5.3, AFM): ${issuerName}`,
+            issuerName.toLowerCase() !== company.trim().toLowerCase()
+              ? `_Matched "${company}" to the AFM register issuer **${issuerName}**._`
+              : "",
             markdownTable(
               ["Holder", "Capital %", "Voting %", "Notified", "Notification"],
               owners.map((owner) => [

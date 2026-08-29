@@ -721,7 +721,16 @@ interface IssuerMatch {
   rank: number;
 }
 
+/** Collapse whitespace/case only — no suffix folding. */
+function literalName(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 function scoreIssuer(name: string, query: string): number | undefined {
+  // A verbatim legal-name query must win outright. Normalisation folds
+  // "Holding" away, so without this "Heineken Holding N.V." would tie with
+  // "Heineken N.V." and lose the length tiebreak to the wrong issuer.
+  if (literalName(name) === literalName(query)) return -1;
   const candidate = normalizeIssuerName(name);
   const target = normalizeIssuerName(query);
   if (!candidate || !target) return undefined;
@@ -915,19 +924,31 @@ function holdingToOwner(holding: AfmHoldingDigest): OwnerRecord {
 }
 
 /**
+ * A register lookup plus the issuer name it actually matched. The query is
+ * name-matched against the register, so the caller needs the resolved name to
+ * render honestly: "Heineken" legitimately resolves to "Heineken N.V." while
+ * "Heineken Holding N.V." is a different issuer in the same registers.
+ */
+export interface AfmIssuerResult<T> {
+  /** The register's own spelling of the matched issuer. */
+  issuerName: string;
+  rows: T[];
+}
+
+/**
  * Return the AFM substantial-holdings notifications for a Dutch issuer, newest
  * first. Each row is the latest notification by one holder.
  */
 export async function getAfmOwners(
   company: string,
   options: AdapterOptions = {},
-): Promise<OwnerRecord[]> {
+): Promise<AfmIssuerResult<OwnerRecord>> {
   const query = company.trim();
-  if (!query) return [];
+  if (!query) return { issuerName: "", rows: [] };
   const holdings = await loadAfmSubstantialHoldings(options);
   const issuer = bestIssuer(holdings.map((row) => row.i), query);
-  if (!issuer) return [];
-  return holdings
+  if (!issuer) return { issuerName: "", rows: [] };
+  const rows = holdings
     .filter((row) => row.i === issuer)
     .map(holdingToOwner)
     .sort(
@@ -936,6 +957,7 @@ export async function getAfmOwners(
         (right.pct ?? 0) - (left.pct ?? 0),
     )
     .slice(0, AFM_MAX_RESULTS);
+  return { issuerName: issuer, rows };
 }
 
 // --- CompanyInsiders -------------------------------------------------------
@@ -996,29 +1018,35 @@ function directorHoldingToInsider(row: AfmDirectorHoldingDigest): Insider {
 export async function getAfmInsiders(
   company: string,
   options: AdapterOptions = {},
-): Promise<Insider[]> {
+): Promise<AfmIssuerResult<Insider>> {
   const query = company.trim();
-  if (!query) return [];
+  if (!query) return { issuerName: "", rows: [] };
   const [managers, directors] = await Promise.all([
     loadAfmManagersTransactions(options),
     loadAfmDirectorHoldings(options),
   ]);
 
-  const managerIssuer = bestIssuer(managers.map((row) => row.i), query);
-  const directorIssuer = bestIssuer(directors.map((row) => row.i), query);
+  // Resolve the issuer ONCE against the union of both registers' names, then
+  // filter both by that single name. Matching each register independently
+  // would merge two different legal entities under one heading whenever a
+  // group has several listed vehicles — e.g. "Heineken" matches
+  // "Heineken Holding N.V." in the MAR register but "Heineken N.V." in the
+  // directors register, which are separate issuers.
+  const issuer = bestIssuer(
+    [...managers.map((row) => row.i), ...directors.map((row) => row.i)],
+    query,
+  );
+  if (!issuer) return { issuerName: "", rows: [] };
 
   const insiders: Insider[] = [
-    ...(managerIssuer
-      ? managers.filter((row) => row.i === managerIssuer).map(managerTransactionToInsider)
-      : []),
-    ...(directorIssuer
-      ? directors.filter((row) => row.i === directorIssuer).map(directorHoldingToInsider)
-      : []),
+    ...managers.filter((row) => row.i === issuer).map(managerTransactionToInsider),
+    ...directors.filter((row) => row.i === issuer).map(directorHoldingToInsider),
   ];
 
-  return insiders
+  const rows = insiders
     .sort((left, right) => right.filedDate.localeCompare(left.filedDate))
     .slice(0, AFM_MAX_RESULTS);
+  return { issuerName: issuer, rows };
 }
 
 export function createAfmAdapter(options: AdapterOptions = {}) {
