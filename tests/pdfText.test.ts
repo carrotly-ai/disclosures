@@ -3,6 +3,7 @@ import { extractPdfText } from "../src/core/pdfText.js";
 import {
   buildImagePdf,
   buildObjStmPdf,
+  buildRawByteGlyphPdf,
   buildShortfallObjStmPdf,
   buildSimplePdf,
   buildToUnicodePdf,
@@ -103,6 +104,18 @@ describe("extractPdfText", () => {
     expect(result.pages).toBe(1);
     expect(result.pagesWithText).toBe(1);
     expect(result.notes.join(" ")).toContain("reached 1 of 40 declared pages");
+  });
+
+  test("round-trips Turkish glyph ids carried as raw bytes in 0x80-0x9F", () => {
+    // Regression: `new TextDecoder("latin1")` is windows-1252 per the WHATWG
+    // Encoding Standard, which remaps 0x80-0x9F (0x95 -> U+2022 BULLET). A
+    // decoder using it breaks the byte==charCode invariant the extractor relies
+    // on, and a Turkish "Ö" (glyph 0x0095 in KAP's PDFs) silently became "e".
+    const turkish = "PORTFÖY Özet İĞŞÇÜ ığşçöü";
+    const pdf = buildRawByteGlyphPdf(turkish);
+    const result = extractPdfText(pdf);
+    expect(result.text).toBe(turkish);
+    expect(result.notes).toHaveLength(0);
   });
 
   test("does not throw on non-PDF input", () => {
