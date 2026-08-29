@@ -270,6 +270,8 @@ import {
   kapCompanyDisclosuresUrl,
   kapDisclosureUrl,
   searchKapCompanies,
+  stripTurkishLegalForm,
+  turkishNameKey,
 } from "../adapters/kapTurkey.js";
 import type { KapEntity } from "../adapters/kapTurkey.js";
 import {
@@ -1527,6 +1529,16 @@ async function enrichNlCandidatesWithGleif(
  * at all, so every TR match starts without one; GLEIF (keyless, CC0, already a
  * dependency of this server) fills the gap by legal name.
  *
+ * The two registers write Turkish legal forms differently — KAP abbreviates
+ * ("ARÇELİK A.Ş.", "TÜRK HAVA YOLLARI A.O.") where GLEIF expands ("ARÇELİK
+ * ANONİM ŞİRKETİ", "Türk Hava Yolları Anonim Ortaklığı") — and GLEIF's
+ * legalName filter is a prefix match, so querying KAP's name verbatim returns
+ * nothing at all. The query therefore drops the legal form, and the result is
+ * accepted only when the two names match with their legal forms removed. That
+ * equality check is what stops a prefix query from attaching a subsidiary's or
+ * a pension foundation's LEI ("TÜRK HAVA YOLLARI … PERSONELİ SOSYAL YARDIM
+ * VAKFI" also prefix-matches) to the issuer.
+ *
  * Bounded to the top few candidates — one GLEIF call each — and best-effort: a
  * GLEIF failure or an ambiguous name leaves the directory match untouched
  * rather than failing the resolve. A hit is only accepted when it is a Turkish
@@ -1541,10 +1553,16 @@ async function enrichTrCandidatesWithGleif(
   return Promise.all(
     candidates.map(async (candidate, index) => {
       if (candidate.lei || index >= TR_GLEIF_ENRICH_LIMIT) return candidate;
+      const query = stripTurkishLegalForm(candidate.legalName);
+      if (!query) return candidate;
       try {
-        const matches = await searchGleifEntities(candidate.legalName, options);
+        const matches = await searchGleifEntities(query, options);
+        const wanted = turkishNameKey(candidate.legalName);
         const match = matches.find(
-          (entity) => entity.lei && entity.jurisdiction === "TR",
+          (entity) =>
+            entity.lei &&
+            entity.jurisdiction === "TR" &&
+            turkishNameKey(entity.legalName) === wanted,
         );
         if (!match?.lei) return candidate;
         return {

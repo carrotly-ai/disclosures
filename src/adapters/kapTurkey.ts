@@ -232,6 +232,63 @@ function firstHref(inner: string): string | undefined {
   return href ? decodeXmlEntities(href) : undefined;
 }
 
+// --- Turkish legal-form normalization (for GLEIF cross-matching) ------------
+//
+// KAP writes legal forms abbreviated ("TÜRK HAVA YOLLARI A.O.", "ARÇELİK A.Ş.")
+// while GLEIF stores them expanded ("Türk Hava Yolları Anonim Ortaklığı",
+// "ARÇELİK ANONİM ŞİRKETİ"). GLEIF's `entity.legalName` filter is a prefix
+// match, so the abbreviated form finds nothing at all. Comparing the two with
+// their legal form REMOVED is what makes a TR LEI reachable.
+
+// Turkish legal forms, expanded and abbreviated, as a trailing suffix. Written
+// against i-FOLDED, upper-cased text (see `foldTurkishI`): JavaScript's
+// case-insensitive matching does not fold the dotless "ı" to "I" — that is the
+// Turkish locale's casing rule, not Unicode's default — so "Ortaklığı" would
+// never match a pattern written with ASCII "I". Folding first sidesteps it.
+const TURKISH_LEGAL_FORM =
+  /[\s,]*(?:T[.\s]*)?(?:ANONIM\s+(?:[ŞS]IRKETI|ORTAKLI[ĞG]I)|A[.\s]*[ŞSO][.\s]*|LTD[.\s]*[ŞS]TI?[.\s]*|LIMITED\s+[ŞS]IRKETI)\s*$/u;
+
+/**
+ * Fold every i-like Turkish letter to plain "I" and upper-case the rest, so
+ * "Yolları"/"YOLLARI" and "Şirketi"/"ŞİRKETİ" compare equal.
+ */
+function foldTurkishI(name: string): string {
+  return name.replace(/[ıİi]/g, "I").toUpperCase();
+}
+
+/**
+ * Strip a trailing Turkish legal form, preserving the original casing and
+ * characters of what remains (this feeds the GLEIF query, which matches on the
+ * real name). Applied repeatedly because compound forms stack — "… T.A.Ş." is
+ * "T." + "A.Ş.". Returns the input unchanged when it carries no known form.
+ */
+export function stripTurkishLegalForm(name: string): string {
+  let result = name.trim();
+  for (let i = 0; i < 3; i += 1) {
+    // Match against the folded form but cut the ORIGINAL string, so accented
+    // characters survive into the query.
+    const folded = foldTurkishI(result);
+    const match = folded.match(TURKISH_LEGAL_FORM);
+    if (!match || match.index === undefined || match.index === 0) break;
+    const next = result.slice(0, match.index).trim();
+    if (!next || next === result) break;
+    result = next;
+  }
+  return result;
+}
+
+/**
+ * Comparison key for a Turkish company name: legal form removed, i-folded,
+ * upper-cased, and punctuation/spacing flattened. This is what makes KAP's
+ * "TÜRK HAVA YOLLARI A.O." and GLEIF's "Türk Hava Yolları Anonim Ortaklığı"
+ * compare equal while keeping a differently-named entity distinct.
+ */
+export function turkishNameKey(name: string): string {
+  return foldTurkishI(stripTurkishLegalForm(name))
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
 export interface KapEntity extends Entity {
   ticker: string;
   /** KAP/MKK numeric company id from the directory permalink, e.g. 1107. */
