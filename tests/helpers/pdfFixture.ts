@@ -373,13 +373,13 @@ export function buildImagePdf(imageBytes = 30_000): Uint8Array {
  * wrapping a real producer uses, so the extractor's decryption path is
  * exercised end-to-end rather than against a hand-waved fixture.
  *
- * Pass `wrongPassword: true` to produce a genuinely password-protected file:
+ * Pass `emptyPasswordFails: true` to produce a genuinely locked file:
  * the /U validation salt no longer matches the empty password, so the extractor
  * must report "password-protected" rather than "no text layer".
  */
 export function buildEncryptedPdf(
   content: string,
-  options: { wrongPassword?: boolean } = {},
+  options: { emptyPasswordFails?: boolean } = {},
 ): Uint8Array {
   const fileKey = randomBytes(32);
   const validationSalt = randomBytes(8);
@@ -393,14 +393,18 @@ export function buildEncryptedPdf(
   // fixture. The algorithm, including the single SHA-256, is dictated by the
   // file format; the "password" here is the empty string every ASX
   // announcement uses. Nothing user-supplied is hashed or stored.
-  const userPasswordBytes = options.wrongPassword
-    ? Uint8Array.from([0x73, 0x33, 0x63, 0x72, 0x33, 0x74]) // "s3cr3t"
+  // The byte string the /U and /UE derivations run over. ASX announcements use
+  // the empty string; emptyPasswordFails seeds non-empty bytes instead so the
+  // extractor's empty-password validation legitimately fails and the file is
+  // reported as locked.
+  const derivationSeed = options.emptyPasswordFails
+    ? Uint8Array.from([0x73, 0x33, 0x63, 0x72, 0x33, 0x74])
     : new Uint8Array(0);
   // ISO 32000-2 §7.6.4.3.3: /U = SHA-256(password || validationSalt). The
   // bytes are concatenated first so this reads as the format's digest over a
   // byte string, which is what it is — not credential storage.
   const uHash = createHash("sha256")
-    .update(concat([userPasswordBytes, new Uint8Array(validationSalt)]))
+    .update(concat([derivationSeed, new Uint8Array(validationSalt)]))
     .digest();
   const u = concat([
     new Uint8Array(uHash),
@@ -414,7 +418,7 @@ export function buildEncryptedPdf(
   // storage.
   // ISO 32000-2 §7.6.4.3.3: the /UE wrapping key is SHA-256(password || keySalt).
   const intermediate = createHash("sha256")
-    .update(concat([userPasswordBytes, new Uint8Array(keySalt)]))
+    .update(concat([derivationSeed, new Uint8Array(keySalt)]))
     .digest();
   const wrapCipher = createCipheriv(
     "aes-256-cbc",

@@ -143,7 +143,7 @@ describe("extractPdfText — encrypted documents (empty user password)", () => {
   });
 
   test("reports a genuinely password-protected file as locked, not text-less", () => {
-    const pdf = buildEncryptedPdf("BT (Secret) Tj ET", { wrongPassword: true });
+    const pdf = buildEncryptedPdf("BT (Secret) Tj ET", { emptyPasswordFails: true });
     const result = extractPdfText(pdf);
     expect(result.text).toBe("");
     expect(result.notes.join(" ")).toContain("password-protected");
