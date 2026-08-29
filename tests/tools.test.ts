@@ -8,7 +8,7 @@ import { resetSecTickerCache } from "../src/adapters/secEdgar.js";
 import { resetOpenDartCorpCodeCache } from "../src/adapters/openDart.js";
 import { resetRateLimiters, secRateLimiter } from "../src/core/rateLimiter.js";
 import type { AdapterOptions, Env, ToolResult } from "../src/core/types.js";
-import { loadFixture } from "./helpers/loadFixture.js";
+import { loadFixture, loadFixtureBytes } from "./helpers/loadFixture.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 import { latin1Bytes, makeStoredZip, makeStoredZipMulti } from "./helpers/zipFixture.js";
 import {
@@ -28,6 +28,10 @@ import {
 } from "../src/adapters/edinet.js";
 import { resetTwseDatasetCache } from "../src/adapters/twseOpenApi.js";
 import { resetCvmDatasetCache } from "../src/adapters/cvmOpenData.js";
+import {
+  AFM_REGISTER_GUIDS,
+  resetAfmRegisterCache,
+} from "../src/adapters/afmRegisters.js";
 
 const ENV: Env = { DISCLOSURES_USER_AGENT: "Test test@example.com" };
 const GB_ENV: Env = {
@@ -2308,6 +2312,155 @@ describe("explicit BR routing", () => {
     } as never);
     expect(result.isError).toBeUndefined();
     expect(resultText(result)).toContain('unsupported for jurisdiction "BR"');
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+});
+
+describe("explicit NL routing", () => {
+  const nlHoldingsRoute: Route = {
+    pattern: AFM_REGISTER_GUIDS.substantialHoldings,
+    body: loadFixtureBytes("afm", "substantiele-deelnemingen.csv"),
+  };
+  const nlManagersRoute: Route = {
+    pattern: AFM_REGISTER_GUIDS.managersTransactions,
+    body: loadFixture("afm", "transacties-leidinggevenden.xml"),
+  };
+  const nlDirectorsRoute: Route = {
+    pattern: AFM_REGISTER_GUIDS.directorHoldings,
+    body: loadFixture("afm", "bestuurders-commissarissen.xml"),
+  };
+  const nlAllRoutes = [nlHoldingsRoute, nlManagersRoute, nlDirectorsRoute];
+
+  beforeEach(() => {
+    resetAfmRegisterCache();
+  });
+
+  test("CompanyOwners renders Wft substantial holdings with both limbs", async () => {
+    const fetchFn = routedFetch([nlHoldingsRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "Heineken",
+      jurisdiction: "NL",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Substantial holdings (Wft ch. 5.3, AFM)");
+    // The heading names the register's own spelling, not the raw query.
+    expect(text).toContain("Heineken N.V.");
+    expect(text).toContain("BlackRock Inc.");
+    expect(text).toContain("2.53%");
+    expect(text).toContain("Wft ch. 5.3");
+    expect(text).toContain("Threshold regime:");
+    // The AFM copyright posture is stated on every rendered result.
+    expect(text).toContain("© AFM");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyOwners says which issuer a loose query matched", async () => {
+    const fetchFn = routedFetch([nlHoldingsRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "Heineken",
+      jurisdiction: "NL",
+    } as never);
+    expect(resultText(result)).toContain(
+      'Matched "Heineken" to the AFM register issuer **Heineken N.V.**',
+    );
+  });
+
+  test("CompanyOwners attaches ownersStructured tagged NL", async () => {
+    const fetchFn = routedFetch([nlHoldingsRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "Koninklijke Philips N.V.",
+      jurisdiction: "NL",
+    } as never);
+    const structured = result.structuredContent as {
+      owners: Array<Record<string, unknown>>;
+      sourceJurisdiction: string;
+    };
+    expect(structured.sourceJurisdiction).toBe("NL");
+    const artisan = structured.owners.find(
+      (owner) => owner.holderName === "Artisan Investments GP LLC",
+    );
+    expect(artisan?.pctCapital).toBeCloseTo(10.01, 2);
+    expect(artisan?.pctVotingRights).toBeCloseTo(10.01, 2);
+  });
+
+  test("CompanyInsiders merges MAR transactions and director holdings", async () => {
+    const fetchFn = routedFetch([nlManagersRoute, nlDirectorsRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "argenx",
+      jurisdiction: "NL",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Insider notifications (AFM): argenx SE");
+    expect(text).toContain("Art.19 MAR managers' transaction");
+    expect(text).toContain("Directors'/commissioners' holdings notification");
+    const structured = result.structuredContent as { sourceJurisdiction: string };
+    expect(structured.sourceJurisdiction).toBe("NL");
+    // CompanyInsiders must never pull the ~108 MB holdings register.
+    expect(
+      fetchFn.requests.some(({ url }) =>
+        url.includes(AFM_REGISTER_GUIDS.substantialHoldings),
+      ),
+    ).toBe(false);
+  });
+
+  test("CompanyResolve derives NL candidates from the registers", async () => {
+    const fetchFn = routedFetch(nlAllRoutes);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "Philips",
+      jurisdiction: "NL",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Company resolution (AFM registers)");
+    expect(text).toContain("Koninklijke Philips N.V.");
+    // The MAR export already carries this issuer's LEI, so GLEIF is not called.
+    expect(text).toContain("724500O5JEJKV7RKQO88");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+    expect(fetchFn.requests.some(({ url }) => url.includes("gleif"))).toBe(false);
+  });
+
+  test("CompanyResolve is honest that a private NL company will not resolve", async () => {
+    const fetchFn = routedFetch(nlAllRoutes);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyResolve").handler({
+      company: "Some Private Dutch BV",
+      jurisdiction: "NL",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("Could not find a company");
+    expect(text).toContain("KVK Handelsregister API is paid");
+  });
+
+  test("CompanyFinancials points NL at jurisdiction EU without a network hit", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFinancials").handler({
+      company: "ASML",
+      jurisdiction: "NL",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain('unsupported for jurisdiction "NL"');
+    expect(text).toContain('jurisdiction "EU"');
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
+  test("CompanyFilings explains the NL limit without a network hit", async () => {
+    const fetchFn = routedFetch([]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyFilings").handler({
+      company: "ASML",
+      jurisdiction: "NL",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "NL"');
     expect(fetchFn.requests).toHaveLength(0);
   });
 });
