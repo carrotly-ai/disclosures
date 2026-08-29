@@ -9,7 +9,7 @@ an empty or fabricated result.
 Three further **filed-document / register tools** — `CompanyDocument`, `CompanyCharges`, and
 `PersonAppointments` — originated as Companies House features. `CompanyDocument` now also
 serves **US** (SEC EDGAR), **JP** (EDINET), **KR** (OpenDART), **FR** (info-financiere
-OAM), **HK** (HKEXnews), and **CN** (cninfo); `PersonAppointments` also serves **US** (SEC EDGAR reporting
+OAM), **HK** (HKEXnews), **CN** (cninfo), and **TR** (KAP); `PersonAppointments` also serves **US** (SEC EDGAR reporting
 owners), **DE** (BaFin DealingsInfo notifying persons), and **FR** (recherche-entreprises
 *dirigeants*), all via a `jurisdiction` parameter (default `GB`). `CompanyCharges` remains
 UK-only for now. See [GB.md](GB.md), [US.md](US.md), [JP.md](JP.md), [KR.md](KR.md),
@@ -20,16 +20,16 @@ configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | ID | TR |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ | — |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | — | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — | — |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -110,7 +110,7 @@ depository channel, not a clean IDX feed). Verified live through the built artif
 BBCA FY2025, consolidated, in IDR — including BBCA's banking revenue variant. See
 [ID.md](ID.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, and `CN`;
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, and `TR`;
 `PersonAppointments` accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is
 UK-only and takes no `jurisdiction` parameter.
 
@@ -124,6 +124,19 @@ adapter reduces each register to a compact per-issuer digest at parse time (293k
 warm 7 ms); pass a cache so the digest survives process restarts. NL covers AFM-supervised
 listed issuers only — KVK is paid — and **ESAP (2027+) will eventually overlap this
 coverage**. See [NL.md](NL.md).
+
+TR is **resolve + document only**, and its `CompanyFilings` dash is a deliberate one. KAP
+serves the whole BIST company directory and every disclosure page and PDF keylessly, but its
+Next.js rebuild moved the data layer to `kapsitebackend.mkk.com.tr`, which **does not resolve
+publicly**, and the documented `/tr/api/...` JSON endpoints now `404`. Anything addressable
+by **disclosure id** still works; **enumeration does not** — the per-company notifications
+page returns `200` but server-renders an empty shell (zero disclosure rows) and fetches its
+rows from that unreachable host. Rather than fake a filings list, `CompanyFilings` returns an
+honest unsupported explanation and points at the issuer's KAP page. `CompanyOwners` /
+`CompanyInsiders` / `CompanyFinancials` are unsupported for the same class of reason
+(holdings changes are disclosure *events*, not a register; MKK e-YATIRIMCI is login-gated;
+the financials feed rides the non-public backend). Coverage is **listed issuers only** —
+Ticaret Sicili/MERSIS is paid. See [TR.md](TR.md).
 
 `OwnershipChain` takes no `jurisdiction` parameter: it is GLEIF Level-2 relationship data
 for any entity worldwide. It reports accounting-consolidation parents and children, which
@@ -149,6 +162,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | TH | DBD juristic-person register (openapi.dbd.go.th) | None for the by-id lookup; `DBD_API_KEY` for name search | [TH.md](TH.md) |
 | NL | AFM disclosure registers (keyless CSV/XML exports) | None | [NL.md](NL.md) |
 | ID | IDX / Bursa Efek Indonesia (`/primary` JSON + XBRL instances) | None (host is anti-bot; inject a `fetchFn` if blocked) | [ID.md](ID.md) |
+| TR | KAP — Kamuyu Aydınlatma Platformu (BIST directory SSR + disclosure PDFs) | None | [TR.md](TR.md) |
 
 ## Honesty invariants (all jurisdictions)
 
