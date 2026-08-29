@@ -492,15 +492,16 @@ describe("createTools", () => {
     "PersonAppointments",
   ]);
 
-  test("CompanyDocument jurisdiction is restricted to GB/US/JP/KR/FR", () => {
+  test("CompanyDocument jurisdiction is restricted to the document-serving set", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     const jurisdiction = toolByName(tools, "CompanyDocument").inputSchema.jurisdiction;
-    expect(jurisdiction?.safeParse("US").success).toBe(true);
-    expect(jurisdiction?.safeParse("GB").success).toBe(true);
-    expect(jurisdiction?.safeParse("JP").success).toBe(true);
-    expect(jurisdiction?.safeParse("KR").success).toBe(true);
-    expect(jurisdiction?.safeParse("FR").success).toBe(true);
-    expect(jurisdiction?.safeParse("CN").success).toBe(false);
+    for (const supported of ["US", "GB", "JP", "KR", "FR", "HK", "CN"]) {
+      expect(jurisdiction?.safeParse(supported).success).toBe(true);
+    }
+    // Jurisdictions with no per-filing document fetch stay rejected.
+    for (const unsupported of ["TW", "IN", "BR", "DE", "SG", "EU"]) {
+      expect(jurisdiction?.safeParse(unsupported).success).toBe(false);
+    }
   });
 
   test("PersonAppointments jurisdiction is restricted to US, GB, DE and FR", () => {
@@ -1964,17 +1965,18 @@ describe("explicit CN routing", () => {
     expect(text).toContain("1220000001");
   });
 
-  test("CompanyInsiders, CompanyOwners, and PrivateRaises explain CN limits", async () => {
+  test("PrivateRaises explains the CN limit without a network call", async () => {
+    // CompanyInsiders and CompanyOwners now serve CN (SZSE structured feed /
+    // periodic-report tables); PrivateRaises stays honestly unsupported — China
+    // has no Form-D-equivalent private-placement dataset.
     const fetchFn = routedFetch([]);
     const tools = createTools({ fetchFn, env: ENV });
-    for (const name of ["CompanyInsiders", "CompanyOwners", "PrivateRaises"]) {
-      const result = await toolByName(tools, name).handler({
-        company: "600519",
-        jurisdiction: "CN",
-      } as never);
-      expect(result.isError).toBeUndefined();
-      expect(resultText(result)).toContain('unsupported for jurisdiction "CN"');
-    }
+    const result = await toolByName(tools, "PrivateRaises").handler({
+      company: "600519",
+      jurisdiction: "CN",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    expect(resultText(result)).toContain('unsupported for jurisdiction "CN"');
     expect(fetchFn.requests).toHaveLength(0);
   });
 
