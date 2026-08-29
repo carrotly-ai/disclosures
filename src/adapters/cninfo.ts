@@ -3,9 +3,11 @@ import {
   AdapterRateLimitError,
 } from "../core/errors.js";
 import { getBinary, HttpError, postForm } from "../core/http.js";
-import { asArray, asRecord, asString } from "../core/parsing.js";
+import { asArray, asRecord, asString, countPdfPages } from "../core/parsing.js";
 import { extractPdfText } from "../core/pdfText.js";
 import { cninfoRateLimiter } from "../core/rateLimiter.js";
+import { getSzseInsiderChanges } from "./szse.js";
+import type { SzseInsiderChange } from "./szse.js";
 import type {
   AdapterOptions,
   Entity,
@@ -961,6 +963,678 @@ export async function getCninfoFinancials(
   return { ...withPages, currency: parsed.currency, facts };
 }
 
+// --- CompanyOwners (前十名股东 top-10 shareholders, PDF) --------------------
+//
+// The 前十名股东持股情况 (top-10 shareholders) table is present and readable in
+// every clean periodic report (annual AND quarterly carry it), so the freshest
+// report wins. It survives extraction with names, share counts and percentages
+// intact, but its column ORDER varies by issuer and its rows are ragged (a
+// holder with no change has one fewer numeric cell; names wrap across lines).
+// So this is a value-heuristic parser, not a fixed-column one: it keys on cell
+// SHAPE — a CJK-leading run is a name; the number 0<v≤100 (with a decimal) is
+// the 比例 percentage; the largest integer is the 期末持股数量 holding count —
+// and emits only rows where both a percentage and a holding count are matched.
+// It is an as-published snapshot, not a live register; state-owned and nominee
+// holders (香港中央结算, 中国证券登记结算) appear as printed.
+
+/** One matched top-10 shareholder row (only confidently-parsed rows emit). */
+export interface CninfoOwnerRow {
+  holderName: string;
+  /** 期末持股数量 — shares held at period end (whole shares). */
+  shareCount?: number;
+  /** 比例 — percentage of share capital. */
+  pct?: number;
+  /** 股东性质/股份性质 — holder nature (国有法人 / 境内自然人 / …), as printed. */
+  nature?: string;
+}
+
+// Header/label cells that are NOT shareholder names. Each fragment is specific
+// enough that it never appears inside a real holder's name (unlike 股份/有限/
+// 公司, which do), so a name-token test can reject them wholesale.
+const CN_OWNER_HEADER_RE =
+  /比例|持股数量|期末持股|持股总数|报告期|股东性质|股份性质|质押|冻结|标记|股份状态|表决权|限售条件|前十名|战略投资|股东名称|股东.{0,2}总数|参与.{0,4}融资|信用.{0,2}账户|单位[：:]|序号|合计|变动情况|名称|数量|类别|种类|全称|不含|转融通|出借|情况|状态|^[（(]?\s*%\s*[）)]?$|^[增减量份数股东性质无]$/;
+
+// Row-level 股东性质 fragments. The extractor splits 国有法人 across two cells
+// (国有 / 法人), so fragments are collected and re-joined at finalize time; a
+// stray fragment must never be mistaken for the start of a new holder name.
+const CN_OWNER_NATURE_FRAGMENT_RE =
+  /^(?:国有法人|国有股东|境内非国有法人|境内国有法人|境内一般法人|境内自然人|境外自然人|境内法人|境外法人|一般法人|境内一般|境外一般|境内非|自然人|法人|国有|其他|未知|无|境内|境外)$/;
+
+/** Nature values that stand on their own once fragments are re-joined. */
+const CN_OWNER_NATURE_FULL = new Set([
+  "国有法人",
+  "国有股东",
+  "境内非国有法人",
+  "境内国有法人",
+  "境内一般法人",
+  "境内自然人",
+  "境外自然人",
+  "境内法人",
+  "境外法人",
+  "一般法人",
+  "自然人",
+  "国有",
+  "其他",
+]);
+
+const CN_NUMBER_CELL_RE = /^-?\d[\d,]*(?:\.\d+)?%?$/;
+// A real 期末持股数量 for a top-10 holder of a listed issuer is always
+// thousands-grouped in these tables. Requiring the grouping comma is what keeps
+// page furniture (a footer's "2026" + page number "110") out of the table.
+const CN_GROUPED_CELL_RE = /^-?\d{1,3}(?:,\d{3})+(?:\.\d+)?$/;
+const CJK_LEADING_RE = /^[㐀-鿿豈-﫿·（(]/;
+
+interface OwnerNumberToken {
+  value: number;
+  hasPercent: boolean;
+  hasFraction: boolean;
+  /** True when the source cell carried thousands-grouping commas. */
+  grouped: boolean;
+}
+
+function classifyOwnerNumber(token: string): OwnerNumberToken | undefined {
+  const hasPercent = token.includes("%");
+  const bare = token.replace(/%/g, "");
+  const value = parseCninfoNumber(bare);
+  if (value === undefined) return undefined;
+  return {
+    value,
+    hasPercent,
+    hasFraction: /\.\d/.test(bare),
+    grouped: CN_GROUPED_CELL_RE.test(bare),
+  };
+}
+
+interface OwnerRowBuffer {
+  nameParts: string[];
+  numbers: OwnerNumberToken[];
+  natures: string[];
+}
+
+/** Re-join split 股东性质 fragments (国有 + 法人 → 国有法人). */
+function resolveNature(natures: readonly string[]): string | undefined {
+  for (let i = natures.length - 1; i >= 1; i -= 1) {
+    const joined = `${natures[i - 1]}${natures[i]}`;
+    if (CN_OWNER_NATURE_FULL.has(joined)) return joined;
+  }
+  for (let i = natures.length - 1; i >= 0; i -= 1) {
+    const single = natures[i]!;
+    if (CN_OWNER_NATURE_FULL.has(single)) return single;
+  }
+  return undefined;
+}
+
+/**
+ * A short personal-shareholder name and its 股东性质 can land in ONE extracted
+ * cell (黄世霖境内自然人), because the two columns are narrow enough that the
+ * layout emits no gap between them. Split a trailing nature value off the name
+ * and return it so the row still reports both fields correctly.
+ */
+function splitTrailingNature(
+  name: string,
+): { name: string; nature?: string } {
+  for (const candidate of CN_OWNER_NATURE_FULL) {
+    if (name.length > candidate.length && name.endsWith(candidate)) {
+      return { name: name.slice(0, -candidate.length), nature: candidate };
+    }
+  }
+  return { name };
+}
+
+function finalizeOwnerRow(buffer: OwnerRowBuffer): CninfoOwnerRow | undefined {
+  const joined = buffer.nameParts.join("").trim();
+  const split = splitTrailingNature(joined);
+  const holderName = split.name.trim();
+  if (holderName.length < 2 || holderName.length > 48) return undefined;
+  // Percentage: a value in (0,100] that is explicitly a percent or fractional.
+  // Requiring one of those rejects a bare integer (a page number, a no-change
+  // 0 增减 cell) that merely happens to fall in range.
+  const pctToken = buffer.numbers.find((n) =>
+    n.value > 0 && n.value <= 100 && (n.hasPercent || n.hasFraction)
+  );
+  // Holding count: the largest comma-grouped figure that is not the percentage.
+  const countCandidates = buffer.numbers
+    .filter((n) => n !== pctToken && n.grouped)
+    .map((n) => Math.abs(n.value));
+  const shareCount = countCandidates.length ? Math.max(...countCandidates) : undefined;
+  if (pctToken === undefined || shareCount === undefined || shareCount <= 0) {
+    return undefined;
+  }
+  const nature = resolveNature(buffer.natures) ?? split.nature;
+  return {
+    holderName,
+    shareCount,
+    pct: pctToken.value,
+    ...(nature ? { nature } : {}),
+  };
+}
+
+/** Locate the 前十名股东 region on a whitespace-free sliding-window match. */
+function topShareholderRegion(lines: readonly string[]): readonly string[] | undefined {
+  // Issuers word and wrap this heading differently, and the extractor breaks it
+  // at unpredictable points: an SSE half-year keeps 前十名股东持股情况 on one
+  // line, while CATL prints "持股5%以上的股东或前" / "10" / "名股东持股情况（不
+  // 含…）" — the count as an Arabic numeral, split across three lines. Anchor on
+  // the invariant TAIL (名股东持股情况 / 名股东情况), which every variant ends
+  // with, and require a preceding 前十/前10 within a short lookback so an
+  // unrelated 无限售条件股东 sub-table is not mistaken for the main one. The
+  // region starts AT the tail line, so heading fragments never enter the cell
+  // stream as name parts.
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = (lines[i] ?? "").replace(/\s/g, "");
+    if (!line.includes("名股东持股情况") && !line.includes("名股东情况")) continue;
+    const lookback = lines
+      .slice(Math.max(0, i - 4), i + 1)
+      .join("")
+      .replace(/\s/g, "");
+    if (!/前\s*(?:十|10)/.test(lookback)) continue;
+    // 无限售条件 (unrestricted-shares) is a SEPARATE follow-on table; skip it.
+    if (line.includes("无限售条件")) continue;
+    return lines.slice(i, i + 200);
+  }
+  return undefined;
+}
+
+/**
+ * Drop the table's header block. Real reports wrap header labels across many
+ * one-per-line fragments (股东名称 / （全称） / 报告期内增 / 减 / 期末持股数 / 量 /
+ * 比例 / ( % ) / … / 股东 / 性质 / 数量) before the first data row. Left in the
+ * stream those fragments accumulate into the FIRST holder's name buffer and
+ * push it over the length guard — silently losing the largest shareholder. So
+ * everything up to and including the last header-ish cell that precedes the
+ * first comma-grouped figure is discarded.
+ */
+function stripOwnerHeader(cells: readonly string[]): readonly string[] {
+  const firstFigure = cells.findIndex((cell) => CN_GROUPED_CELL_RE.test(cell));
+  if (firstFigure <= 0) return cells;
+  let lastHeader = -1;
+  for (let i = 0; i < firstFigure; i += 1) {
+    if (CN_OWNER_HEADER_RE.test(cells[i]!)) lastHeader = i;
+  }
+  return lastHeader === -1 ? cells : cells.slice(lastHeader + 1);
+}
+
+export function parseCninfoTopShareholders(text: string): CninfoOwnerRow[] {
+  const region = topShareholderRegion(normalizeCninfoText(text).split("\n"));
+  if (!region) return [];
+  const rawCells: string[] = [];
+  for (const line of region) {
+    for (const cell of line.split(/\s{2,}/)) {
+      const trimmed = cell.trim();
+      if (trimmed) rawCells.push(trimmed);
+    }
+  }
+  const cells = stripOwnerHeader(rawCells);
+  const rows: CninfoOwnerRow[] = [];
+  let buffer: OwnerRowBuffer | undefined;
+  const flush = (): void => {
+    if (!buffer) return;
+    const row = finalizeOwnerRow(buffer);
+    if (row) rows.push(row);
+    buffer = undefined;
+  };
+  for (const cell of cells) {
+    if (rows.length >= 10) break;
+    if (CN_NUMBER_CELL_RE.test(cell)) {
+      const num = classifyOwnerNumber(cell);
+      if (num && buffer && buffer.nameParts.length) buffer.numbers.push(num);
+      continue;
+    }
+    if (CN_OWNER_NATURE_FRAGMENT_RE.test(cell)) {
+      if (buffer) buffer.natures.push(cell);
+      continue;
+    }
+    if (!CJK_LEADING_RE.test(cell) || CN_OWNER_HEADER_RE.test(cell)) continue;
+    if (cell.length > 48) continue;
+    if (buffer && buffer.numbers.length > 0) {
+      flush();
+      buffer = { nameParts: [cell], numbers: [], natures: [] };
+    } else if (buffer && buffer.nameParts.length > 0) {
+      // A CJK cell before any number is a wrapped-name continuation.
+      buffer.nameParts.push(cell);
+    } else {
+      buffer = { nameParts: [cell], numbers: [], natures: [] };
+    }
+  }
+  flush();
+  return rows.slice(0, 10);
+}
+
+export type CninfoOwnersReason = "no-report" | "over-cap" | "mojibake" | "no-table";
+
+export interface CninfoOwnersResult {
+  entity: CninfoEntity;
+  report: Filing | null;
+  reportKind?: "annual" | "quarterly";
+  reportLabel?: string;
+  periodEnd?: string;
+  owners: CninfoOwnerRow[];
+  declaredPages?: number;
+  extractedPages?: number;
+  cjkChars?: number;
+  reason?: CninfoOwnersReason;
+}
+
+/**
+ * The newest full periodic report of ANY kind (annual or interim/quarterly),
+ * since all of them carry the top-10 shareholders and 董监高 tables — so the
+ * freshest disclosure wins. Summaries/English/corrections are filtered out.
+ */
+async function selectFreshestReport(
+  entity: CninfoEntity,
+  options: AdapterOptions,
+): Promise<{ report: Filing; reportKind: "annual" | "quarterly" } | null> {
+  const collected: Array<{ filing: Filing; kind: "annual" | "quarterly" }> = [];
+  for (
+    const [kind, categories] of [
+      ["annual", [CNINFO_ANNUAL_CATEGORY]],
+      ["quarterly", CNINFO_QUARTERLY_CATEGORIES],
+    ] as ReadonlyArray<readonly ["annual" | "quarterly", readonly string[]]>
+  ) {
+    for (const category of categories) {
+      for (
+        const filing of await collectAnnouncements(entity, category, undefined, undefined, 8, options)
+      ) {
+        if (!CNINFO_NON_FULL_REPORT.test(filing.description ?? "")) {
+          collected.push({ filing, kind });
+        }
+      }
+    }
+  }
+  const best = collected.sort((a, b) =>
+    b.filing.filedDate.localeCompare(a.filing.filedDate)
+  )[0];
+  return best ? { report: best.filing, reportKind: best.kind } : null;
+}
+
+/** Shared fetch+extract+gate for the PDF ownership/insider table parsers. */
+async function fetchReportText(
+  url: string,
+  options: AdapterOptions,
+): Promise<
+  | { kind: "over-cap" }
+  | { kind: "mojibake"; cjkChars: number; extractedPages: number; declaredPages?: number }
+  | {
+    kind: "ok";
+    text: string;
+    cjkChars: number;
+    extractedPages: number;
+    declaredPages?: number;
+  }
+> {
+  const headLen = await headContentLength(url, options);
+  if (headLen !== undefined && headLen > CNINFO_FINANCIALS_MAX_BYTES) {
+    return { kind: "over-cap" };
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = await getBinary(
+      url,
+      { ...BROWSER_HEADERS, Accept: "application/pdf, application/octet-stream, */*" },
+      CNINFO_REQUEST_TIMEOUT_MS,
+      options.fetchFn ?? fetch,
+    );
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 429) {
+      throw new CninfoRateLimitError();
+    }
+    throw error;
+  }
+  if (bytes.byteLength > CNINFO_FINANCIALS_MAX_BYTES) return { kind: "over-cap" };
+  if (!isPdfBytes(bytes)) throw new CninfoApiError(`cninfo returned no PDF at ${url}.`);
+  const extracted = extractPdfText(bytes);
+  const cjkChars = countCjkChars(extracted.text);
+  const extractedPages = extracted.pagesWithText ?? extracted.pages ?? 0;
+  const declaredPages = extracted.declaredPages;
+  if (cjkChars === 0) {
+    return {
+      kind: "mojibake",
+      cjkChars,
+      extractedPages,
+      ...(declaredPages !== undefined ? { declaredPages } : {}),
+    };
+  }
+  return {
+    kind: "ok",
+    text: extracted.text,
+    cjkChars,
+    extractedPages,
+    ...(declaredPages !== undefined ? { declaredPages } : {}),
+  };
+}
+
+/**
+ * "Latest top-10 shareholders" for a listed CN issuer: locate the freshest full
+ * periodic report, extract + space-normalize its text, and value-heuristic-parse
+ * the 前十名股东持股情况 table. Degrades honestly (over-cap / mojibake / no
+ * table) to a link-only result, exactly like getCninfoFinancials.
+ */
+export async function getCninfoOwners(
+  company: string,
+  options: AdapterOptions = {},
+): Promise<CninfoOwnersResult> {
+  const entity = await resolveCninfoEntity(company, options);
+  const selection = await selectFreshestReport(entity, options);
+  if (!selection) return { entity, report: null, owners: [], reason: "no-report" };
+  const { report, reportKind } = selection;
+  const url = assertCninfoPdfUrl(report.sourceUrl);
+  const { periodEnd, reportLabel } = cninfoReportPeriod(report);
+  const base = { entity, report, reportKind, reportLabel, periodEnd };
+  const fetched = await fetchReportText(url, options);
+  if (fetched.kind === "over-cap") return { ...base, owners: [], reason: "over-cap" };
+  const withPages = {
+    ...base,
+    ...(fetched.declaredPages !== undefined ? { declaredPages: fetched.declaredPages } : {}),
+    extractedPages: fetched.extractedPages,
+    cjkChars: fetched.cjkChars,
+  };
+  if (fetched.kind === "mojibake") return { ...withPages, owners: [], reason: "mojibake" };
+  const owners = parseCninfoTopShareholders(fetched.text);
+  if (owners.length === 0) return { ...withPages, owners: [], reason: "no-table" };
+  return { ...withPages, owners };
+}
+
+// --- CompanyInsiders (董监高, structured SZSE + PDF roster fallback) ---------
+//
+// Insider disclosure is asymmetric across the two mainland exchanges. SZSE
+// serves a keyless, filterable JSON feed of every reported 董监高 share-change
+// transaction (see szse.ts), so SZSE-listed issuers (0xxxxx / 3xxxxx) route to
+// that structured feed. SSE (6xxxxx) has no equivalent clean public endpoint —
+// its 董监高 changes live in the JS/credit-file-walled 上市公司诚信记录 — so SSE
+// issuers fall back to the board roster (董事、监事、高级管理人员) table in the
+// latest annual report PDF, which the extractor reads with names and positions
+// clean (dates fragment, so they are not emitted). The two are honestly
+// different views: a transactional share-change feed vs. an as-published roster
+// snapshot.
+
+/** One board member parsed from the annual-report 董监高 roster table. */
+export interface CninfoBoardMember {
+  name: string;
+  /** 职务 — reported position(s), e.g. 董事、董事长. */
+  position: string;
+}
+
+// Position cells carry a governance role keyword; person-name cells do not.
+const CN_ROLE_RE =
+  /董事|监事|高管|高级管理|经理|总监|董秘|秘书|总裁|首席|书记|主席|独立|职工|副总|总工|财务负责|法定代表/;
+const CN_PERSON_NAME_RE = /^[㐀-鿿·]{2,6}$/;
+const CN_INSIDER_HEADER_RE =
+  /姓名|职务|性别|年龄|任期|持股|报告期|薪酬|期初|期末|增减|变动|股数|原因|合计|单位|简称|代码|减持|增持|名誉|离任|现任|说明|情况|前个人|本期|其中|不适用|适用/;
+
+/**
+ * Locate the roster region. The section heading is NOT stable across issuers or
+ * years: the 2023 revision of the Company Law abolished the supervisory board
+ * (监事会), so post-reform annuals (e.g. Moutai FY2025) head this section
+ * "董事和高级管理人员的情况" with no 监事 at all, while issuers that retain
+ * supervisors still print "董事、监事、高级管理人员情况". Requiring all three
+ * terms therefore finds nothing on a modern report. Anchor on 高级管理人员 plus
+ * 董事 (both invariant), and prefer the *holdings* sub-table
+ * (持股变动 / 持股情况), which is the one carrying the name+职务 rows — a
+ * narrative mention of the same words carries no table.
+ */
+function boardRosterRegion(lines: readonly string[]): readonly string[] | undefined {
+  let fallback: readonly string[] | undefined;
+  for (let i = 0; i < lines.length; i += 1) {
+    const window = lines.slice(i, i + 12).join("").replace(/\s/g, "");
+    if (!window.includes("高级管理人员") || !window.includes("董事")) continue;
+    const region = lines.slice(i, i + 300);
+    // Prefer the持股变动/持股情况 holdings table — that is the roster proper.
+    // 任职情况 is a DIFFERENT table (positions held at SHAREHOLDER units), whose
+    // rows pair a shareholding entity with a role and would emit company names
+    // as people, so it must not win the anchor.
+    if (/任职情况/.test(window)) continue;
+    if (/持股变动|持股情况|基本情况/.test(window)) return region;
+    fallback ??= region;
+  }
+  return fallback;
+}
+
+/** A single Han glyph — a roster name cell often arrives one glyph per line. */
+const CN_SINGLE_HAN_RE = /^[\u3400-\u9fff]$/;
+
+/**
+ * Single Han glyphs that are table furniture, never part of a person's name:
+ * the date-unit suffixes the \u4efb\u671f columns emit one per line (\u5e74/\u6708/\u65e5) and the
+ * yes/no flags of the \u662f\u5426\u5728\u5173\u8054\u65b9\u83b7\u53d6\u85aa\u916c column (\u662f/\u5426). Without excluding
+ * them the merge fuses a trailing \u65e5 or \u662f onto the next name (\u65e5\u738b\u8389, \u5426\u5468\u96ea).
+ */
+const CN_NAME_STOP_GLYPH = new Set(["\u5e74", "\u6708", "\u65e5", "\u662f", "\u5426", "\u7537", "\u5973", "\u65e0"]);
+
+/**
+ * Merge runs of consecutive single-Han cells into one name cell. Real roster
+ * tables set the 姓名 column narrow enough that a two- or three-character name
+ * is emitted one glyph per line (陈 / 华 → 陈华), which no 2-6-character name
+ * test can match. Runs of 2-4 single glyphs are joined; a longer run is left
+ * alone, since that is body prose rather than a name cell.
+ */
+function mergeSingleHanRuns(cells: readonly string[]): string[] {
+  const merged: string[] = [];
+  for (let i = 0; i < cells.length; i += 1) {
+    const isNameGlyph = (c: string): boolean =>
+      CN_SINGLE_HAN_RE.test(c) && !CN_NAME_STOP_GLYPH.has(c);
+    if (!isNameGlyph(cells[i]!)) {
+      merged.push(cells[i]!);
+      continue;
+    }
+    let j = i;
+    while (j < cells.length && isNameGlyph(cells[j]!)) j += 1;
+    const run = cells.slice(i, j);
+    if (run.length >= 2 && run.length <= 4) merged.push(run.join(""));
+    else merged.push(...run);
+    i = j - 1;
+  }
+  return merged;
+}
+
+/**
+ * Parse the annual-report 董监高 roster into {name, position} rows. Walks the
+ * cell stream (after merging glyph-split name cells) and emits a row whenever a
+ * plausible person-name cell (2-6 Han chars, no role keyword, not a header) is
+ * followed within the next two cells by a position cell carrying a governance
+ * role keyword — the small lookahead absorbs a stray fragment between the two
+ * columns. Deduplicated by name (the first, primary 职务 wins) and capped at 60.
+ * Names and positions are the load-bearing fields; the date and shareholding
+ * cells fragment badly and are intentionally never emitted.
+ */
+export function parseCninfoBoardRoster(text: string): CninfoBoardMember[] {
+  const region = boardRosterRegion(normalizeCninfoText(text).split("\n"));
+  if (!region) return [];
+  const rawCells: string[] = [];
+  for (const line of region) {
+    for (const cell of line.split(/\s{2,}/)) {
+      const trimmed = cell.trim();
+      if (trimmed) rawCells.push(trimmed);
+    }
+  }
+  const cells = mergeSingleHanRuns(rawCells);
+  const members: CninfoBoardMember[] = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < cells.length - 1 && members.length < 60; i += 1) {
+    const name = cells[i]!;
+    if (!CN_PERSON_NAME_RE.test(name)) continue;
+    if (CN_ROLE_RE.test(name) || CN_INSIDER_HEADER_RE.test(name)) continue;
+    if (seen.has(name)) continue;
+    for (let k = i + 1; k <= Math.min(i + 2, cells.length - 1); k += 1) {
+      const next = cells[k]!;
+      if (CN_INSIDER_HEADER_RE.test(next)) continue;
+      if (!CN_ROLE_RE.test(next) || next.length > 24) continue;
+      seen.add(name);
+      members.push({ name, position: next });
+      break;
+    }
+  }
+  return members;
+}
+
+/**
+ * Decide which exchange's insider surface an issuer belongs to.
+ *
+ * The cninfo `column`/orgId prefix is NOT a reliable exchange indicator here:
+ * only legacy issuers carry the gssh/gssz prefixes, while many (Ping An
+ * 601318 -> 9900002221, Kingsoft 688111 -> 9900035303, CATL 300750 -> GD165627)
+ * return a bare numeric or opaque orgId that the prefix heuristic defaults to
+ * "szse". Routing on that would send SSE and STAR issuers to the Shenzhen feed,
+ * which legitimately has no rows for them — a silent empty result.
+ *
+ * The A-share code itself is unambiguous and is what the SZSE feed filters on:
+ * 6xxxxx = Shanghai (main board + 688 STAR), 0xxxxx/3xxxxx = Shenzhen (main
+ * board + ChiNext). HKEX-mirrored rows keep the column-based answer.
+ */
+function szseInsiderExchange(entity: CninfoEntity): "SZSE" | "SSE" | "HKE" {
+  if (entity.column === "hke") return "HKE";
+  const code = entity.stockCode.trim();
+  if (/^6\d{5}$/.test(code)) return "SSE";
+  if (/^[03]\d{5}$/.test(code)) return "SZSE";
+  // Not a 6-digit A-share code — fall back to what cninfo's column claims.
+  return entity.column === "sse" ? "SSE" : "SZSE";
+}
+
+export type CninfoInsidersMode = "szse-structured" | "pdf-roster";
+export type CninfoInsidersReason =
+  | "no-records"
+  | "no-report"
+  | "over-cap"
+  | "mojibake"
+  | "no-table";
+
+export interface CninfoInsidersResult {
+  entity: CninfoEntity;
+  exchange: "SZSE" | "SSE" | "HKE";
+  mode: CninfoInsidersMode;
+  changes?: SzseInsiderChange[];
+  roster?: CninfoBoardMember[];
+  report?: Filing | null;
+  reportKind?: "annual" | "quarterly";
+  reportLabel?: string;
+  periodEnd?: string;
+  declaredPages?: number;
+  extractedPages?: number;
+  cjkChars?: number;
+  reason?: CninfoInsidersReason;
+}
+
+/**
+ * CompanyInsiders for a listed CN issuer, routed per exchange. SZSE issuers
+ * (column "szse") get the structured 董监高 share-change feed; SSE/HK-mirrored
+ * issuers get the annual-report 董监高 roster snapshot, degrading honestly on
+ * over-cap / mojibake / no-table exactly like the other PDF modes.
+ */
+export async function getCninfoInsiders(
+  company: string,
+  options: AdapterOptions = {},
+): Promise<CninfoInsidersResult> {
+  const entity = await resolveCninfoEntity(company, options);
+  const exchange = szseInsiderExchange(entity);
+  if (exchange === "SZSE") {
+    const changes = await getSzseInsiderChanges(entity.stockCode, options);
+    return {
+      entity,
+      exchange,
+      mode: "szse-structured",
+      changes,
+      ...(changes.length === 0 ? { reason: "no-records" as const } : {}),
+    };
+  }
+  // SSE (and HK-mirrored) issuers: annual-report roster snapshot.
+  const selection = await selectFinancialsReport(entity, options);
+  if (!selection) {
+    return { entity, exchange, mode: "pdf-roster", report: null, reason: "no-report" };
+  }
+  const { report, reportKind } = selection;
+  const url = assertCninfoPdfUrl(report.sourceUrl);
+  const { periodEnd, reportLabel } = cninfoReportPeriod(report);
+  const base = {
+    entity,
+    exchange: exchange as "SSE" | "HKE",
+    mode: "pdf-roster" as const,
+    report,
+    reportKind,
+    reportLabel,
+    periodEnd,
+  };
+  const fetched = await fetchReportText(url, options);
+  if (fetched.kind === "over-cap") return { ...base, reason: "over-cap" };
+  const withPages = {
+    ...base,
+    ...(fetched.declaredPages !== undefined ? { declaredPages: fetched.declaredPages } : {}),
+    extractedPages: fetched.extractedPages,
+    cjkChars: fetched.cjkChars,
+  };
+  if (fetched.kind === "mojibake") return { ...withPages, reason: "mojibake" };
+  const roster = parseCninfoBoardRoster(fetched.text);
+  if (roster.length === 0) return { ...withPages, reason: "no-table" };
+  return { ...withPages, roster };
+}
+
+// --- CompanyDocument (cninfo announcement PDF → text) ----------------------
+//
+// cninfo announcement PDFs (the same SSE/SZSE full-text feed CompanyFilings
+// returns) flow through the shared extract → CN-normalize → page pipeline. The
+// stable transaction_id scheme is the announcement's cninfo PDF URL (the
+// "open" link every CompanyFilings row carries) or its adjunctUrl path
+// (finalpage/YYYY-MM-DD/ID.PDF) — both resolve directly to the static host with
+// no re-query. Documents are capped at 25 MB (larger than the financials mode's
+// cap is unnecessary here; big bank annuals over 25 MB degrade to the link).
+
+export const CNINFO_DOCUMENT_MAX_BYTES = 25 * 1024 * 1024;
+
+export interface CninfoDocument {
+  bytes: Uint8Array;
+  sourceUrl: string;
+  suggestedFilename: string;
+  pageCount?: number;
+}
+
+/** Resolve a CompanyDocument transaction_id to the cninfo static PDF URL. */
+export function cninfoDocumentUrl(transactionId: string): string {
+  const raw = transactionId.trim();
+  if (/^https?:\/\//i.test(raw)) return assertCninfoPdfUrl(raw);
+  const path = raw.replace(/^\/+/, "");
+  return assertCninfoPdfUrl(`${CNINFO_STATIC_BASE_URL}/${path}`);
+}
+
+/** Fetch one cninfo announcement PDF by transaction_id (URL or adjunctUrl path). */
+export async function getCninfoDocumentPdf(
+  transactionId: string,
+  options: AdapterOptions = {},
+): Promise<CninfoDocument> {
+  const url = cninfoDocumentUrl(transactionId);
+  const headLen = await headContentLength(url, options);
+  if (headLen !== undefined && headLen > CNINFO_DOCUMENT_MAX_BYTES) {
+    throw new CninfoApiError(
+      `cninfo document exceeds the ${CNINFO_DOCUMENT_MAX_BYTES / (1024 * 1024)} MB download cap.`,
+    );
+  }
+  let bytes: Uint8Array;
+  try {
+    bytes = await getBinary(
+      url,
+      { ...BROWSER_HEADERS, Accept: "application/pdf, application/octet-stream, */*" },
+      CNINFO_REQUEST_TIMEOUT_MS,
+      options.fetchFn ?? fetch,
+    );
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 429) {
+      throw new CninfoRateLimitError();
+    }
+    throw error;
+  }
+  if (bytes.byteLength > CNINFO_DOCUMENT_MAX_BYTES) {
+    throw new CninfoApiError(
+      `cninfo document exceeds the ${CNINFO_DOCUMENT_MAX_BYTES / (1024 * 1024)} MB download cap.`,
+    );
+  }
+  if (!isPdfBytes(bytes)) throw new CninfoApiError(`cninfo returned no PDF at ${url}.`);
+  const pageCount = countPdfPages(bytes);
+  const basename = new URL(url).pathname.split("/").pop() || "cninfo-document.pdf";
+  return {
+    bytes,
+    sourceUrl: url,
+    suggestedFilename: basename.toLowerCase().endsWith(".pdf") ? basename : `${basename}.pdf`,
+    ...(pageCount !== undefined ? { pageCount } : {}),
+  };
+}
+
 // --- Aliases and adapter factory -------------------------------------------
 
 export const resolveCompany = resolveCninfoCompany;
@@ -977,5 +1651,9 @@ export function createCninfoAdapter(options: AdapterOptions = {}) {
     getLatestReport: (company: string, reportKind: "annual" | "quarterly") =>
       getLatestCninfoReport(company, reportKind, options),
     getFinancials: (company: string) => getCninfoFinancials(company, options),
+    getOwners: (company: string) => getCninfoOwners(company, options),
+    getInsiders: (company: string) => getCninfoInsiders(company, options),
+    getDocumentPdf: (transactionId: string) =>
+      getCninfoDocumentPdf(transactionId, options),
   };
 }

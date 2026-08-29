@@ -24,11 +24,11 @@ configuration, and library API, see the top-level [README](../../README.md).
 |---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
 | `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | ✅ | ✅ | — | — | — | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — |
 | `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — | — |
+| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ | — | — |
 | `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
 | `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
@@ -81,7 +81,24 @@ walled or brittle — SET is Incapsula-walled and the SEC `idisc` filings API th
 on every parameter shape probed — so every other TH intent is honest unsupported. See
 [TH.md](TH.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
+CN `CompanyOwners` is **partial**: it parses the **前十名股东 top-10 shareholders** table from
+the issuer's *freshest* periodic report (quarterlies carry it too). The data is real — the
+actual major-shareholder register, not a custodian proxy — but the table is ragged and its
+**column order varies by issuer**, so a value-heuristic parser emits only rows where both a
+percentage and a holding count matched; unreadable rows are dropped, not guessed. It is an
+**as-published point-in-time snapshot, not a live register and not UBO tracing**; state-owned
+and nominee holders (香港中央结算) appear as printed. See [CN.md](CN.md).
+
+CN `CompanyInsiders` is **partial and asymmetric by exchange**. **SZSE** codes (0/3xxxxx) route
+to SZSE's keyless structured 董监高及相关人员股份变动 JSON feed — one row per reported
+transaction with insider, position, date, shares (万股→whole), average price, reason, balance
+and the holder's relationship. **SSE** codes (6xxxxx) have no equivalent public endpoint (the
+Shanghai data sits inside a JS-gated credit file), so they fall back to the as-published
+**董监高 board roster** in the latest annual-report PDF — names and positions only, since date
+and shareholding cells fragment in extraction. A transaction feed and a roster snapshot answer
+different questions; the response states which one it served. See [CN.md](CN.md).
+
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, and `CN`; `PersonAppointments`
 accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no
 `jurisdiction` parameter.
 
@@ -98,7 +115,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | EU | filings.xbrl.org (ESEF) + GLEIF | None | [EU.md](EU.md) |
 | KR | DART / OpenDART | `OPENDART_API_KEY` | [KR.md](KR.md) |
 | JP | EDINET | `EDINET_API_KEY` (search only; resolution is keyless) | [JP.md](JP.md) |
-| CN | cninfo (SSE/SZSE/HKEX mirror) | None | [CN.md](CN.md) |
+| CN | cninfo (SSE/SZSE/HKEX mirror) + SZSE disclosure API | None | [CN.md](CN.md) |
 | IN | BSE India | None (host is anti-bot; inject a `fetchFn` if throttled) | [IN.md](IN.md) |
 | TW | TWSE OpenAPI | None | [TW.md](TW.md) |
 | BR | CVM open data | None | [BR.md](BR.md) |
