@@ -851,6 +851,15 @@ function isPdfBytes(bytes: Uint8Array): boolean {
   );
 }
 
+/** `PK\x03\x04` — a ZIP local file header. */
+function isZipBytes(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === 0x50 && bytes[1] === 0x4b &&
+    bytes[2] === 0x03 && bytes[3] === 0x04
+  );
+}
+
 /** Download a disclosure's PDF by its `r_path`, capped at 25 MB. */
 export async function getDfmDocumentPdf(
   transactionId: string,
@@ -884,6 +893,18 @@ export async function getDfmDocumentPdf(
     );
   }
   if (!isPdfBytes(bytes)) {
+    // Pre-2012 archive disclosures are occasionally filed as a ZIP of the
+    // statements rather than a PDF (e.g. Union Properties' 2011 quarterlies,
+    // `/Archive/Financial Reports/upp_2011_Q3_e.zip`). Say so precisely: the
+    // transaction_id is correct, the filed document simply is not a PDF.
+    if (isZipBytes(bytes)) {
+      throw new DfmApiError(
+        `DFM filed this disclosure as a ZIP archive, not a PDF (${url}). The ` +
+          "transaction_id is correct — older DFM archive filings are sometimes " +
+          "zipped. Use mode=\"metadata\" for its type and size, and open the " +
+          "link to download the archive; this release does not unpack it.",
+      );
+    }
     throw new DfmApiError(
       `DFM returned no PDF at ${url} (the transaction_id may be wrong).`,
     );

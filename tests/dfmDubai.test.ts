@@ -535,6 +535,21 @@ describe("getDfmDocumentMetadata / getDfmDocumentPdf", () => {
     ).rejects.toThrow(/returned no PDF/);
   });
 
+  test("says a ZIP archive filing is a ZIP, not a wrong transaction id", async () => {
+    // Pre-2012 archive disclosures are sometimes filed zipped — verified live
+    // on /Archive/Financial Reports/upp_2011_Q3_e.zip (application/x-zip-
+    // compressed). Reporting that as "the transaction_id may be wrong" would
+    // be false: the id is right, the filed document is simply not a PDF.
+    const zip = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00, 0x00, 0x00]);
+    const fetchFn = routedFetch([{ pattern: "feeds.dfm.ae", body: zip }]);
+    await expect(
+      getDfmDocumentPdf("/Archive/Financial Reports/upp_2011_Q3_e.zip", { fetchFn }),
+    ).rejects.toThrow(/filed this disclosure as a ZIP archive/);
+    await expect(
+      getDfmDocumentPdf("/Archive/Financial Reports/upp_2011_Q3_e.zip", { fetchFn }),
+    ).rejects.toThrow(/transaction_id is correct/);
+  });
+
   test("refuses a document above the 25 MB cap", async () => {
     const oversized = new Uint8Array(26 * 1024 * 1024);
     oversized.set([0x25, 0x50, 0x44, 0x46, 0x2d]);

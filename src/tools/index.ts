@@ -1672,7 +1672,10 @@ const AE_FILINGS_CAVEAT =
   "attached document, because each is separately fetchable; a results " +
   "announcement can therefore appear twice (statements plus a " +
   "management-discussion annex). Headlines and documents are the issuer's own " +
-  "English or Arabic filing. " + AE_DUBAI_ONLY_NOTE;
+  "English or Arabic filing. Pre-2012 rows come from DFM's `/Archive/` store " +
+  "and are occasionally a ZIP of the statements rather than a PDF, and their " +
+  "scanned PDFs have no text layer — CompanyDocument reports either case " +
+  "explicitly rather than failing vaguely. " + AE_DUBAI_ONLY_NOTE;
 
 const AE_NOT_FOUND_HINT =
   "Try a DFM issuer symbol (e.g. EMAAR, EMIRATESNBD, SALIK, TALABAT) or the " +
