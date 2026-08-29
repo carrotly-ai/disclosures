@@ -192,6 +192,18 @@ import {
   searchBafinPeople,
 } from "../adapters/bafin.js";
 import {
+  AFM_INSIDERS_CAVEAT,
+  AFM_MAR_REGIME,
+  AFM_NOT_FOUND_HINT,
+  AFM_OWNERS_CAVEAT,
+  AFM_RESOLVE_CAVEAT,
+  AFM_WFT_THRESHOLD_DETAIL,
+  AFM_WFT_THRESHOLD_REGIME,
+  getAfmInsiders,
+  getAfmOwners,
+  searchAfmCompanies,
+} from "../adapters/afmRegisters.js";
+import {
   INFO_FINANCIERE_DOCUMENT_CONTENT_WARNING,
   INFO_FINANCIERE_FILINGS_CAVEAT,
   INFO_FINANCIERE_OWNER_PLACEHOLDER,
@@ -1429,6 +1441,67 @@ const SG_FINANCIALS_UNSUPPORTED =
   "Akamai + auth walled, and ACRA/BizFile financial-statement extracts are paid. " +
   "No keyless normalized financials source exists for Singapore.";
 
+const AFM_FILINGS_UNSUPPORTED =
+  "CompanyFilings is unsupported for jurisdiction \"NL\". This release reads " +
+  "three AFM disclosure registers — substantial holdings (via CompanyOwners), " +
+  "Art.19 MAR managers' transactions and directors'/commissioners' holdings " +
+  "(both via CompanyInsiders). The AFM also publishes an inside-information " +
+  "register (openbaarmaking voorwetenschap), but it is a title-and-date " +
+  "publication feed rather than a per-issuer filing index, and this release " +
+  "does not surface it. For a Dutch issuer's annual report use CompanyFilings " +
+  "with jurisdiction \"EU\" (ESEF, filings.xbrl.org).";
+
+const AFM_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"NL\". The AFM publishes " +
+  "no normalized financial statements — its financiële-verslaggeving register " +
+  "is oversight metadata, not figures. Dutch listed issuers file annual ESEF " +
+  "reports indexed pan-European by filings.xbrl.org, so use CompanyFinancials " +
+  "with jurisdiction \"EU\" for a Dutch issuer's annual financial facts.";
+
+/**
+ * Attach an LEI to NL register matches that lack one. Only the AFM's Art.19 MAR
+ * export carries an issuer LEI, so an issuer known only from the holdings or
+ * directors register resolves without one; GLEIF (keyless, CC0, already a
+ * dependency of this server) fills the gap by legal name.
+ *
+ * Bounded to the top few candidates — one GLEIF call each — and best-effort:
+ * a GLEIF failure or an ambiguous name leaves the register match untouched
+ * rather than failing the resolve. A GLEIF hit is only accepted when it is a
+ * Dutch entity, so a same-named foreign company cannot attach a wrong LEI.
+ */
+const NL_GLEIF_ENRICH_LIMIT = 3;
+
+async function enrichNlCandidatesWithGleif(
+  candidates: Entity[],
+  options: AdapterOptions,
+): Promise<Entity[]> {
+  const enriched = await Promise.all(
+    candidates.map(async (candidate, index) => {
+      if (candidate.lei || index >= NL_GLEIF_ENRICH_LIMIT) return candidate;
+      try {
+        const matches = await searchGleifEntities(candidate.legalName, options);
+        const match = matches.find(
+          (entity) => entity.lei && entity.jurisdiction === "NL",
+        );
+        if (!match?.lei) return candidate;
+        return {
+          ...candidate,
+          lei: match.lei,
+          matchReason: `${candidate.matchReason ?? "AFM register match"}; LEI via GLEIF`,
+          sourceIdentifiers: {
+            ...candidate.sourceIdentifiers,
+            lei: match.lei,
+          },
+        } satisfies Entity;
+      } catch {
+        // GLEIF is supplementary here — the AFM register match still stands.
+        return candidate;
+      }
+    }),
+  );
+  return enriched;
+}
+
 // Render the enriched ACRA profile for the top resolved SG match: previous-name
 // history (like GB), incorporation date, SSIC classification, and auditor firms.
 function buildSgProfileDetailSection(entity: AcraEntity): string {
@@ -1842,6 +1915,31 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             joinSections(...sections),
             entitiesStructured(results.slice(0, 10)),
           );
+      if (jurisdiction === "NL") {
+        try {
+          const registerHits = await searchAfmCompanies(company, options);
+          if (!registerHits.length) {
+            return notFoundResult(company, AFM_NOT_FOUND_HINT);
+          }
+          // The AFM registers name issuers but carry an LEI only in the MAR
+          // export, so top matches without one are enriched from GLEIF (keyless,
+          // CC0) to give the caller an identifier that chains into
+          // CompanyFinancials jurisdiction "EU" and OwnershipChain.
+          const enriched = await enrichNlCandidatesWithGleif(
+            registerHits.slice(0, 10),
+            options,
+          );
+          return textResult(joinSections(
+            `# Company resolution (AFM registers): ${company}`,
+            entityRows(enriched),
+            `_${AFM_RESOLVE_CAVEAT}_`,
+            nextStep(
+              "use CompanyOwners (jurisdiction \"NL\") for Wft substantial " +
+                "holdings or CompanyInsiders (jurisdiction \"NL\") for Art.19 MAR " +
+                "managers' transactions; an LEI from this table also works with " +
+                "CompanyFinancials jurisdiction \"EU\" (ESEF) and OwnershipChain.",
+            ),
+          ), entitiesStructured(enriched));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -2260,6 +2358,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         }
         if (jurisdiction === "TH") {
           return textResult(TH_FILINGS_UNSUPPORTED);
+        if (jurisdiction === "NL") {
+          return textResult(AFM_FILINGS_UNSUPPORTED);
         }
         if (jurisdiction === "HK") {
           if (mode === "latest_quarterly") {
@@ -2659,6 +2759,35 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `_Regime: ${BAFIN_MAR_REGIME}._`,
             `_${BAFIN_INSIDERS_CAVEAT}_`,
           ), insidersStructured(dealings, "DE"));
+        }
+        if (jurisdiction === "NL") {
+          const { issuerName, rows: insiders } = await getAfmInsiders(company, options);
+          if (!insiders.length) {
+            return textResult(joinSections(
+              `No AFM insider notifications found for "${company}".`,
+              `_${AFM_NOT_FOUND_HINT}_`,
+              `_${AFM_INSIDERS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Insider notifications (AFM): ${issuerName}`,
+            issuerName.toLowerCase() !== company.trim().toLowerCase()
+              ? `_Matched "${company}" to the AFM register issuer **${issuerName}**._`
+              : "",
+            markdownTable(
+              ["Person", "Function / role", "Notification", "Position detail", "Date"],
+              insiders.map((insider) => [
+                insider.name,
+                insider.roles.join(", ") || "—",
+                insider.form,
+                insider.occupation ?? insider.status,
+                insider.filedDate,
+              ]),
+            ),
+            `_Regime: ${AFM_MAR_REGIME}._`,
+            `_${AFM_INSIDERS_CAVEAT}_`,
+            `_Source: AFM disclosure registers (© AFM), fetched on demand._`,
+          ), insidersStructured(insiders, "NL"));
         }
         if (jurisdiction === "TW") {
           const holdings = await getTwseDirectorHoldings(company, options);
@@ -3130,6 +3259,41 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `_${BAFIN_OWNERS_CAVEAT}_`,
           ), ownersStructured(owners, "DE"));
         }
+        if (jurisdiction === "NL") {
+          const { issuerName, rows: owners } = await getAfmOwners(company, options);
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No AFM substantial-holdings notifications (Wft ch. 5.3) found for ` +
+                `"${company}".`,
+              `_${AFM_NOT_FOUND_HINT}_`,
+              `_Threshold regime: ${AFM_WFT_THRESHOLD_DETAIL}._`,
+              `_${AFM_OWNERS_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Substantial holdings (Wft ch. 5.3, AFM): ${issuerName}`,
+            issuerName.toLowerCase() !== company.trim().toLowerCase()
+              ? `_Matched "${company}" to the AFM register issuer **${issuerName}**._`
+              : "",
+            markdownTable(
+              ["Holder", "Capital %", "Voting %", "Notified", "Notification"],
+              owners.map((owner) => [
+                owner.holderName,
+                owner.pctCapital !== undefined ? `${owner.pctCapital}%` : undefined,
+                owner.pctVotingRights !== undefined
+                  ? `${owner.pctVotingRights}%`
+                  : undefined,
+                owner.notifiedDate ?? owner.filedDate,
+                owner.sourceUrl && owner.sourceUrl.includes("wmzk_documents")
+                  ? link("annex", owner.sourceUrl)
+                  : link("register", owner.sourceUrl),
+              ]),
+            ),
+            `_Threshold regime: ${AFM_WFT_THRESHOLD_DETAIL}._`,
+            `_${AFM_OWNERS_CAVEAT}_`,
+            `_Source: AFM substantial-holdings register (© AFM), fetched on demand._`,
+          ), ownersStructured(owners, "NL"));
+        }
         if (jurisdiction === "JP") {
           const owners = await getEdinetLargeHolders(
             company,
@@ -3479,6 +3643,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "TH") {
         return textResult(TH_FINANCIALS_UNSUPPORTED);
+      if (jurisdiction === "NL") {
+        return textResult(AFM_FINANCIALS_UNSUPPORTED);
       }
       if (jurisdiction === "IN") {
         return textResult(

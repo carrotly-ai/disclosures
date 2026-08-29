@@ -13,3 +13,15 @@ export function loadFixture(source: string, name: string): string {
     "utf8",
   );
 }
+
+/**
+ * Load a recorded fixture as raw bytes, for payloads whose encoding is part of
+ * what is under test — the AFM substantial-holdings CSV is Windows-1252, and
+ * reading it as UTF-8 would silently mangle the `Reëel` column that the
+ * adapter's decoding path exists to handle.
+ */
+export function loadFixtureBytes(source: string, name: string): Uint8Array {
+  return new Uint8Array(
+    readFileSync(new URL(`../fixtures/${source}/${name}`, import.meta.url)),
+  );
+}
