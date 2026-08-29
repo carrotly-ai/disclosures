@@ -123,6 +123,21 @@ describe("parseCninfoTopShareholders", () => {
     expect(rows[2]!.pct).toBe(4.4);
   });
 
+  test("still parses holders whose names use CJK Compatibility Ideographs", () => {
+    // Regression guard for the character-class fix: the CJK ranges were written
+    // with a literal 豈 whose codepoint is U+8C48 (an ordinary ideograph), not
+    // U+F900 (the Compatibility Ideographs block start) — the two render
+    // identically. Names in either block must still parse.
+    const compat = MOUTAI_TOP10.replace(
+      "中国贵州茅台酒厂（集团）有限责任公司",
+      "\uf900国贵州茅台酒厂（集团）有限责任公司",
+    );
+    const rows = parseCninfoTopShareholders(compat);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.holderName.startsWith("\uf900")).toBe(true);
+    expect(rows[0]!.pct).toBe(54.4);
+  });
+
   test("parses CATL's different column order to the same fields", () => {
     const rows = parseCninfoTopShareholders(CATL_TOP10);
     expect(rows).toHaveLength(2);
