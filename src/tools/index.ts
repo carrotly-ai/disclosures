@@ -261,6 +261,15 @@ import {
   searchIdxCompanies,
   searchIdxFilings,
 } from "../adapters/idxIndonesia.js";
+  BURSA_ANNOUNCEMENT_CATEGORIES,
+  BURSA_CAVEAT,
+  BURSA_SHAREHOLDING_CATEGORY,
+  BURSA_THRESHOLD_REGIME,
+  getBursaInsiders,
+  getBursaOwners,
+  searchBursaCompanies,
+  searchBursaFilings,
+} from "../adapters/bursaMalaysia.js";
 import {
   companyInput,
   euUnsupportedResult,
@@ -1586,6 +1595,40 @@ const TH_OWNERS_UNSUPPORTED =
   "issuers sits behind the same walls — " + TH_SET_INCAPSULA_REASON +
   " Use jurisdiction \"TH\" with CompanyResolve for the DBD register record.";
 
+// --- MY (Bursa Malaysia) ---------------------------------------------------
+//
+// Bursa's announcements search serves resolve/filings/insiders/owners. The two
+// intents it cannot serve are financials (results are inside announcement PDFs,
+// not a normalized feed) and everything that needs the national company
+// registry, because SSM e-Info is a paid product.
+
+const MY_SSM_PAID_REASON =
+  "SSM (Suruhanjaya Syarikat Malaysia) e-Info, the national companies " +
+  "registry, sells company information per document rather than publishing it " +
+  "openly, so there is no keyless Malaysian registry source for it.";
+
+const MY_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"MY\". Bursa publishes " +
+  "quarterly and annual results as announcement documents, not as a normalized " +
+  "or XBRL financial feed, so this release does not turn them into financial " +
+  "facts. Use CompanyFilings with jurisdiction \"MY\" and category " +
+  "\"FA,FRCO\" (Financial Results) or \"AR,ARCO\" (Annual Report) to locate " +
+  "the report, then open the linked announcement.";
+
+const MY_PRIVATE_RAISES_UNSUPPORTED =
+  "PrivateRaises is unsupported for jurisdiction \"MY\". Malaysia has no " +
+  "Form D equivalent published as open data: private placements by listed " +
+  "issuers appear as ordinary Bursa announcements (use CompanyFilings with " +
+  "jurisdiction \"MY\"), and unlisted-company raises are not disclosed " +
+  "openly. " + MY_SSM_PAID_REASON;
+
+/** Bursa's own category taxonomy, rendered for the CompanyFilings caveat. */
+const MY_CATEGORY_HINT =
+  "Bursa category values for the `forms` filter: " +
+  BURSA_ANNOUNCEMENT_CATEGORIES.map(
+    (category) => `\`${category.value}\` (${category.label})`,
+  ).join(", ") + ".";
+
 const TH_FINANCIALS_UNSUPPORTED =
   "CompanyFinancials is unsupported for jurisdiction \"TH\". The keyless DBD " +
   "juristic-person endpoint carries registered and paid-up capital but no " +
@@ -2027,6 +2070,32 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "CompanyFinancials jurisdiction \"EU\" (ESEF) and OwnershipChain.",
             ),
           ), entitiesStructured(enriched));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+
+      if (jurisdiction === "MY") {
+        try {
+          const results = await searchBursaCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(
+              company,
+              "Try a 4-digit Bursa stock code (e.g. 1155 for Maybank, 1295 for " +
+                "Public Bank) or the issuer name as Bursa spells it.",
+            );
+          }
+          return textResult(joinSections(
+            `# Company resolution (Bursa Malaysia): ${company}`,
+            entityRows(results.slice(0, 10)),
+            `_${BURSA_CAVEAT}_`,
+            nextStep(
+              "use CompanyFilings (jurisdiction \"MY\") for the announcements " +
+                "feed, CompanyInsiders for s.219 director-interest changes, or " +
+                "CompanyOwners for s.138 substantial-shareholder changes — all " +
+                "keyed by the stock code above.",
+            ),
+          ), entitiesStructured(results.slice(0, 10)));
         } catch (error) {
           return failureResult(company, error);
         }
@@ -2494,6 +2563,70 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         if (jurisdiction === "NL") {
           return textResult(AFM_FILINGS_UNSUPPORTED);
         }
+        if (jurisdiction === "MY") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            return textResult(
+              `Mode "${mode}" is unsupported for MY. Bursa's announcements feed ` +
+                "carries annual reports and quarterly results as ordinary " +
+                "announcement categories rather than a normalized latest-report " +
+                "record. Use mode \"search\" with forms [\"AR,ARCO\"] " +
+                "(Annual Report) or [\"FA,FRCO\"] (Financial Results).",
+            );
+          }
+          // Bursa filters server-side by ONE category value, so the first
+          // recognised `forms` entry becomes the category and any other entry
+          // is passed on as the feed's title keyword.
+          const requestedCategory = forms?.find((form) =>
+            BURSA_ANNOUNCEMENT_CATEGORIES.some(
+              (category) => category.value === form,
+            )
+          );
+          const keyword = forms?.find((form) => form !== requestedCategory);
+          const { entity, recordsTotal, filings } = await searchBursaFilings({
+            company,
+            ...(requestedCategory ? { category: requestedCategory } : {}),
+            ...(keyword ? { keyword } : {}),
+            ...(start_date ? { startDate: start_date } : {}),
+            ...(end_date ? { endDate: end_date } : {}),
+            limit: limit ?? 20,
+          }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No Bursa Malaysia announcements found for "${company}"` +
+                (requestedCategory ? ` in category ${requestedCategory}` : "") +
+                " in the requested window.",
+              `_${MY_CATEGORY_HINT}_`,
+              `_${BURSA_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Bursa Malaysia announcements: ${entity.legalName}` +
+              (entity.stockCode ? ` (${entity.stockCode})` : ""),
+            `_${recordsTotal.toLocaleString("en-US")} announcement` +
+              `${recordsTotal === 1 ? "" : "s"} match this query; showing ` +
+              `${filings.length}._`,
+            markdownTable(
+              ["Announced", "Announcement", "Detail", "ann_id", "Link"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.accession,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            `_${MY_CATEGORY_HINT}_`,
+            "_Links open the official Bursa announcement page; this tool never " +
+              "returns document text._",
+            `_${BURSA_CAVEAT}_`,
+            nextStep(
+              "use CompanyInsiders (jurisdiction \"MY\") for the s.219 " +
+                "director-interest announcements or CompanyOwners for the s.138 " +
+                "substantial-shareholder announcements — both parse the linked " +
+                "document's dated transactions.",
+            ),
+          ), filingsStructured(filings));
+        }
         if (jurisdiction === "HK") {
           if (mode === "latest_quarterly") {
             return textResult(
@@ -2895,6 +3028,55 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `_Regime: ${BAFIN_MAR_REGIME}._`,
             `_${BAFIN_INSIDERS_CAVEAT}_`,
           ), insidersStructured(dealings, "DE"));
+        }
+        if (jurisdiction === "MY") {
+          const { entity, rows: insiders, detailedCount, detailNote } =
+            await getBursaInsiders({ company }, options);
+          if (!insiders.length) {
+            return textResult(joinSections(
+              `No Bursa "Changes in Director's Interest (S219 of CA 2016)" ` +
+                `announcements found for "${company}" in the requested window.`,
+              `_${BURSA_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Directors' interest changes (s.219 CA 2016, Bursa Malaysia): ` +
+              `${entity.legalName}` +
+              (entity.stockCode ? ` (${entity.stockCode})` : ""),
+            markdownTable(
+              ["Director", "Announced", "Transaction", "Trade date", "Shares", "Direct %", "Announcement"],
+              insiders.map((insider) => [
+                insider.name,
+                insider.filedDate,
+                insider.occupation,
+                insider.notifiedDate,
+                insider.change !== undefined
+                  ? insider.change.toLocaleString("en-US")
+                  : undefined,
+                insider.pct !== undefined ? `${insider.pct}%` : undefined,
+                link("open", insider.sourceUrl),
+              ]),
+            ),
+            `_Regime: Companies Act 2016 s.219 (a director must notify the ` +
+              `listed issuer of changes in their interest in its shares)._`,
+            "_\"Direct %\" is the director's resulting DIRECT holding; a " +
+              "transaction marked Indirect Interest changes the deemed limb, " +
+              "whose separate indirect/deemed units and percentage are stated " +
+              "in the linked announcement._",
+            detailedCount
+              ? `_Transaction, share count and resulting holding were parsed ` +
+                `from ${detailedCount} linked Bursa announcement` +
+                `${detailedCount === 1 ? "" : "s"}; blank cells mean that ` +
+                `announcement was not opened — its detail is in the linked ` +
+                `document._`
+              : "_Rows are the announcement list only: the transaction, share " +
+                "count and resulting holding live inside each linked Bursa " +
+                "announcement._",
+            detailNote ? `_${detailNote}_` : "",
+            `_${BURSA_CAVEAT}_`,
+            "_Source: Bursa Malaysia company announcements (© Bursa Malaysia), " +
+              "fetched on demand._",
+          ), insidersStructured(insiders, "MY"));
         }
         if (jurisdiction === "NL") {
           const { issuerName, rows: insiders } = await getAfmInsiders(company, options);
@@ -3401,6 +3583,65 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             `_${BAFIN_OWNERS_CAVEAT}_`,
           ), ownersStructured(owners, "DE"));
         }
+        if (jurisdiction === "MY") {
+          const { entity, rows: owners, detailedCount, detailNote } =
+            await getBursaOwners({
+              company,
+              ...(start_date ? { startDate: start_date } : {}),
+              ...(end_date ? { endDate: end_date } : {}),
+            }, options);
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No Bursa "Changes in Sub. S-hldr's Int. (29B/S138 of CA 2016)" ` +
+                `announcements found for "${company}" in the requested window.`,
+              `_Threshold regime: ${BURSA_THRESHOLD_REGIME}._`,
+              `_${BURSA_CAVEAT}_`,
+            ));
+          }
+          return textResult(joinSections(
+            `# Substantial shareholders' interest changes (s.138 CA 2016, ` +
+              `Bursa Malaysia): ${entity.legalName}` +
+              (entity.stockCode ? ` (${entity.stockCode})` : ""),
+            markdownTable(
+              ["Holder", "Announced", "Change", "Trade date", "Shares", "Direct %", "Announcement"],
+              owners.map((owner) => [
+                owner.holderName,
+                owner.filedDate,
+                owner.crossingDirection === "down"
+                  ? "Disposed"
+                  : owner.crossingDirection === "up"
+                    ? "Acquired"
+                    : undefined,
+                owner.crossingDate,
+                owner.change !== undefined
+                  ? Math.abs(owner.change).toLocaleString("en-US")
+                  : undefined,
+                owner.pct !== undefined ? `${owner.pct}%` : undefined,
+                link("open", owner.sourceUrl),
+              ]),
+            ),
+            `_Threshold regime: ${BURSA_THRESHOLD_REGIME}._`,
+            detailedCount
+              ? `_Transaction, share count and resulting direct holding were ` +
+                `parsed from ${detailedCount} linked Bursa announcement` +
+                `${detailedCount === 1 ? "" : "s"}; blank cells mean that ` +
+                `announcement was not opened — its detail is in the linked ` +
+                `document._`
+              : "_Rows are the announcement list only: the transaction, share " +
+                "count and resulting percentage live inside each linked Bursa " +
+                "announcement._",
+            "_These are notified CHANGES in substantial holdings, not a " +
+              "current cap table: a holder appears when it crosses or moves " +
+              "within the 5% threshold, so the list is a dealings feed._",
+            "_\"Direct %\" is the holder's resulting DIRECT holding; where the " +
+              "notification also reports an indirect/deemed limb, that separate " +
+              "figure is in the linked announcement._",
+            detailNote ? `_${detailNote}_` : "",
+            `_${BURSA_CAVEAT}_`,
+            "_Source: Bursa Malaysia company announcements (© Bursa Malaysia), " +
+              "fetched on demand._",
+          ), ownersStructured(owners, "MY"));
+        }
         if (jurisdiction === "NL") {
           const { issuerName, rows: owners } = await getAfmOwners(company, options);
           if (!owners.length) {
@@ -3861,6 +4102,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "NL") {
         return textResult(AFM_FINANCIALS_UNSUPPORTED);
       }
+      if (jurisdiction === "MY") {
+        return textResult(MY_FINANCIALS_UNSUPPORTED);
+      }
       if (jurisdiction === "IN") {
         return textResult(
           "CompanyFinancials is unsupported for jurisdiction \"IN\". BSE financial " +
@@ -4205,7 +4449,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
         jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
         jurisdiction === "ID"
+        jurisdiction === "HK" || jurisdiction === "SG" ||
+        jurisdiction === "TH" || jurisdiction === "MY"
       ) {
+        if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
         const registry = jurisdiction === "GB"
           ? "Companies House"
           : jurisdiction === "KR"

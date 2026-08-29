@@ -1,0 +1,31 @@
+{
+  "recordsTotal": 204159,
+  "recordsFiltered": 204159,
+  "category_message": "",
+  "data": [
+    [
+      1,
+      "<div class='d-lg-none'>28 Aug<br/>2026</div><div class='d-lg-inline-block d-none'>28 Aug 2026</div>",
+      "<a href='/trade/trading_resources/listing_directory/company-profile?stock_code=7854' target=_blank>TIMBERWELL BERHAD</a>",
+      "<a href='/market_information/announcements/company_announcement/announcement_details?ann_id=3700853' target=_blank>Changes in Director's Interest (Section 219 of CA 2016) - MR WONG WAI FOO</a>"
+    ],
+    [
+      2,
+      "<div class='d-lg-none'>28 Aug<br/>2026</div><div class='d-lg-inline-block d-none'>28 Aug 2026</div>",
+      "<a href='/trade/trading_resources/listing_directory/company-profile?stock_code=5184' target=_blank>CYPARK RESOURCES BERHAD</a>",
+      "<a href='/market_information/announcements/company_announcement/announcement_details?ann_id=3700810' target=_blank>Changes in Director's Interest (Section 219 of CA 2016) - PUAN NORITA BINTI JA'AFAR</a>"
+    ],
+    [
+      3,
+      "<div class='d-lg-none'>28 Aug<br/>2026</div><div class='d-lg-inline-block d-none'>28 Aug 2026</div>",
+      "<a href='/trade/trading_resources/listing_directory/company-profile?stock_code=5020' target=_blank>GLOMAC BERHAD</a>",
+      "<a href='/market_information/announcements/company_announcement/announcement_details?ann_id=3700790' target=_blank>Changes in Director's Interest (Section 219 of CA 2016) - TAN SRI DATO' MOHAMED MANSOR BIN FATEH DIN</a>"
+    ],
+    [
+      4,
+      "<div class='d-lg-none'>28 Aug<br/>2026</div><div class='d-lg-inline-block d-none'>28 Aug 2026</div>",
+      "<a href='/trade/trading_resources/listing_directory/company-profile?stock_code=5020' target=_blank>GLOMAC BERHAD</a>",
+      "<a href='/market_information/announcements/company_announcement/announcement_details?ann_id=3700789' target=_blank>Changes in Director's Interest (Section 219 of CA 2016) - DATUK SERI FATEH ISKANDAR BIN TAN SRI DATO' MOHAMED MANSOR</a>"
+    ]
+  ]
+}

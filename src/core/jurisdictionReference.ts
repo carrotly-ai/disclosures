@@ -317,6 +317,33 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "KSEI depository channel, not a clean IDX feed. AHU (the national legal- " +
       "entity registry) is a paid PNBP per-document product, and OJK is a " +
       "regulator/licensing site rather than a filing store.",
+    code: "MY",
+    name: "Malaysia",
+    source: "Bursa Malaysia company announcements (api/v1/announcements/search)",
+    credential:
+      "None (keyless), but the host is Cloudflare-challenged: a browser-backed " +
+      "AdapterOptions.fetchFn is required in practice.",
+    identifiers:
+      "4-digit Bursa stock code, optionally with an instrument suffix " +
+      "(e.g. 1155 Maybank, 1295 Public Bank), or listed issuer name",
+    intents:
+      "CompanyResolve (from the announcements/company surface), CompanyFilings " +
+      "(date window, limit, and the exchange's own category taxonomy, each row " +
+      "linking the official announcement), CompanyInsiders (the \"Changes in " +
+      "Director's Interest (S219 of CA 2016)\" category), CompanyOwners (the " +
+      "\"Changes in Sub. S-hldr's Int. (29B/S138 of CA 2016)\" category). " +
+      "Insiders and owners parse the linked announcement for director/holder " +
+      "name, dated transaction, share count and resulting direct/indirect " +
+      "holding.",
+    caveat:
+      "Both Bursa hosts sit behind a Cloudflare managed challenge whose " +
+      "clearance is cookie-bound, so a plain request is answered with the " +
+      "\"Just a moment...\" interstitial and every MY intent returns an honest " +
+      "message naming AdapterOptions.fetchFn rather than an empty result. " +
+      "Announcement detail is read for a capped number of rows per call; the " +
+      "rest stay link-only. SSM (Companies Commission e-Info) is a paid " +
+      "registry, so private-company resolution, documents and charges are " +
+      "unsupported. Exchange copyright (link-first, on-demand fetch).",
   },
 ] as const;
 

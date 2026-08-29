@@ -21,6 +21,7 @@ export const JURISDICTIONS = {
   TH: "TH",
   NL: "NL",
   ID: "ID",
+  MY: "MY",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -47,6 +48,7 @@ export const DATA_SOURCES = {
   DBD: "DBD",
   AFM: "AFM",
   IDX: "IDX",
+  BURSA: "Bursa Malaysia",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
