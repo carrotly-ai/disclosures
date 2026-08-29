@@ -464,6 +464,113 @@ const brDfpRoute: Route = {
   ]),
 };
 
+// BR FRE bundle: the item-15 shareholder positions and item-12 administrator
+// register the CompanyOwners/CompanyInsiders BR paths read. The handlers pick the
+// FRE year from the real clock (current year first), so the fixture year matches.
+const BR_FRE_YEAR = BR_IPE_YEAR;
+const BR_POSICAO_HEADER =
+  "CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Companhia;ID_Acionista;" +
+  "Acionista;Tipo_Pessoa_Acionista;CPF_CNPJ_Acionista;ID_Acionista_Relacionado;" +
+  "Acionista_Relacionado;Tipo_Pessoa_Acionista_Relacionado;CPF_CNPJ_Acionista_Relacionado;" +
+  "Quantidade_Acao_Ordinaria_Circulacao;Percentual_Acao_Ordinaria_Circulacao;" +
+  "Quantidade_Acao_Preferencial_Circulacao;Percentual_Acao_Preferencial_Circulacao;" +
+  "Quantidade_Total_Acoes_Circulacao;Percentual_Total_Acoes_Circulacao;Nacionalidade;" +
+  "Sigla_UF;Residente_Exterior;Representante_Legal;Tipo_Pessoa_Representante_Legal;" +
+  "CPF_CNPJ_Representante_legal;Data_Composicao_Capital_Social;Data_Ultima_Alteracao;" +
+  "Acionista_Controlador;Participante_Acordo_Acionistas";
+const BR_ADMIN_HEADER =
+  "CNPJ_Companhia;Data_Referencia;Versao;ID_Documento;Nome_Companhia;Orgao_Administracao;" +
+  "Nome;CPF;Profissao;Cargo_Eletivo_Ocupado;Complemento_Cargo_Eletivo_Ocupado;Data_Eleicao;" +
+  "Data_Posse;Data_Inicio_Primeiro_Mandato;Prazo_Mandato;Eleito_Controlador;Outro_Cargo_Funcao;" +
+  "Experiencia_Profissional;Data_Nascimento;Numero_Mandatos_Consecutivos;" +
+  "Percentual_Participacao_Reunioes";
+// Sparse rows: only the columns the adapter reads are filled, positioned by the
+// live header order above.
+function brPosicaoRow(values: Record<string, string>): string {
+  return BR_POSICAO_HEADER.split(";").map((col) => values[col] ?? "").join(";");
+}
+function brAdminRow(values: Record<string, string>): string {
+  return BR_ADMIN_HEADER.split(";").map((col) => values[col] ?? "").join(";");
+}
+const brFreRoute: Route = {
+  pattern: `fre_cia_aberta_${BR_FRE_YEAR}.zip`,
+  body: makeStoredZipMulti([
+    {
+      name: `fre_cia_aberta_posicao_acionaria_${BR_FRE_YEAR}.csv`,
+      content: latin1Bytes([
+        BR_POSICAO_HEADER,
+        brPosicaoRow({
+          CNPJ_Companhia: "33.592.510/0001-54",
+          Data_Referencia: `${BR_FRE_YEAR}-12-31`,
+          Versao: "2",
+          Acionista: "PREVI - CAIXA DE PREVIDÊNCIA",
+          Tipo_Pessoa_Acionista: "PJ",
+          CPF_CNPJ_Acionista: "33.754.482/0001-24",
+          Percentual_Acao_Ordinaria_Circulacao: "7.650000",
+          Percentual_Total_Acoes_Circulacao: "7.650000",
+          Acionista_Controlador: "N",
+          Participante_Acordo_Acionistas: "N",
+        }),
+        // Natural person: the rendered CPF must be middle-masked.
+        brPosicaoRow({
+          CNPJ_Companhia: "33.592.510/0001-54",
+          Data_Referencia: `${BR_FRE_YEAR}-12-31`,
+          Versao: "2",
+          Acionista: "JOÃO DA SILVA",
+          Tipo_Pessoa_Acionista: "PF",
+          CPF_CNPJ_Acionista: "048.556.228-69",
+          Percentual_Acao_Ordinaria_Circulacao: "3.000000",
+          Percentual_Total_Acoes_Circulacao: "3.000000",
+        }),
+        brPosicaoRow({
+          CNPJ_Companhia: "33.592.510/0001-54",
+          Data_Referencia: `${BR_FRE_YEAR}-12-31`,
+          Versao: "2",
+          Acionista: "CONTROLADORA LTDA",
+          Tipo_Pessoa_Acionista: "PJ",
+          CPF_CNPJ_Acionista: "12.345.678/0001-90",
+          Percentual_Acao_Ordinaria_Circulacao: "50.000000",
+          Percentual_Total_Acoes_Circulacao: "40.000000",
+          Acionista_Controlador: "S",
+          Participante_Acordo_Acionistas: "S",
+        }),
+      ].join("\n")),
+    },
+    {
+      name: `fre_cia_aberta_administrador_membro_conselho_fiscal_${BR_FRE_YEAR}.csv`,
+      content: latin1Bytes([
+        BR_ADMIN_HEADER,
+        brAdminRow({
+          CNPJ_Companhia: "33.592.510/0001-54",
+          Data_Referencia: `${BR_FRE_YEAR}-12-31`,
+          Versao: "2",
+          Orgao_Administracao: "Pertence apenas à Diretoria",
+          Nome: "GUSTAVO DUARTE PIMENTA",
+          CPF: "035.844.246-07",
+          Cargo_Eletivo_Ocupado: "10 - Diretor Presidente / Superintendente",
+          Data_Eleicao: `${BR_FRE_YEAR - 1}-08-26`,
+          Prazo_Mandato: "31/05/2027",
+          Eleito_Controlador: "N",
+        }),
+        brAdminRow({
+          CNPJ_Companhia: "33.592.510/0001-54",
+          Data_Referencia: `${BR_FRE_YEAR}-12-31`,
+          Versao: "2",
+          Orgao_Administracao: "Pertence apenas ao Conselho de Administração",
+          Nome: "DANIEL ANDRÉ STIELER",
+          CPF: "391.145.110-53",
+          Cargo_Eletivo_Ocupado: "20 - Presidente do Conselho de Administração",
+          Data_Eleicao: `${BR_FRE_YEAR}-04-30`,
+          Prazo_Mandato: "Até a realização da AGO de 2027",
+          Eleito_Controlador: "S",
+        }),
+      ].join("\n")),
+    },
+    // Members outside the two the adapter wants: never inflated.
+    { name: `fre_cia_aberta_auditor_${BR_FRE_YEAR}.csv`, content: "noise" },
+  ]),
+};
+
 beforeEach(() => {
   resetRateLimiters();
   resetSecTickerCache();
@@ -2285,18 +2392,82 @@ describe("explicit BR routing", () => {
     expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
   });
 
-  test("CompanyInsiders and CompanyOwners explain the BR limits without a network hit", async () => {
-    const fetchFn = routedFetch([]);
+  test("CompanyOwners renders FRE positions with ON/PN split, masked CPF, and bloc flag", async () => {
+    const fetchFn = routedFetch([brRegistrationRoute, brFreRoute]);
     const tools = createTools({ fetchFn, env: ENV });
-    for (const name of ["CompanyInsiders", "CompanyOwners"]) {
-      const result = await toolByName(tools, name).handler({
-        company: "4170",
-        jurisdiction: "BR",
-      } as never);
-      expect(result.isError).toBeUndefined();
-      expect(resultText(result)).toContain('unsupported for jurisdiction "BR"');
-    }
-    expect(fetchFn.requests).toHaveLength(0);
+    const result = await toolByName(tools, "CompanyOwners").handler({
+      company: "4170",
+      jurisdiction: "BR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Shareholder position (CVM FRE item 15)");
+    expect(text).toContain("VALE S.A.");
+    expect(text).toContain("PREVI - CAIXA DE PREVIDÊNCIA"); // Latin-1 decoded
+    expect(text).toContain("33.754.482/0001-24"); // corporate CNPJ shown in full
+    expect(text).toContain("048.***.***-69"); // natural person's CPF masked
+    expect(text).not.toContain("048.556.228-69");
+    expect(text).toContain("50%"); // % ON
+    expect(text).toContain("40%"); // % total
+    expect(text).toContain("controlador + acordo de acionistas");
+    expect(text).toContain("BR FRE posição acionária (item 15, as-filed annual)");
+    expect(text).toContain("_Next:");
+
+    const structured = result.structuredContent as {
+      owners: Array<Record<string, unknown>>;
+      sourceJurisdiction: string;
+    };
+    expect(structured.sourceJurisdiction).toBe("BR");
+    // Sorted by total % desc: Controladora 40, Previ 7.65, João 3.
+    expect(structured.owners.map((owner) => owner.holderName)).toEqual([
+      "CONTROLADORA LTDA",
+      "PREVI - CAIXA DE PREVIDÊNCIA",
+      "JOÃO DA SILVA",
+    ]);
+    expect(structured.owners[0]?.pct).toBe(40);
+    expect(structured.owners[0]?.pctOrdinary).toBe(50);
+    expect(structured.owners[0]?.naturesOfControl).toEqual([
+      "controlador + acordo de acionistas",
+    ]);
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
+  });
+
+  test("CompanyInsiders renders the FRE administrator register by órgão", async () => {
+    const fetchFn = routedFetch([brRegistrationRoute, brFreRoute]);
+    const tools = createTools({ fetchFn, env: ENV });
+    const result = await toolByName(tools, "CompanyInsiders").handler({
+      company: "4170",
+      jurisdiction: "BR",
+    } as never);
+    expect(result.isError).toBeUndefined();
+    const text = resultText(result);
+    expect(text).toContain("Administrators (CVM FRE item 12)");
+    expect(text).toContain("DANIEL ANDRÉ STIELER"); // Latin-1 decoded
+    expect(text).toContain("Conselho de Administração");
+    expect(text).toContain("Diretoria");
+    // The "NN - " numeric prefix CVM prepends is stripped.
+    expect(text).toContain("Diretor Presidente / Superintendente");
+    expect(text).not.toContain("10 - Diretor Presidente");
+    expect(text).toContain("Até a realização da AGO de 2027");
+    // A governance register, not a dealings feed — and no director CPFs.
+    expect(text).toContain("not a directors'-dealings feed");
+    expect(text).not.toContain("391.145.110-53");
+    expect(text).toContain("_Next:");
+
+    const structured = result.structuredContent as {
+      insiders: Array<Record<string, unknown>>;
+      sourceJurisdiction: string;
+    };
+    expect(structured.sourceJurisdiction).toBe("BR");
+    // Conselho de Administração sorts ahead of Diretoria.
+    expect(structured.insiders.map((insider) => insider.name)).toEqual([
+      "DANIEL ANDRÉ STIELER",
+      "GUSTAVO DUARTE PIMENTA",
+    ]);
+    expect(structured.insiders[0]?.roles).toEqual(["Conselho de Administração"]);
+    expect(structured.insiders[0]?.term).toBe("Até a realização da AGO de 2027");
+    expect(structured.insiders[0]?.status).toBe("Elected by controlling shareholder");
+    expect(fetchFn.requests.some(({ url }) => hitsSec(url))).toBe(false);
   });
 
   test("PrivateRaises explains the BR limit without a network hit", async () => {

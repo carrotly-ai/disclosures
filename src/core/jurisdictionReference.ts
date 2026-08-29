@@ -152,8 +152,12 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
     identifiers: "Numeric CVM code or company name",
     intents:
       "CompanyResolve, CompanyFilings (IPE disclosure index), " +
-      "CompanyFinancials (DFP annual, BRL)",
-    caveat: "Bulk open-data files; first calls in a session can be slow.",
+      "CompanyFinancials (DFP annual, BRL), CompanyOwners (FRE posição " +
+      "acionária, item 15), CompanyInsiders (FRE administradores, item 12)",
+    caveat:
+      "Bulk open-data files; first calls in a session can be slow. Owners and " +
+      "insiders are the annual as-filed FRE snapshot, not a live cap table or a " +
+      "dealings feed.",
   },
   {
     code: "DE",

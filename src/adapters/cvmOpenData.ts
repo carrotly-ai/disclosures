@@ -657,6 +657,344 @@ export async function getCvmFinancials(
   });
 }
 
+// --- FRE ownership + administrators (CompanyOwners / CompanyInsiders) -------
+
+// The Formulário de Referência (FRE) is the CVM's annual reference form. Its
+// structured open-data bundle carries, among ~36 member CSVs, the item-15
+// shareholder-position table (posição acionária) and the item-12 administrator
+// register (board/officers). Both are keyed by CNPJ_Companhia — not the CD_CVM
+// used by DFP/IPE — so resolution here matches on the company's CNPJ. A company
+// files the FRE annually (mid-year), and each year's bundle can hold several
+// document versions per company, so the newest reference-date + version snapshot
+// is isolated before rows are surfaced.
+export const CVM_FRE_DATASET_URL =
+  "https://dados.cvm.gov.br/dataset/cia_aberta-doc-fre";
+
+export const CVM_FRE_OWNERS_THRESHOLD_REGIME =
+  "BR FRE posição acionária (item 15, as-filed annual)";
+export const CVM_FRE_OWNERS_FORM = "FRE posição acionária (item 15)";
+export const CVM_FRE_INSIDER_FORM = "FRE administradores (item 12)";
+
+function freUrl(year: number): string {
+  return `${CVM_BASE_URL}/DOC/FRE/DADOS/fre_cia_aberta_${year}.zip`;
+}
+
+/** Digits-only form of a CNPJ/CPF for tolerant cross-feed matching. */
+function digitsOnly(value: string | undefined): string {
+  return (value ?? "").replace(/\D/g, "");
+}
+
+/** The CVM placeholder document id used for foreign/undisclosed holders. */
+function isBlankDoc(digits: string): boolean {
+  return digits.length === 0 || /^0+$/.test(digits);
+}
+
+/**
+ * Mask the middle digits of a natural person's CPF, keeping only the first three
+ * and last two (048.***.***-69) — LGPD prudence for the individual shareholders
+ * the FRE names. Corporate CNPJs identify a company, not a natural person, and
+ * are left intact; anything that is not an 11-digit CPF is returned unchanged.
+ */
+export function maskCpf(value: string): string {
+  const digits = digitsOnly(value);
+  if (digits.length !== 11) return value.trim();
+  return `${digits.slice(0, 3)}.***.***-${digits.slice(9)}`;
+}
+
+/** Recent FRE years to try, newest first (companies file the FRE mid-year). */
+export function freYearsToScan(currentYear: number): number[] {
+  const years: number[] = [];
+  for (let year = currentYear; year >= 2010 && years.length < 3; year -= 1) {
+    years.push(year);
+  }
+  return years;
+}
+
+/**
+ * Strip the CVM "Pertence (apenas) à/ao" wrapper from an órgão classification.
+ * The live feed carries four values, one of which is a dual membership with no
+ * "apenas" ("Pertence à Diretoria e ao Conselho de Administração"), so the
+ * leading article is dropped in its own step — and the article after the "e"
+ * too, or the dual value would keep an internal "ao" and read awkwardly.
+ */
+function normalizeOrgan(value: string | undefined): string {
+  const text = (value ?? "").trim();
+  if (!text) return "—";
+  return text
+    .replace(/^Pertence\s+/i, "")
+    .replace(/^apenas\s+/i, "")
+    .replace(/^(?:à|a|ao|aos|às)\s+/i, "")
+    .replace(/\se\s+(?:à|a|ao|aos|às)\s+/i, " e ")
+    .trim() || text;
+}
+
+/** Drop the "NN - " numeric prefix CVM prepends to elective-post labels. */
+function normalizeCargo(value: string | undefined): string | undefined {
+  const text = (value ?? "").trim().replace(/^\d+\s*-\s*/, "").trim();
+  return text || undefined;
+}
+
+async function loadFreMember(
+  year: number,
+  member: "posicao" | "admin",
+  options: AdapterOptions,
+): Promise<CvmRow[]> {
+  const file = member === "posicao"
+    ? `fre_cia_aberta_posicao_acionaria_${year}.csv`
+    : `fre_cia_aberta_administrador_membro_conselho_fiscal_${year}.csv`;
+  return loadRows(
+    `cvm:fre:${member}:${year}:v1`,
+    freUrl(year),
+    // The FRE bundle is ~8 MB compressed; readZipEntries inflates only this one
+    // member (a filename ending, so posicao_acionaria never catches its
+    // _classe_acao_ sibling) and discards the ~34 others undecompressed.
+    (bytes) => decodeZipCsv(bytes, file),
+    options,
+    CVM_LARGE_REQUEST_TIMEOUT_MS,
+  );
+}
+
+interface CvmSnapshot {
+  rows: CvmRow[];
+  referenceDate?: string;
+  version?: string;
+  year: number;
+}
+
+/**
+ * From the newest FRE year that carries the company (by CNPJ), keep only its
+ * latest reference-date and, within that, its highest document version — so a
+ * bundle holding several filings of the same form collapses to one snapshot.
+ */
+async function selectFreSnapshot(
+  member: "posicao" | "admin",
+  cnpjDigits: string,
+  currentYear: number,
+  options: AdapterOptions,
+): Promise<CvmSnapshot | undefined> {
+  for (const year of freYearsToScan(currentYear)) {
+    const rows = await loadFreMember(year, member, options);
+    const mine = rows.filter(
+      (row) => digitsOnly(row.CNPJ_Companhia) === cnpjDigits,
+    );
+    if (!mine.length) continue;
+    let referenceDate = "";
+    for (const row of mine) {
+      const ref = (row.Data_Referencia ?? "").trim();
+      if (ref > referenceDate) referenceDate = ref;
+    }
+    const atRef = mine.filter(
+      (row) => (row.Data_Referencia ?? "").trim() === referenceDate,
+    );
+    let version = "";
+    for (const row of atRef) {
+      const raw = (row.Versao ?? "").trim();
+      if (Number(raw) > Number(version || "0")) version = raw;
+    }
+    const snap = atRef.filter((row) => (row.Versao ?? "").trim() === version);
+    return {
+      rows: snap,
+      ...(referenceDate ? { referenceDate } : {}),
+      ...(version ? { version } : {}),
+      year,
+    };
+  }
+  return undefined;
+}
+
+export interface CvmOwner {
+  holderName: string;
+  personType?: "PF" | "PJ";
+  /** CPF (masked for natural persons) or CNPJ; unset for aggregate rows. */
+  documentId?: string;
+  pctOrdinary?: number;
+  pctPreferred?: number;
+  pctTotal?: number;
+  isController: boolean;
+  inShareholdersAgreement: boolean;
+  nationality?: string;
+  sourceUrl: string;
+}
+
+export interface CvmOwnersResult {
+  entity: Entity;
+  owners: CvmOwner[];
+  referenceDate?: string;
+  year?: number;
+}
+
+export const CVM_OWNERS_CAP = 25;
+
+/**
+ * Item-15 shareholder positions for a company, newest FRE snapshot. Only direct
+ * holdings are surfaced: rows that carry a related shareholder (Acionista
+ * Relacionado) describe that holder's own ownership chain, and their percentages
+ * are relative to the intermediary, not the issuer, so including them would
+ * misstate the issuer's cap table. Fully-zero rows are dropped, the rest are
+ * sorted by total percentage and capped.
+ */
+export async function getCvmOwners(
+  company: string,
+  options: AdapterOptions = {},
+  currentYear: number = new Date().getUTCFullYear(),
+): Promise<CvmOwnersResult> {
+  const entity = await resolveCvmEntity(company, options);
+  const cnpj = digitsOnly(entity.companyNumber ?? entity.sourceIdentifiers?.companyNumber);
+  if (!cnpj) return { entity, owners: [] };
+  const snap = await selectFreSnapshot("posicao", cnpj, currentYear, options);
+  if (!snap) return { entity, owners: [] };
+
+  const seen = new Set<string>();
+  const owners: CvmOwner[] = [];
+  for (const row of snap.rows) {
+    // Direct holdings only — skip ownership-chain rows for a related holder.
+    if ((row.Acionista_Relacionado ?? "").trim()) continue;
+    const holderName = (row.Acionista ?? "").trim();
+    if (!holderName) continue;
+    const pctOrdinary = parseCvmNumber(row.Percentual_Acao_Ordinaria_Circulacao);
+    const pctPreferred = parseCvmNumber(row.Percentual_Acao_Preferencial_Circulacao);
+    const pctTotal = parseCvmNumber(row.Percentual_Total_Acoes_Circulacao);
+    // A row with no stake in any class carries no information (empty per-class
+    // padding). A golden PN share (ON 0, PN 100, total 0) is kept — it is not
+    // all-zero — so state-golden-share holders still surface.
+    if (!pctOrdinary && !pctPreferred && !pctTotal) continue;
+    const personTypeRaw = (row.Tipo_Pessoa_Acionista ?? "").trim().toUpperCase();
+    const personType = personTypeRaw === "PF" || personTypeRaw === "PJ"
+      ? (personTypeRaw as "PF" | "PJ")
+      : undefined;
+    const rawDoc = (row.CPF_CNPJ_Acionista ?? "").trim();
+    const docDigits = digitsOnly(rawDoc);
+    const documentId = isBlankDoc(docDigits)
+      ? undefined
+      : personType === "PF"
+      ? maskCpf(rawDoc)
+      : rawDoc;
+    const owner: CvmOwner = {
+      holderName,
+      ...(personType ? { personType } : {}),
+      ...(documentId ? { documentId } : {}),
+      ...(pctOrdinary !== undefined ? { pctOrdinary } : {}),
+      ...(pctPreferred !== undefined ? { pctPreferred } : {}),
+      ...(pctTotal !== undefined ? { pctTotal } : {}),
+      isController: (row.Acionista_Controlador ?? "").trim().toUpperCase() === "S",
+      inShareholdersAgreement:
+        (row.Participante_Acordo_Acionistas ?? "").trim().toUpperCase() === "S",
+      ...((row.Nacionalidade ?? "").trim()
+        ? { nationality: (row.Nacionalidade ?? "").trim() }
+        : {}),
+      sourceUrl: freUrl(snap.year),
+    };
+    const key = [
+      holderName.toUpperCase(),
+      documentId ?? "",
+      pctOrdinary ?? "",
+      pctPreferred ?? "",
+      pctTotal ?? "",
+      owner.isController,
+      owner.inShareholdersAgreement,
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    owners.push(owner);
+  }
+  owners.sort((left, right) => (right.pctTotal ?? 0) - (left.pctTotal ?? 0));
+  return {
+    entity,
+    owners: owners.slice(0, CVM_OWNERS_CAP),
+    ...(snap.referenceDate ? { referenceDate: snap.referenceDate } : {}),
+    year: snap.year,
+  };
+}
+
+export interface CvmAdministrator {
+  name: string;
+  organ: string;
+  role?: string;
+  profession?: string;
+  electionDate?: string;
+  term?: string;
+  electedByController?: boolean;
+  sourceUrl: string;
+}
+
+export interface CvmInsidersResult {
+  entity: Entity;
+  administrators: CvmAdministrator[];
+  referenceDate?: string;
+  year?: number;
+}
+
+/**
+ * Display order for the four órgãos the live feed carries: board, dual
+ * membership, officers, then the statutory audit board — the order a reader
+ * scans a Brazilian governance section in. Listed longest-match-first so the
+ * dual membership is not caught by its own "Conselho de Administração"
+ * substring and mis-sorted as a plain board seat; `rank` carries the display
+ * position independently of that matching order.
+ */
+const ORGAN_ORDER: ReadonlyArray<{ name: string; rank: number }> = [
+  { name: "Diretoria e Conselho de Administração", rank: 1 },
+  { name: "Conselho de Administração", rank: 0 },
+  { name: "Diretoria", rank: 2 },
+  { name: "Conselho Fiscal", rank: 3 },
+];
+
+function organRank(organ: string): number {
+  return ORGAN_ORDER.find((entry) => organ.includes(entry.name))?.rank
+    ?? ORGAN_ORDER.length;
+}
+
+/**
+ * Item-12 administrator register (board/officers) for a company, newest FRE
+ * snapshot. This is a register of administrators as filed — election date and
+ * mandate term — not a directors'-dealings feed. Directors' CPFs are omitted
+ * entirely (all are natural persons; LGPD prudence).
+ */
+export async function getCvmInsiders(
+  company: string,
+  options: AdapterOptions = {},
+  currentYear: number = new Date().getUTCFullYear(),
+): Promise<CvmInsidersResult> {
+  const entity = await resolveCvmEntity(company, options);
+  const cnpj = digitsOnly(entity.companyNumber ?? entity.sourceIdentifiers?.companyNumber);
+  if (!cnpj) return { entity, administrators: [] };
+  const snap = await selectFreSnapshot("admin", cnpj, currentYear, options);
+  if (!snap) return { entity, administrators: [] };
+
+  const administrators: CvmAdministrator[] = [];
+  for (const row of snap.rows) {
+    const name = (row.Nome ?? "").trim();
+    if (!name) continue;
+    const role = normalizeCargo(row.Cargo_Eletivo_Ocupado);
+    const profession = (row.Profissao ?? "").trim();
+    const electionDate = isoDate(row.Data_Eleicao);
+    const term = (row.Prazo_Mandato ?? "").trim();
+    const electedRaw = (row.Eleito_Controlador ?? "").trim().toUpperCase();
+    administrators.push({
+      name,
+      organ: normalizeOrgan(row.Orgao_Administracao),
+      ...(role ? { role } : {}),
+      ...(profession ? { profession } : {}),
+      ...(electionDate ? { electionDate } : {}),
+      ...(term ? { term } : {}),
+      ...(electedRaw === "S" || electedRaw === "N"
+        ? { electedByController: electedRaw === "S" }
+        : {}),
+      sourceUrl: freUrl(snap.year),
+    });
+  }
+  administrators.sort((left, right) => {
+    const rank = organRank(left.organ) - organRank(right.organ);
+    return rank !== 0 ? rank : left.name.localeCompare(right.name);
+  });
+  return {
+    entity,
+    administrators,
+    ...(snap.referenceDate ? { referenceDate: snap.referenceDate } : {}),
+    year: snap.year,
+  };
+}
+
 // --- Adapter factory -------------------------------------------------------
 
 export function createCvmAdapter(options: AdapterOptions = {}) {
@@ -667,5 +1005,7 @@ export function createCvmAdapter(options: AdapterOptions = {}) {
       searchCvmFilings(input, options),
     getFinancials: (input: string | CvmFinancialsParams) =>
       getCvmFinancials(input, options),
+    getOwners: (company: string) => getCvmOwners(company, options),
+    getInsiders: (company: string) => getCvmInsiders(company, options),
   };
 }
