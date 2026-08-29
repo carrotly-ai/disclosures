@@ -232,10 +232,29 @@ async function fetchBursaText(
 
 // --- Row parsing -----------------------------------------------------------
 
+/**
+ * Drop <script>/<style> element *content* along with all markup, leaving only
+ * visible text. Scanning tag-by-tag (rather than one pre-pass regex over the
+ * raw HTML) means no crafted end-tag spelling can smuggle script text through:
+ * anything between a script/style start tag and its matching end tag is
+ * discarded outright, and every remaining tag is replaced by a space.
+ */
 function stripTags(html: string): string {
-  return decodeXmlEntities(html.replace(/<[^>]*>/g, " "))
-    .replace(/\s+/g, " ")
-    .trim();
+  const tag = /<(\/?)([a-zA-Z][^\s/>]*)[^>]*>/g;
+  let text = "";
+  let cursor = 0;
+  let skipDepth = 0;
+  let match: RegExpExecArray | null;
+  while ((match = tag.exec(html)) !== null) {
+    if (skipDepth === 0) text += html.slice(cursor, match.index) + " ";
+    cursor = tag.lastIndex;
+    const name = (match[2] ?? "").toLowerCase();
+    if (name !== "script" && name !== "style") continue;
+    if (match[1] === "/") skipDepth = Math.max(0, skipDepth - 1);
+    else skipDepth += 1;
+  }
+  if (skipDepth === 0) text += html.slice(cursor);
+  return decodeXmlEntities(text).replace(/\s+/g, " ").trim();
 }
 
 /** Bursa stock codes are 4 digits, optionally with a 1-2 char instrument suffix. */
@@ -613,7 +632,7 @@ function labelledCells(html: string): LabelledCell[] {
     // Some rows lead with a rowspan "No" counter cell whose content is a
     // <script>; drop leading cells that carry no text.
     const textual = cells.map((cell) =>
-      stripTags(cell.replace(/<script[\s\S]*?<\/script\b[^>]*>/gi, "")),
+      stripTags(cell),
     );
     const start = textual[0] === "" && textual.length > 2 ? 1 : 0;
     const label = textual[start];
@@ -650,7 +669,7 @@ function parseTransactions(html: string): BursaDocumentTransaction[] {
     const cells = Array.from(raw.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)).map(
       (cell) => ({
         html: cell[0] ?? "",
-        text: stripTags((cell[1] ?? "").replace(/<script[\s\S]*?<\/script\b[^>]*>/gi, "")),
+        text: stripTags(cell[1] ?? ""),
       }),
     );
     if (!cells.length) continue;
