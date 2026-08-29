@@ -10,6 +10,15 @@
 - [filings.xbrl.org](https://filings.xbrl.org/) — UKSEF/ESEF annual financials, backing
   `CompanyFinancials`.
 
+**Territorial scope — England & Wales, Scotland, and Northern Ireland.** Companies House is
+the single statutory registrar for the whole United Kingdom, so `jurisdiction: "GB"` already
+covers **Scotland** (`SC`-prefixed company numbers, e.g. `SC012345`), **Northern Ireland**
+(`NI`), and the England-&-Wales default (numeric). There is no separate `GB-SCT` jurisdiction
+to select — pass a Scottish company number or name exactly as you would any other, and every
+GB intent (resolve, filings, officers, PSC, charges, documents, appointments, insolvency)
+behaves identically. The Crown Dependencies (Jersey, Guernsey, Isle of Man) are **not** part
+of the UK register and are not covered.
+
 **Credentials:** `COMPANIES_HOUSE_API_KEY` is required for all Companies House operations.
 The FCA NSM is **inject-only**: it has no public read API, so the TR-1 section appears only
 when you inject your own `fetchFn` via `AdapterOptions`; the default path never contacts
