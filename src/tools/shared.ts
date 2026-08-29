@@ -19,13 +19,14 @@ export const companyInput = {
         "(IN), 4-digit TWSE listing code (TW), numeric CVM code (BR), " +
         "8-digit BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), 4/5-digit HKEX " +
         "stock code (HK), Singapore UEN (SG), 13-digit juristic-person " +
-        "registration number (TH), AFM-register issuer name or LEI (NL), or " +
+        "registration number (TH), AFM-register issuer name or LEI (NL), " +
+        "4-digit Bursa stock code or issuer name (MY), or " +
         "20-character LEI",
     ),
   jurisdiction: z
     .enum([
       "US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE", "FR", "HK",
-      "SG", "TH", "NL",
+      "SG", "TH", "NL", "MY",
     ])
     .optional()
     .describe(
@@ -44,7 +45,11 @@ export const companyInput = {
         "13-digit juristic number, name search needs DBD_API_KEY), or " +
         "NL (AFM disclosure registers — Dutch listed issuers: CompanyResolve, " +
         "CompanyOwners (Wft substantial holdings), CompanyInsiders (Art.19 MAR " +
-        "managers' transactions + directors' holdings)). " +
+        "managers' transactions + directors' holdings)), or " +
+        "MY (Bursa Malaysia announcements — CompanyResolve, CompanyFilings, " +
+        "CompanyInsiders (s.219 director interest), CompanyOwners (s.138 " +
+        "substantial shareholding); Cloudflare-challenged, needs a " +
+        "browser-backed AdapterOptions.fetchFn). " +
         "Omit for the existing US default.",
     ),
 };
@@ -88,7 +93,7 @@ export function failureResult(company: string, error: unknown): ToolResult {
   }
   const message = error instanceof Error ? error.message : String(error);
   if (
-    /not found|no sec company found|no gleif entity|no companies house company found|no opendart company found|no edinet company found|no cninfo company found|no bse company found|no twse company found|no cvm company found|no bafin company found|no hkexnews company found|no acra company found|no afm issuer found/i
+    /not found|no sec company found|no gleif entity|no companies house company found|no opendart company found|no edinet company found|no cninfo company found|no bse company found|no twse company found|no cvm company found|no bafin company found|no hkexnews company found|no acra company found|no afm issuer found|no bursa company found/i
       .test(message)
   ) {
     return notFoundResult(company);

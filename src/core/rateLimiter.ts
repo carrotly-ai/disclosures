@@ -217,6 +217,15 @@ export const dbdRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 // trip immediately rather than repeatedly pulling 100 MB from AFM.
 export const afmRateLimiter = new SlidingWindowRateLimiter(12, 60_000);
 
+// Malaysia Bursa (www.bursamalaysia.com + disclosure.bursamalaysia.com). The
+// announcements search publishes no documented limit, but both hosts sit behind
+// a Cloudflare managed challenge, so be conservative: one CompanyInsiders or
+// CompanyOwners call is a resolve + a category search plus up to
+// BURSA_MAX_DETAIL_FETCHES announcement-document reads. Keep a budget that
+// never self-trips on one bounded lookup while cross-call abuse trips it — and
+// never contributes to the very anti-bot pressure the challenge exists for.
+export const bursaRateLimiter = new SlidingWindowRateLimiter(90, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -238,4 +247,5 @@ export function resetRateLimiters(): void {
   acraRateLimiter.reset();
   dbdRateLimiter.reset();
   afmRateLimiter.reset();
+  bursaRateLimiter.reset();
 }
