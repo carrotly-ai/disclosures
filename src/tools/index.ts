@@ -313,6 +313,7 @@ import {
   searchAsicBannedPersons,
   searchAsicCompanies,
   searchAsxCompanies,
+  stripAustralianLegalForm,
 } from "../adapters/asxAsic.js";
 import type { AsicEntity, AsxEntity } from "../adapters/asxAsic.js";
 import {
@@ -2066,21 +2067,12 @@ const AU_PERSON_SEARCH_UNSUPPORTED =
 const AU_GLEIF_ENRICH_LIMIT = 3;
 
 /**
- * Australian entity names carry trailing legal forms the sources abbreviate
- * inconsistently ("LIMITED" vs "LTD", "PROPRIETARY LIMITED" vs "PTY LTD"), so
- * the comparison key drops them before matching.
+ * Comparison key for an Australian company name: trailing legal form removed
+ * (the sources abbreviate it inconsistently — "LIMITED" vs "LTD",
+ * "PROPRIETARY LIMITED" vs "PTY LTD"), then normalized.
  */
-const AU_LEGAL_FORM =
-  /[\s,.]*(?:\b(?:PROPRIETARY|PTY|PUBLIC)\b[\s.]*)?\b(?:LIMITED|LTD|NL|INCORPORATED|INC)\b[\s.]*$/i;
-
 function australianNameKey(name: string): string {
-  let result = name.trim();
-  for (let index = 0; index < 3; index += 1) {
-    const next = result.replace(AU_LEGAL_FORM, "").trim();
-    if (!next || next === result) break;
-    result = next;
-  }
-  return normalizeEntityName(result);
+  return normalizeEntityName(stripAustralianLegalForm(name));
 }
 
 async function enrichAuCandidatesWithGleif(

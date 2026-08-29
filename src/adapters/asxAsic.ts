@@ -470,6 +470,27 @@ function listedToEntity(row: AsxListedCompany, matchReason: string): AsxEntity {
   };
 }
 
+/**
+ * Australian company names end in a legal form the sources abbreviate
+ * inconsistently ("LIMITED" vs "LTD", "PROPRIETARY LIMITED" vs "PTY LTD").
+ * Stripping it before ranking matters for honesty as much as recall: without
+ * it, a query for an unrelated "… Pty Ltd" shares the token "LTD" with most of
+ * the market, so the zero-overlap guard below never fires and a random listed
+ * company is presented as a match.
+ */
+export const AUSTRALIAN_LEGAL_FORM =
+  /[\s,.]*(?:\b(?:PROPRIETARY|PTY|PUBLIC)\b[\s.]*)?\b(?:LIMITED|LTD|NL|INCORPORATED|INC)\b[\s.]*$/i;
+
+export function stripAustralianLegalForm(name: string): string {
+  let result = name.trim();
+  for (let index = 0; index < 3; index += 1) {
+    const next = result.replace(AUSTRALIAN_LEGAL_FORM, "").trim();
+    if (!next || next === result) break;
+    result = next;
+  }
+  return result || name.trim();
+}
+
 const ASX_NO_MATCH_REASON = "ASX directory name search result";
 
 /**
@@ -514,13 +535,25 @@ export async function searchAsxCompanies(
   }
 
   const candidates = directory.map((row) => listedToEntity(row, ASX_NO_MATCH_REASON));
+  // Rank on legal-form-stripped names (see stripAustralianLegalForm), keyed
+  // back to the real entity by ASX code so the response still shows the
+  // exchange's own spelling.
+  const byCode = new Map(candidates.map((entity) => [entity.asxCode, entity]));
+  const shadows = candidates.map((entity) => ({
+    ...entity,
+    legalName: stripAustralianLegalForm(entity.legalName),
+  }));
   // Drop zero-overlap candidates: 1,840 listings ranked against a name that is
   // simply not listed in Australia would otherwise return a full page of
   // unrelated issuers that reads as "here are your matches".
-  const ranked = rankEntities(trimmed, candidates, {
+  const ranked = rankEntities(stripAustralianLegalForm(trimmed), shadows, {
     fallbackReason: ASX_NO_MATCH_REASON,
   }).filter((entity) => entity.matchReason !== ASX_NO_MATCH_REASON)
-    .slice(0, ASX_MAX_RESULTS) as AsxEntity[];
+    .slice(0, ASX_MAX_RESULTS)
+    .flatMap((shadow) => {
+      const real = byCode.get((shadow as AsxEntity).asxCode);
+      return real ? [{ ...real, matchReason: shadow.matchReason }] : [];
+    }) as AsxEntity[];
   const lead = ranked[0];
   if (!lead) return ranked;
   return [await attachAsxIsin(lead, options), ...ranked.slice(1)];
@@ -638,6 +671,68 @@ function asicRowToEntity(
     sourceUrl: asicCompanyDatasetUrl(),
     matchReason,
   };
+}
+
+/**
+ * Column order of the bulk Company Dataset export, which is TAB-delimited
+ * despite its `.csv` name. Kept so the bulk file can be mapped to exactly the
+ * same record shape the datastore returns.
+ */
+export const ASIC_COMPANY_CSV_COLUMNS = [
+  "Company Name",
+  "ACN",
+  "Type",
+  "Class",
+  "Sub Class",
+  "Status",
+  "Date of Registration",
+  "Date of Deregistration",
+  "Previous State of Registration",
+  "State Registration number",
+  "Modified since last report",
+  "Current Name Indicator",
+  "ABN",
+  "Current Name",
+  "Current Name Start Date",
+] as const;
+
+/**
+ * Map one TAB-delimited row of the bulk Company Dataset export into the same
+ * record shape `datastore_search` returns, so both paths reduce to identical
+ * entities.
+ *
+ * This is NOT on the live path and the 399 MB file is never downloaded — CKAN's
+ * datastore serves the same rows as a per-company query (see the resource-id
+ * comment above). It exists so the equivalence is explicit and testable, and so
+ * a future contributor has a documented starting point if data.gov.au ever
+ * retires the datastore for this resource. Should that happen, the honest move
+ * is to say the query API is gone — not to silently pull hundreds of megabytes
+ * on a routine resolve.
+ */
+export function parseAsicCompanyCsvRow(
+  line: string,
+): Record<string, unknown> | undefined {
+  const cells = line.split("\t");
+  if (cells.length < ASIC_COMPANY_CSV_COLUMNS.length) return undefined;
+  const row: Record<string, unknown> = {};
+  ASIC_COMPANY_CSV_COLUMNS.forEach((column, index) => {
+    const value = (cells[index] ?? "").trim();
+    row[column] = value || null;
+  });
+  return asString(row["ACN"]) && asString(row["Company Name"]) ? row : undefined;
+}
+
+/** Map a whole bulk export (header line + rows) to register entities. */
+export function parseAsicCompanyCsv(text: string): AsicEntity[] {
+  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const [header, ...body] = lines;
+  if (!header?.startsWith(ASIC_COMPANY_CSV_COLUMNS[0])) return [];
+  return body.flatMap((line) => {
+    const row = parseAsicCompanyCsvRow(line);
+    if (!row) return [];
+    const entity = asicRowToEntity(row, "ASIC bulk Company Dataset row");
+    return entity ? [entity] : [];
+  });
 }
 
 function asicCacheKey(kind: string, value: string): string {

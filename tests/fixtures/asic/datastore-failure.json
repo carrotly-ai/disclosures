@@ -1,0 +1,8 @@
+{
+ "help": "https://data.gov.au/data/api/3/action/help_show?name=datastore_search",
+ "success": false,
+ "error": {
+  "message": "DataStore resource not found",
+  "__type": "Not Found Error"
+ }
+}
