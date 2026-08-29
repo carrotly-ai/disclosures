@@ -609,7 +609,7 @@ const IDX_DATE_RE = /(\d{4}-\d{2}-\d{2})/;
 export function parseIdxContexts(xbrl: string): Map<string, IdxContext> {
   const contexts = new Map<string, IdxContext>();
   const contextRe =
-    /<(?:\w+:)?context\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/(?:\w+:)?context>/g;
+    /<(?:[A-Za-z][\w.-]*:)?context\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/(?:[A-Za-z][\w.-]*:)?context>/g;
   let match: RegExpExecArray | null;
   while ((match = contextRe.exec(xbrl)) !== null) {
     const id = match[1] ?? "";
@@ -621,8 +621,8 @@ export function parseIdxContexts(xbrl: string): Map<string, IdxContext> {
     const periodKey: IdxPeriodKey =
       idMatch[1] === "CurrentYear" ? "current" : "prior1";
     const endTag =
-      /<(?:\w+:)?endDate>([\s\S]*?)<\/(?:\w+:)?endDate>/.exec(body) ??
-      /<(?:\w+:)?instant>([\s\S]*?)<\/(?:\w+:)?instant>/.exec(body);
+      /<(?:[A-Za-z][\w.-]*:)?endDate>([\s\S]*?)<\/(?:[A-Za-z][\w.-]*:)?endDate>/.exec(body) ??
+      /<(?:[A-Za-z][\w.-]*:)?instant>([\s\S]*?)<\/(?:[A-Za-z][\w.-]*:)?instant>/.exec(body);
     const periodEnd = endTag ? IDX_DATE_RE.exec(endTag[1] ?? "")?.[1] : undefined;
     if (!periodEnd) continue;
     contexts.set(id, { periodKey, periodEnd });
@@ -672,7 +672,7 @@ function parseIdxFactValue(text: string): number | undefined {
  */
 export function parseIdxBasis(xbrl: string): FinancialBasis | undefined {
   const match =
-    /<(?:\w+:)?WhetherTheFinancialStatementsAreOfAnIndividualEntityOrAGroupOfEntities\b[^>]*>([^<]*)</
+    /<(?:[A-Za-z][\w.-]*:)?WhetherTheFinancialStatementsAreOfAnIndividualEntityOrAGroupOfEntities\b[^>]*>([^<]*)</
       .exec(xbrl);
   const text = match?.[1]?.toLowerCase();
   if (!text) return undefined;
@@ -713,7 +713,7 @@ export function parseIdxXbrlFinancials(
   // a divide-based unit like IDR/shares deliberately does not match).
   const monetaryUnits = new Set<string>();
   const unitRe =
-    /<(?:\w+:)?unit\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/(?:\w+:)?unit>/g;
+    /<(?:[A-Za-z][\w.-]*:)?unit\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/(?:[A-Za-z][\w.-]*:)?unit>/g;
   let unitMatch: RegExpExecArray | null;
   while ((unitMatch = unitRe.exec(xbrl)) !== null) {
     const body = unitMatch[2] ?? "";
@@ -722,7 +722,9 @@ export function parseIdxXbrlFinancials(
   }
 
   const chosen = new Map<string, FactCandidate>();
-  const factRe = /<(\w+):([A-Za-z0-9_]+)\b([^>]*)>([^<]*)<\/\1:\2>/g;
+  // IDX prefixes are HYPHENATED (idx-cor, idx-dei) — `\w` would not match them,
+  // so the prefix class is spelled out. Backreferences keep open/close paired.
+  const factRe = /<([A-Za-z][\w.-]*):([A-Za-z0-9_]+)\b([^>]*)>([^<]*)<\/\1:\2>/g;
   let match: RegExpExecArray | null;
   while ((match = factRe.exec(xbrl)) !== null) {
     const localName = match[2] ?? "";

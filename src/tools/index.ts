@@ -4200,7 +4200,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
-        jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH"
+        jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
+        jurisdiction === "ID"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -4224,7 +4225,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                             ? "HKEXnews (Hong Kong)"
                             : jurisdiction === "SG"
                               ? "ACRA (Singapore)"
-                              : "DBD (Thailand)";
+                              : jurisdiction === "TH"
+                                ? "DBD (Thailand)"
+                                : "IDX (Indonesia)";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +
