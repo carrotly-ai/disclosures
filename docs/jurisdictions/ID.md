@@ -168,8 +168,11 @@ exercised the banking revenue variant.
 
 IDX site content is **exchange copyright with no open-data licence**, which is the *same*
 posture as the already-shipped `bseIndia`, `cninfo`, `twseOpenApi` and HKEXnews adapters —
-and materially different from the personal-use redistribution bans that disqualify PSE
-(Philippines) and ASX.
+and materially different from the personal-use redistribution bans in the ASX terms (on
+which AU was declined) and in the PSE EDGE terms. PH ships despite those terms as an
+explicit maintainer decision, with the conflict recorded in [PH.md](PH.md); ID needs no such
+warning, because IDX asserts copyright without restricting use to personal, non-commercial
+purposes.
 
 Under this package's **link-first, fetch-on-demand** model — return the official source
 link, fetch content on the end user's behalf at the moment they ask, and cite the source —

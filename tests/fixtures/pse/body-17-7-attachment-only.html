@@ -1,0 +1,193 @@
+<!-- 
+    <!DOCTYPE ..> 을 추가할 때는 반드시 HTML이 아닌 XHTML Doctype을 추가할 것. HTML Doctype을 추가하면
+      PDF 생성할 때 오류 발생. DOCTYPE을 추가하지 않아도 아무 문제없으므로 가능한 추가하지 말 것.
+--><!DOCTYPE html PUBLIC "-//W3C//ENTITIES Latin 1 for XHTML//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml-lat1.ent">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko" lang="ko">
+ <head> 
+  <meta charset="utf-8" /> 
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /> 
+  <!-- css-desktop-start --> 
+  <style type="text/css">
+  @charset "utf-8";
+
+html,body{color:#333; background-color: #fff;}
+body,input,textarea,select { font:normal 0.9em thoma, arial, Verdana, sans-serif;}
+
+/* for PDF */
+tr { page-break-inside: avoid; }  
+
+
+img{border:0; vertical-align:middle;}
+address,caption,cite,code,dfn,em,var{font-style:normal;font-weight:normal;}
+li{list-style:none;}
+
+
+input,textarea,select{ vertical-align:middle;}
+input[type="radio"]{margin-right:3px; vertical-align:top;}
+/*IE7 Hack*/
+*:first-child+html input[type="radio"]{margin-right:0px; vertical-align:middle;}
+*:first-child+html input[type="checkbox"]{margin:-5px 0px;}
+
+
+ 
+
+#contentBox{width:688px; border:2px solid #ccc; padding: 8px; }
+#contentBox h1,#contentBox h2,#contentBox h3, #contentBox h4{border-bottom:1px solid #ccc; padding-bottom:15px; text-align:center;}
+#contentBox h1 span,#contentBox h2 span{display:block; font-size:0.8em; margin:5px;}
+#contentBox h4 span{display:block;}
+
+#contentBox .textleft{text-align:left;}
+#contentBox caption{font-weight:bold;}
+#contentBox caption img{ float:right;}
+
+#contentBox th { text-align: center; }
+#contentBox  table{width:100%; border-collapse:collapse; border:1px solid #ccc; margin:15px 0px;}
+#contentBox .type1 th, th.ex { width: 20%; text-align: left; }
+#contentBox .type2 th { text-align: left; }
+#contentBox th {background-color:#eee; color:#444; }
+#contentBox th, #contentBox td {border:1px solid #ccc; padding:3px; font-size:0.8em; }
+caption{text-align:left; margin-bottom:5px; font-size:0.8em; color:#222;}
+
+
+#contentBox h1 img{  display:block; margin:0px auto 8px ;}
+#contentBox p.info{font-size:0.8em;text-align:justify;font-style:italic;}
+#contentBox p.just{text-align:justify;}
+
+
+#contentBox p.reportType {font-weight:bold;  margin:5px 0px;}
+
+#contentBox ul.reportType, #contentBox ul.reportTypeL{ padding:5px;  margin:0px; font-size:0.8em;font-weight:normal; border:1px dashed #bbb; overflow:auto; }
+#contentBox .reportType  span,#contentBox .reportTypeL  span{padding:0px 10px 0px 5px; width:60px; display:inline-block; white-space: nowrap; }
+
+#contentBox .reportType li {
+  margin: 0.8em 0em 0.8em 0em;
+}
+#contentBox .reportTypeL li:first-child {
+    float: left;
+
+    padding-right: 50px;
+    margin: 0.8em 0em 0.8em 0em;
+}
+#contentBox .reportTypeL li {
+    padding-right: 50px;
+    margin: 0.8em 0em 0.8em 0em;
+}
+
+#contentBox ul.status{ padding:0px; margin:0px; }
+#contentBox .status li {float:left;  padding-right:50px;}
+
+#contentBox  dl.choice{border:none; margin:0px; padding:0px}
+
+
+#contentBox dl{border:2px solid #bbb; padding:15px; }
+#contentBox dl.none{border:none; padding:8px; }
+
+#contentBox dd{margin:5px ;}
+#contentBox dd span{padding:0px 10px;}
+#contentBox dl table{ margin:5px 0px;}
+#contentBox dd.hline{float:left;  padding: 0px 15px;}
+#contentBox .clear{clear:both}
+
+#contentBox .indent15{text-indent:15px;}
+#contentBox .indent20{text-indent:20px;}
+#contentBox .em{font-size:110%; font-weight:bold; text-align:center; padding:10px 100px;}
+#contentBox .sub{font-weight:bold;}
+
+
+#contentBox ul.choice{ padding:0px; }
+#contentBox ul.choice span{padding:0px 10px 0px 5px;}
+
+
+
+
+
+
+#contentBox hr{margin:10px 0px; height:1px; border-width:0;  background-color:#ccc; }
+
+
+#remarkContents {width: 688px; margin: 10px; }
+#remarkContents li {list-style-type: circle; margin-top: 3px;}
+
+  </style> 
+  <!-- css-desktop-end --> 
+  <style type="text/css">
+    input { border: none; }
+
+    .fmtNumber {
+      text-align: right;
+    }
+
+    .alignRight {
+      text-align: right;
+    }
+    
+    span.valInput {
+      font-size: 1.1em;
+      display: block;
+    }
+    p.valText {
+      font-size: 1.1em;
+      white-space: pre-line;
+    }
+    span.valSelect {
+      font-size: 1.1em;
+      display: block;
+    }
+    textarea {
+      color: black;
+      border: none; 
+      white-space: pre-line; 
+      overflow-y: auto; 
+      word-wrap: break-word; 
+      resize: none;
+    }
+  </style> 
+ </head> 
+ <body><a href="https://edge.pse.com.ph/cdn-cgi/content?id=6thBZK5uO60aN9WmInpsgoTVZV2KsvYRk3Xq8uvPsBk-1788017597.0356443-1.2.1.1-Rts7MO5oDmW5MSq1GzY_s.JEC6mSUjOH4_l1k.6pntQyihq_mm.mPGg6t99ApZmS" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a>
+<div id="remarkContents" style="">       <table style="width: 100%; margin-bottom: 7px; font-weight: bold; "> <tr style="padding: 0px;">                                        <td></td>                                       <td style="text-align:right;">CR06391-2026</td>              </tr>                     </table>                      <span style="font-size: 1.0em; margin-left: 20px;"></span> <ul style="margin-top: 0;">                 </ul>     </div> 
+  <div id="form1" action="/submission/accomplish"> 
+   <div id="contentBox"> 
+    <p class="info">The Exchange does not warrant and holds no responsibility for the veracity of the facts and representations contained in all corporate disclosures, including financial reports. All data contained herein are prepared and submitted by the disclosing party to the Exchange, and are disseminated solely for purposes of information. Any questions on the data contained herein should be addressed directly to the Corporate Information Officer of the disclosing party.</p> 
+    <h1><img src="clogo/co_MER_logo.gif" alt="" id="companyLogo" width="175" /><span id="companyName">Manila Electric Company</span><span id="companyStockSymbol">MER</span></h1> 
+    <h4>PSE Disclosure Form 17-7 - Statement of Changes in Beneficial <br /> Ownership of Securities <span><i>References: SRC Rule 23 and <br /> Section 17.5 of the Revised Disclosure Rules</i></span> </h4> 
+    <table class="type1"> 
+     <tbody> 
+      <tr> 
+       <th>Name of Reporting Person</th> 
+       <td><span class="valInput ">Erville D. Magtubo</span></td> 
+      </tr> 
+      <tr> 
+       <th>Relationship of Reporting Person to Issuer</th> 
+       <td><span class="valInput ">Vice President and Head, Customer Care Group</span></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1"> 
+     <tbody> 
+      <tr> 
+       <th>Description of the Disclosure</th> 
+      </tr> 
+      <tr> 
+       <td><p class="valText">Please refer to the attached disclosure.</p></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <div style="margin-top: 48px;"> 
+     <span style="font-weight: bold; font-size: 0.8em;">Filed on behalf by:</span> 
+     <table class="type2" style="margin-top: 3px;"> 
+      <tbody> 
+       <tr> 
+        <th style="width: 40%;">Name</th> 
+        <td>Jocelyn Villar-Altamira</td> 
+       </tr> 
+       <tr> 
+        <th>Designation</th> 
+        <td>Vice President and Head, Corporate Governance and Compliance</td> 
+       </tr> 
+      </tbody> 
+     </table> 
+    </div> 
+   </div> 
+  </div>  
+ </body>
+</html>

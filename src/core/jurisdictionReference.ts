@@ -401,6 +401,42 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "unsupported. Filings are the issuer's own English or Arabic filing; a " +
       "scanned PDF reports no extractable text layer rather than guessing.",
   },
+  {
+    code: "PH",
+    name: "Philippines",
+    source: "PSE EDGE (edge.pse.com.ph — keyless disclosure portal)",
+    credential: "None (fully keyless HTML/JSON; no browser required).",
+    identifiers:
+      "PSE ticker symbol (e.g. SM, SMPH, SMC), the numeric PSE company id " +
+      "(cmpyId, e.g. 599), or the issuer name as PSE EDGE spells it",
+    intents:
+      "CompanyResolve (autocomplete + company directory — symbol, sector, " +
+      "subsector, listing date, company/security id; LEI enriched via GLEIF), " +
+      "CompanyFilings (the per-issuer disclosure index with a date window, " +
+      "limit and template filter), CompanyDocument (a disclosure by its " +
+      "edge_no — metadata, extracted body text, or a PDF attachment), " +
+      "CompanyInsiders (PSE form 13-1 changes in shareholdings of directors " +
+      "and principal officers), CompanyOwners (POR-1 Public Ownership Report " +
+      "roster, or the 17-7 beneficial-ownership dealings feed), " +
+      "CompanyFinancials (17-A annual / 17-Q quarterly headline figures).",
+    caveat:
+      "TERMS-OF-USE CONFLICT — READ BEFORE USE: PSE's disclaimer " +
+      "(https://edge.pse.com.ph/page/disclaimer.do) restricts the site's " +
+      "contents to \"personal, non-commercial use\" and expressly forbids " +
+      "transmitting, reproducing or distributing them \"to any third person, " +
+      "including others in your company or organization\" without PSE's prior " +
+      "written consent. That conflicts with redistributing PSE content through " +
+      "this package, and it is near-identical to the ASX wording this project " +
+      "treated as disqualifying (AU was skipped on that basis; PH was shipped " +
+      "anyway as an explicit maintainer decision). The operator deploying this " +
+      "package — not the package — is responsible for holding the rights to " +
+      "use PSE data in their context. Coverage caveats: EDGE covers " +
+      "PSE-LISTED issuers only (unlisted Philippine companies file with the " +
+      "SEC's login-walled, paid eFAST); insiders/owners always list the index " +
+      "rows but parse per-document detail for a capped number per call, the " +
+      "rest staying honestly link-only; many 17-7 filings carry their " +
+      "substance in a PDF attachment rather than the HTML body.",
+  },
 ] as const;
 
 export function renderJurisdictionReference(

@@ -1,0 +1,331 @@
+<!-- 
+    <!DOCTYPE ..> 을 추가할 때는 반드시 HTML이 아닌 XHTML Doctype을 추가할 것. HTML Doctype을 추가하면
+      PDF 생성할 때 오류 발생. DOCTYPE을 추가하지 않아도 아무 문제없으므로 가능한 추가하지 말 것.
+--><!DOCTYPE html PUBLIC "-//W3C//ENTITIES Latin 1 for XHTML//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml-lat1.ent">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ko" lang="ko">
+ <head> 
+  <meta charset="utf-8" /> 
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" /> 
+  <!-- css-desktop-start --> 
+  <style type="text/css">
+  @charset "utf-8";
+
+html,body{color:#333; background-color: #fff;}
+body,input,textarea,select { font:normal 0.9em thoma, arial, Verdana, sans-serif;}
+
+/* for PDF */
+tr { page-break-inside: avoid; }  
+
+
+img{border:0; vertical-align:middle;}
+address,caption,cite,code,dfn,em,var{font-style:normal;font-weight:normal;}
+li{list-style:none;}
+
+
+input,textarea,select{ vertical-align:middle;}
+input[type="radio"]{margin-right:3px; vertical-align:top;}
+/*IE7 Hack*/
+*:first-child+html input[type="radio"]{margin-right:0px; vertical-align:middle;}
+*:first-child+html input[type="checkbox"]{margin:-5px 0px;}
+
+
+ 
+
+#contentBox{width:688px; border:2px solid #ccc; padding: 8px; }
+#contentBox h1,#contentBox h2,#contentBox h3, #contentBox h4{border-bottom:1px solid #ccc; padding-bottom:15px; text-align:center;}
+#contentBox h1 span,#contentBox h2 span{display:block; font-size:0.8em; margin:5px;}
+#contentBox h4 span{display:block;}
+
+#contentBox .textleft{text-align:left;}
+#contentBox caption{font-weight:bold;}
+#contentBox caption img{ float:right;}
+
+#contentBox th { text-align: center; }
+#contentBox  table{width:100%; border-collapse:collapse; border:1px solid #ccc; margin:15px 0px;}
+#contentBox .type1 th, th.ex { width: 20%; text-align: left; }
+#contentBox .type2 th { text-align: left; }
+#contentBox th {background-color:#eee; color:#444; }
+#contentBox th, #contentBox td {border:1px solid #ccc; padding:3px; font-size:0.8em; }
+caption{text-align:left; margin-bottom:5px; font-size:0.8em; color:#222;}
+
+
+#contentBox h1 img{  display:block; margin:0px auto 8px ;}
+#contentBox p.info{font-size:0.8em;text-align:justify;font-style:italic;}
+#contentBox p.just{text-align:justify;}
+
+
+#contentBox p.reportType {font-weight:bold;  margin:5px 0px;}
+
+#contentBox ul.reportType, #contentBox ul.reportTypeL{ padding:5px;  margin:0px; font-size:0.8em;font-weight:normal; border:1px dashed #bbb; overflow:auto; }
+#contentBox .reportType  span,#contentBox .reportTypeL  span{padding:0px 10px 0px 5px; width:60px; display:inline-block; white-space: nowrap; }
+
+#contentBox .reportType li {
+  margin: 0.8em 0em 0.8em 0em;
+}
+#contentBox .reportTypeL li:first-child {
+    float: left;
+
+    padding-right: 50px;
+    margin: 0.8em 0em 0.8em 0em;
+}
+#contentBox .reportTypeL li {
+    padding-right: 50px;
+    margin: 0.8em 0em 0.8em 0em;
+}
+
+#contentBox ul.status{ padding:0px; margin:0px; }
+#contentBox .status li {float:left;  padding-right:50px;}
+
+#contentBox  dl.choice{border:none; margin:0px; padding:0px}
+
+
+#contentBox dl{border:2px solid #bbb; padding:15px; }
+#contentBox dl.none{border:none; padding:8px; }
+
+#contentBox dd{margin:5px ;}
+#contentBox dd span{padding:0px 10px;}
+#contentBox dl table{ margin:5px 0px;}
+#contentBox dd.hline{float:left;  padding: 0px 15px;}
+#contentBox .clear{clear:both}
+
+#contentBox .indent15{text-indent:15px;}
+#contentBox .indent20{text-indent:20px;}
+#contentBox .em{font-size:110%; font-weight:bold; text-align:center; padding:10px 100px;}
+#contentBox .sub{font-weight:bold;}
+
+
+#contentBox ul.choice{ padding:0px; }
+#contentBox ul.choice span{padding:0px 10px 0px 5px;}
+
+
+
+
+
+
+#contentBox hr{margin:10px 0px; height:1px; border-width:0;  background-color:#ccc; }
+
+
+#remarkContents {width: 688px; margin: 10px; }
+#remarkContents li {list-style-type: circle; margin-top: 3px;}
+
+  </style> 
+  <!-- css-desktop-end --> 
+  <style type="text/css">
+    input { border: none; }
+
+    .fmtNumber {
+      text-align: right;
+    }
+
+    .alignRight {
+      text-align: right;
+    }
+    
+    span.valInput {
+      font-size: 1.1em;
+      display: block;
+    }
+    p.valText {
+      font-size: 1.1em;
+      white-space: pre-line;
+    }
+    span.valSelect {
+      font-size: 1.1em;
+      display: block;
+    }
+    textarea {
+      color: black;
+      border: none; 
+      white-space: pre-line; 
+      overflow-y: auto; 
+      word-wrap: break-word; 
+      resize: none;
+    }
+  </style> 
+ </head> 
+ <body><a href="https://edge.pse.com.ph/cdn-cgi/content?id=BEgpm3tlCND6sNNCq4zfYvnOoMZD5zhJ4B4pNDu5e0E-1788017589.6553857-1.2.1.1-JcFVKcLNyrWyMrQkV24LQkH7V5uZNcjP2sV3JsO6BNcOB28OqLyU3wM737uvbvfU" aria-hidden="true" rel="nofollow noopener" style="display: none !important; visibility: hidden !important"></a>
+<div id="remarkContents" style="">       <table style="width: 100%; margin-bottom: 7px; font-weight: bold; "> <tr style="padding: 0px;">                                        <td></td>                                       <td style="text-align:right;">C06156-2025</td>              </tr>                     </table>                      <span style="font-size: 1.0em; margin-left: 20px;"></span> <ul style="margin-top: 0;">                 </ul>     </div> 
+  <div id="form1" action="/submission/accomplish"> 
+   <div id="contentBox"> 
+    <h2>SECURITIES AND EXCHANGE COMMISSION<span>SEC FORM 17-C</span></h2> 
+    <h4>CURRENT REPORT UNDER SECTION 17<br /> OF THE SECURITIES REGULATION CODE <br />AND SRC RULE 17.2(c) THEREUNDER </h4> 
+    <dl> 
+     <dt>
+       1. Date of Report (Date of earliest event reported) 
+     </dt> 
+     <dd> 
+      <span class="valInput ">Aug 19, 2025</span> 
+     </dd> 
+     <dt>
+       2. SEC Identification Number 
+     </dt> 
+     <dd> 
+      <span class="valInput ">16342</span> 
+     </dd> 
+     <dt>
+       3. BIR Tax Identification No. 
+     </dt> 
+     <dd> 
+      <span class="valInput ">169-020-000</span> 
+     </dd> 
+     <dt>
+       4. Exact name of issuer as specified in its charter 
+     </dt> 
+     <dd> 
+      <span class="valInput ">SM Investments Corporation</span> 
+     </dd> 
+     <dt>
+       5. Province, country or other jurisdiction of incorporation 
+     </dt> 
+     <dd> 
+      <span class="valInput ">Philippines</span> 
+     </dd> 
+     <dt>
+       6. Industry Classification Code(SEC Use Only) 
+     </dt> 
+     <dd> 
+      <input readonly="" disabled="disabled" type="text" value="" name="id5" /> 
+     </dd> 
+     <dt>
+       7. Address of principal office 
+     </dt> 
+     <dd> 
+      <span class="valInput ">10th Floor, OneE-com Center, Harbour Drive, Mall of Asia Complex, Pasay City</span> 
+      <span>Postal Code</span> 
+      <span><span class="valInput ">1300</span></span> 
+     </dd> 
+     <dt>
+       8. Issuer's telephone number, including area code 
+     </dt> 
+     <dd> 
+      <span class="valInput ">0288570100</span> 
+     </dd> 
+     <dt>
+       9. Former name or former address, if changed since last report 
+     </dt> 
+     <dd> 
+      <span class="valInput ">N/A</span> 
+     </dd> 
+     <dt>
+       10. Securities registered pursuant to Sections 8 and 12 of the SRC or Sections 4 and 8 of the RSA 
+     </dt> 
+     <dd> 
+      <table id="Securities"> 
+       <caption></caption> 
+       <tbody> 
+        <tr> 
+         <th>Title of Each Class</th> 
+         <th>Number of Shares of Common Stock Outstanding and Amount of Debt Outstanding</th> 
+         <th></th> 
+        </tr> 
+        <tr> 
+         <td><span class="valInput ">Common</span></td> 
+         <td><span class="valInput fmtNumber">1,228,185,580</span></td> 
+         <td></td> 
+        </tr> 
+       </tbody> 
+      </table> 
+     </dd> 
+     <dt>
+       11. Indicate the item numbers reported herein 
+     </dt> 
+     <dd> 
+      <span class="valInput ">Item 9. Other Events</span> 
+     </dd> 
+    </dl> 
+    <p class="info">The Exchange does not warrant and holds no responsibility for the veracity of the facts and representations contained in all corporate disclosures, including financial reports. All data contained herein are prepared and submitted by the disclosing party to the Exchange, and are disseminated solely for purposes of information. Any questions on the data contained herein should be addressed directly to the Corporate Information Officer of the disclosing party.</p> 
+    <h1><img src="clogo/null" alt="" id="companyLogo" width="175" /><span id="companyName">SM Investments Corporation</span><span id="companyStockSymbol">SM</span></h1> 
+    <h4>PSE Disclosure Form 13-1 - Change in Shareholdings of <br /> Directors and Principal Officers <span><i>References: SRC Rule 23 (SEC Form 23-B) and <br /> Section 13 of the Revised Disclosure Rules</i></span> </h4> 
+    <table class="type1"> 
+     <tbody> 
+      <tr> 
+       <th>Subject of the Disclosure</th> 
+      </tr> 
+      <tr> 
+       <td><p class="valText">Acquisition of Shares - Henry T. Sy, Jr.</p></td> 
+      </tr> 
+      <tr> 
+       <th>Background/Description of the Disclosure</th> 
+      </tr> 
+      <tr> 
+       <td><p class="valText">Ladies and Gentlemen:<br /><br />Please be informed of the acquisition of SM Investments Corporation (SMIC) shares by SMIC Vice Chairman, Mr. Henry T. Sy, Jr. <br /><br />Thank you.</p></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1"> 
+     <tbody> 
+      <tr> 
+       <th>Name of Person</th> 
+       <td><span class="valInput ">Henry T. Sy, Jr. </span></td> 
+      </tr> 
+      <tr> 
+       <th>Position/Designation</th> 
+       <td><span class="valInput ">Vice Chairman</span></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table id="ForEquiSec"> 
+     <caption>
+       For Equity Securities 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th rowspan="2">Type of Security / Stock Symbol</th> 
+       <th rowspan="2">Date of Transaction</th> 
+       <th colspan="3">Securities Acquired (A) or Disposed (D)</th> 
+       <th rowspan="2">Ownership Form Direct (D) or Indirect (I)</th> 
+       <th rowspan="2">Nature of Indirect Beneficial Ownership</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <th>Number of Shares</th> 
+       <th>(A) or (D)</th> 
+       <th>Price per Share</th> 
+       <th></th> 
+      </tr> 
+      <tr> 
+       <td><span class="valInput ">SM - Common Shares </span></td> 
+       <td><span class="valInput ">Aug 12, 2025</span></td> 
+       <td><span class="valInput fmtNumber">2,771,777</span></td> 
+       <td><span class="valInput ">A</span></td> 
+       <td><span class="valInput alignRight">793.00</span></td> 
+       <td><span class="valInput ">I</span></td> 
+       <td><span class="valInput ">Scripless / with PCD Broker</span></td> 
+       <td></td> 
+      </tr> 
+     </tbody> 
+    </table> 
+    <table class="type1"> 
+     <caption>
+       Number of Shares Owned after the Transaction 
+     </caption> 
+     <tbody> 
+      <tr> 
+       <th>Direct</th> 
+       <td><span class="valInput ">1,861,182</span></td> 
+      </tr> 
+      <tr> 
+       <th>Indirect</th> 
+       <td><span class="valInput ">77,788,965</span></td> 
+      </tr> 
+     </tbody> 
+    </table>  
+    <div style="margin-top: 48px;"> 
+     <span style="font-weight: bold; font-size: 0.8em;">Filed on behalf by:</span> 
+     <table class="type2" style="margin-top: 3px;"> 
+      <tbody> 
+       <tr> 
+        <th style="width: 40%;">Name</th> 
+        <td>Elmer Serrano</td> 
+       </tr> 
+       <tr> 
+        <th>Designation</th> 
+        <td>Corporate Secretary</td> 
+       </tr> 
+      </tbody> 
+     </table> 
+    </div>
+   </div> 
+  </div>  
+ </body>
+</html>

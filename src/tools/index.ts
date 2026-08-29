@@ -5,6 +5,7 @@ import { z } from "zod";
 import { defineTool, textResult } from "../core/toolDefs.js";
 import type { ToolDefinition } from "../core/toolDefs.js";
 import { extractPdfText } from "../core/pdfText.js";
+import { normalizeEntityName } from "../core/entityMatching.js";
 import {
   formatNumber,
   joinSections,
@@ -271,6 +272,26 @@ import {
   searchBursaCompanies,
   searchBursaFilings,
 } from "../adapters/bursaMalaysia.js";
+import {
+  getPseDocument,
+  getPseDocumentPdf,
+  getPseDocumentShell,
+  getPseFinancials,
+  getPseInsiders,
+  getPseOwners,
+  PSE_BENEFICIAL_FORM,
+  PSE_CAVEAT,
+  PSE_DISCLAIMER_URL,
+  PSE_DOCUMENT_CONTENT_WARNING,
+  PSE_INSIDER_FORM,
+  PSE_MAX_DETAIL_FETCHES,
+  PSE_OWNER_FORM,
+  PSE_SCALE_CAVEAT,
+  PSE_TERMS_NOTE,
+  PSE_THRESHOLD_REGIME,
+  searchPseCompanies,
+  searchPseFilings,
+} from "../adapters/pseEdge.js";
 import {
   getKapDocumentMetadata,
   getKapDocumentPdf,
@@ -1548,6 +1569,58 @@ async function enrichNlCandidatesWithGleif(
 }
 
 /**
+ * Attach an LEI to PSE EDGE matches. PSE's registers carry no LEI at all, so
+ * every PH match starts without one; GLEIF (keyless, CC0, already a dependency
+ * here) fills the gap by legal name.
+ *
+ * Deliberately conservative, following the KAP (TR) precedent: a candidate is
+ * accepted ONLY when the GLEIF record is a Philippine entity AND its legal name
+ * matches the PSE name under the package's own name normalization. That
+ * equality check is what stops a prefix/fuzzy hit from attaching a same-named
+ * foreign company's LEI (GLEIF holds "SM INVESTMENTS, LLC" in the US and
+ * "SM Investments ehf." in Iceland alongside the Philippine issuer). A
+ * near-match is withheld rather than attached — no LEI is better than a wrong
+ * one. Bounded to the top few candidates and best-effort: a GLEIF failure
+ * leaves the PSE match untouched rather than failing the resolve.
+ */
+const PH_GLEIF_ENRICH_LIMIT = 3;
+
+async function enrichPhCandidatesWithGleif(
+  candidates: Entity[],
+  options: AdapterOptions,
+): Promise<Entity[]> {
+  return Promise.all(
+    candidates.map(async (candidate, index) => {
+      if (candidate.lei || index >= PH_GLEIF_ENRICH_LIMIT) return candidate;
+      try {
+        const matches = await searchGleifEntities(candidate.legalName, options);
+        const target = normalizeEntityName(candidate.legalName);
+        const match = matches.find(
+          (entity) =>
+            entity.lei &&
+            entity.jurisdiction === "PH" &&
+            normalizeEntityName(entity.legalName) === target,
+        );
+        if (!match?.lei) return candidate;
+        return {
+          ...candidate,
+          lei: match.lei,
+          matchReason:
+            `${candidate.matchReason ?? "PSE EDGE match"}; LEI via GLEIF`,
+          sourceIdentifiers: {
+            ...candidate.sourceIdentifiers,
+            lei: match.lei,
+          },
+        } satisfies Entity;
+      } catch {
+        // GLEIF is supplementary here — the PSE match still stands.
+        return candidate;
+      }
+    }),
+  );
+}
+
+/**
  * Attach an LEI to KAP directory matches. KAP's BIST directory carries no LEI
  * at all, so every TR match starts without one; GLEIF (keyless, CC0, already a
  * dependency of this server) fills the gap by legal name.
@@ -1703,6 +1776,29 @@ const MY_PRIVATE_RAISES_UNSUPPORTED =
   "issuers appear as ordinary Bursa announcements (use CompanyFilings with " +
   "jurisdiction \"MY\"), and unlisted-company raises are not disclosed " +
   "openly. " + MY_SSM_PAID_REASON;
+
+// --- PH (PSE EDGE) ---------------------------------------------------------
+//
+// PSE EDGE serves six intents keyless: resolve, filings, document, insiders
+// (form 13-1), owners (POR-1 roster / 17-7 dealings) and financials (17-A/17-Q).
+//
+// TERMS: PSE's disclaimer restricts its contents to "personal, non-commercial
+// use" and forbids redistribution to third parties. That conflicts with serving
+// PSE content through this package and is near-identical to the ASX wording
+// this project treated as disqualifying; PH ships anyway as an explicit
+// maintainer decision. PSE_TERMS_NOTE is therefore appended to EVERY PH
+// response — do not drop it from a rendering path.
+
+const PH_PRIVATE_RAISES_UNSUPPORTED =
+  "PrivateRaises is unsupported for jurisdiction \"PH\". The Philippines has " +
+  "no Form D equivalent published as open data: exempt-transaction notices " +
+  "(SRC Rule 10.1) are filed with the SEC rather than the exchange, and the " +
+  "SEC's eFAST portal is login-walled with paid document requests. Private " +
+  "placements by PSE-listed issuers do appear as ordinary disclosures — use " +
+  "CompanyFilings with jurisdiction \"PH\". " + PSE_TERMS_NOTE;
+
+/** Rendered under every PH response: source attribution + the terms warning. */
+const PH_SOURCE_NOTE = `_${PSE_TERMS_NOTE}_`;
 
 /** Bursa's own category taxonomy, rendered for the CompanyFilings caveat. */
 const MY_CATEGORY_HINT =
@@ -2427,6 +2523,39 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         }
       }
 
+      if (jurisdiction === "PH") {
+        try {
+          const hits = await searchPseCompanies(company, options);
+          if (!hits.length) {
+            return notFoundResult(
+              company,
+              "Try a PSE ticker symbol (e.g. SM for SM Investments, SMPH for " +
+                "SM Prime, SMC for San Miguel) or the issuer name as PSE EDGE " +
+                "spells it. PSE EDGE covers listed issuers only.",
+            );
+          }
+          const top = hits.slice(0, 10);
+          // PSE carries no LEI; GLEIF fills it in only on a confident,
+          // country-checked exact name match (see enrichPhCandidatesWithGleif).
+          const enriched = await enrichPhCandidatesWithGleif(top, options);
+          return textResult(joinSections(
+            `# Company resolution (PSE EDGE): ${company}`,
+            entityRows(enriched),
+            `_${PSE_CAVEAT}_`,
+            nextStep(
+              "use CompanyFilings (jurisdiction \"PH\") for the disclosure " +
+                "index, CompanyInsiders for form 13-1 directors'/officers' " +
+                "shareholding changes, CompanyOwners for the POR-1 public " +
+                "ownership roster, or CompanyFinancials for the 17-A/17-Q " +
+                "headline figures — all keyed by the symbol above.",
+            ),
+            PH_SOURCE_NOTE,
+          ), entitiesStructured(enriched));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+
       const results: Entity[] = [];
       const warnings: string[] = [];
 
@@ -3013,6 +3142,76 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
           ), filingsStructured(filings));
         }
+        if (jurisdiction === "PH") {
+          if (mode === "latest_annual" || mode === "latest_quarterly") {
+            return textResult(joinSections(
+              `Mode "${mode}" is unsupported for PH. PSE EDGE publishes annual ` +
+                "(17-A) and quarterly (17-Q) reports through a separate " +
+                "financial-reports index rather than as a normalized " +
+                "latest-report record. Use CompanyFinancials (jurisdiction " +
+                "\"PH\") for the headline figures and the report link, or " +
+                "mode \"search\" with forms [\"Annual Report\"] / " +
+                "[\"Quarterly Report\"].",
+              PH_SOURCE_NOTE,
+            ));
+          }
+          // PSE filters the disclosure index by a template-name substring
+          // server-side, so the first `forms` entry becomes that filter.
+          const template = forms?.find((form) => form.trim().length > 0);
+          const { entity, filings, recordsTotal, truncated } =
+            await searchPseFilings({
+              company,
+              ...(template ? { template } : {}),
+              ...(start_date ? { startDate: start_date } : {}),
+              ...(end_date ? { endDate: end_date } : {}),
+              limit: limit ?? 20,
+            }, options);
+          if (!filings.length) {
+            return textResult(joinSections(
+              `No PSE EDGE disclosures found for "${company}"` +
+                (template ? ` matching template "${template}"` : "") +
+                " in the requested window.",
+              "_The `forms` filter is a PSE template-name substring, e.g. " +
+                "\"Annual Report\", \"Press Release\", \"Material " +
+                "Information\", \"Change in Shareholdings\", \"Public " +
+                "Ownership\"._",
+              `_${PSE_CAVEAT}_`,
+              PH_SOURCE_NOTE,
+            ));
+          }
+          return textResult(joinSections(
+            `# PSE EDGE disclosures: ${entity.legalName}` +
+              (entity.ticker ? ` (${entity.ticker})` : ""),
+            recordsTotal !== undefined
+              ? `_${recordsTotal.toLocaleString("en-US")} disclosure` +
+                `${recordsTotal === 1 ? "" : "s"} match this query; showing ` +
+                `${filings.length}._`
+              : `_Showing ${filings.length} disclosure` +
+                `${filings.length === 1 ? "" : "s"}._`,
+            markdownTable(
+              ["Announced", "Form", "Template", "Report no.", "Transaction id", "Link"],
+              filings.map((filing) => [
+                filing.filedDate,
+                filing.form,
+                filing.category,
+                filing.description === filing.category
+                  ? undefined
+                  : filing.description,
+                filing.accession,
+                link("open", filing.sourceUrl),
+              ]),
+            ),
+            truncated
+              ? "_More disclosures exist beyond the scanned pages — narrow the " +
+                "window with start_date/end_date, or raise limit._"
+              : "",
+            "_The `forms` filter is a PSE template-name substring (e.g. " +
+              "\"Annual Report\", \"Change in Shareholdings\")._",
+            `_${PSE_CAVEAT}_`,
+            FILINGS_NEXT_STEP,
+            PH_SOURCE_NOTE,
+          ), filingsStructured(filings));
+        }
         if (jurisdiction === "HK") {
           if (mode === "latest_quarterly") {
             return textResult(
@@ -3469,6 +3668,62 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             "_Source: Bursa Malaysia company announcements (© Bursa Malaysia), " +
               "fetched on demand._",
           ), insidersStructured(insiders, "MY"));
+        }
+        if (jurisdiction === "PH") {
+          const { entity, rows: insiders, recordsTotal, detailedCount, detailNote } =
+            await getPseInsiders({ company }, options);
+          if (!insiders.length) {
+            return textResult(joinSections(
+              `No PSE "${PSE_INSIDER_FORM}" disclosures found for ` +
+                `"${company}" in the requested window.`,
+              `_${PSE_CAVEAT}_`,
+              PH_SOURCE_NOTE,
+            ));
+          }
+          return textResult(joinSections(
+            `# Directors' and principal officers' shareholding changes ` +
+              `(PSE form 13-1): ${entity.legalName}` +
+              (entity.ticker ? ` (${entity.ticker})` : ""),
+            recordsTotal !== undefined
+              ? `_${recordsTotal.toLocaleString("en-US")} form 13-1 disclosure` +
+                `${recordsTotal === 1 ? "" : "s"} on file; showing ` +
+                `${insiders.length}._`
+              : "",
+            markdownTable(
+              ["Person", "Position", "Announced", "Transaction", "Trade date", "Shares", "Holdings after", "Disclosure"],
+              insiders.map((insider) => [
+                insider.name,
+                insider.officerRole,
+                insider.filedDate,
+                insider.occupation,
+                insider.notifiedDate,
+                insider.change !== undefined
+                  ? insider.change.toLocaleString("en-US")
+                  : undefined,
+                insider.status?.replace(/^Holdings after: /, ""),
+                link("open", insider.sourceUrl),
+              ]),
+            ),
+            "_Regime: SRC Rule 23 (SEC Form 23-B) and Section 13 of the PSE " +
+              "Revised Disclosure Rules — a director or principal officer must " +
+              "report changes in their beneficial ownership of the issuer's " +
+              "securities._",
+            "_A negative share count is a disposal; \"Holdings after\" is the " +
+              "person's resulting direct and indirect position as filed._",
+            detailedCount
+              ? `_Person, position, dated transaction, share count and ` +
+                `resulting holding were parsed from ${detailedCount} linked ` +
+                `disclosure${detailedCount === 1 ? "" : "s"}; a row reading ` +
+                `"(see linked disclosure)" was listed but not parsed — its ` +
+                `detail is in the linked document._`
+              : "_Rows are the disclosure index only: the person, transaction " +
+                "and resulting holding live inside each linked document._",
+            detailNote ? `_${detailNote}_` : "",
+            `_Document detail fetches are capped at ${PSE_MAX_DETAIL_FETCHES} ` +
+              "per call._",
+            `_${PSE_CAVEAT}_`,
+            PH_SOURCE_NOTE,
+          ), insidersStructured(insiders, "PH"));
         }
         if (jurisdiction === "NL") {
           const { issuerName, rows: insiders } = await getAfmInsiders(company, options);
@@ -4046,6 +4301,90 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               "fetched on demand._",
           ), ownersStructured(owners, "MY"));
         }
+        if (jurisdiction === "PH") {
+          // The POR-1 public-ownership roster is the default: a named,
+          // point-in-time holder list, which is what "who owns it?" means. A
+          // date window is a request for a dealings history instead, so it
+          // switches to the 17-7 beneficial-ownership change notifications.
+          const wantsDealings = Boolean(start_date || end_date);
+          const { entity, rows: owners, reportDate, detailedCount, detailNote } =
+            await getPseOwners({
+              company,
+              ...(wantsDealings ? { mode: "dealings" as const } : {}),
+              ...(start_date ? { startDate: start_date } : {}),
+              ...(end_date ? { endDate: end_date } : {}),
+            }, options);
+          if (!owners.length) {
+            return textResult(joinSections(
+              `No PSE "${wantsDealings ? PSE_BENEFICIAL_FORM : PSE_OWNER_FORM}" ` +
+                `disclosures found for "${company}".`,
+              `_Threshold regime: ${PSE_THRESHOLD_REGIME}._`,
+              `_${PSE_CAVEAT}_`,
+              PH_SOURCE_NOTE,
+            ));
+          }
+          return textResult(joinSections(
+            wantsDealings
+              ? `# Changes in beneficial ownership (PSE form 17-7): ` +
+                `${entity.legalName}` +
+                (entity.ticker ? ` (${entity.ticker})` : "")
+              : `# Public ownership report (PSE form POR-1): ` +
+                `${entity.legalName}` +
+                (entity.ticker ? ` (${entity.ticker})` : ""),
+            reportDate ? `_Report date: ${reportDate}._` : "",
+            markdownTable(
+              wantsDealings
+                ? ["Reporting person", "Relationship", "Filed", "Disclosure"]
+                : ["Holder", "Category", "Total shares", "% of outstanding", "Filed", "Disclosure"],
+              owners.map((owner) =>
+                wantsDealings
+                  ? [
+                    owner.holderName,
+                    owner.holderType,
+                    owner.filedDate,
+                    link("open", owner.sourceUrl),
+                  ]
+                  : [
+                    owner.holderName,
+                    owner.holderType,
+                    owner.change !== undefined
+                      ? owner.change.toLocaleString("en-US")
+                      : undefined,
+                    owner.pct !== undefined ? `${owner.pct}%` : undefined,
+                    owner.filedDate,
+                    link("open", owner.sourceUrl),
+                  ]
+              ),
+            ),
+            `_Threshold regime: ${PSE_THRESHOLD_REGIME}._`,
+            wantsDealings
+              ? "_These are SRC Rule 23 notifications of CHANGES in beneficial " +
+                "ownership, not a cap table. Many carry their substance in a " +
+                "PDF attachment rather than the HTML body — where that is so, " +
+                "the row names the reporting person and the figures stay in the " +
+                "linked document (fetch it with CompanyDocument, jurisdiction " +
+                "\"PH\")._"
+              : "_The POR-1 is a point-in-time roster of NAMED holders as at " +
+                "its report date, grouped as the report groups them (directors, " +
+                "officers, principal/substantial stockholders, affiliates, " +
+                "government). It is a public-float computation, not a complete " +
+                "cap table: holders below the reporting groups sit in the " +
+                "public float and are not named._",
+            detailedCount
+              ? `_Holder rows were parsed from ${detailedCount} linked ` +
+                `report${detailedCount === 1 ? "" : "s"}; a row reading "(see ` +
+                `linked disclosure)" was listed but not parsed._`
+              : "_Rows are the disclosure index only: the holder detail lives " +
+                "inside each linked document._",
+            detailNote ? `_${detailNote}_` : "",
+            !wantsDealings
+              ? "_Pass a start_date/end_date window for the 17-7 " +
+                "beneficial-ownership dealings feed instead of this roster._"
+              : "",
+            `_${PSE_CAVEAT}_`,
+            PH_SOURCE_NOTE,
+          ), ownersStructured(owners, "PH"));
+        }
         if (jurisdiction === "NL") {
           const { issuerName, rows: owners } = await getAfmOwners(company, options);
           if (!owners.length) {
@@ -4515,6 +4854,96 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "MY") {
         return textResult(MY_FINANCIALS_UNSUPPORTED);
       }
+      if (jurisdiction === "PH") {
+        try {
+          // PSE publishes annual (17-A) and quarterly (17-Q) reports in one
+          // index; this tool has no period-kind input, so the annual report is
+          // the headline answer, exactly as the other jurisdictions treat it.
+          const result = await getPseFinancials({
+            company,
+            kind: "annual",
+          }, options);
+          const label = "annual report (17-A)";
+          if (!result.facts.length) {
+            // Honest degradation: say which of the two failure modes happened,
+            // and link the report when one exists.
+            if (!result.report) {
+              return textResult(joinSections(
+                `No PSE ${label} found for "${result.entity.legalName}" in the ` +
+                  "requested window. An issuer newly listed, delisted, or with " +
+                  "no report filed in the window legitimately returns nothing.",
+                `_${PSE_CAVEAT}_`,
+                PH_SOURCE_NOTE,
+              ));
+            }
+            return textResult(joinSections(
+              `# PSE ${label}: ${result.entity.legalName}` +
+                (result.entity.ticker ? ` (${result.entity.ticker})` : ""),
+              `_The report was located but its headline statement could not be ` +
+                `parsed into financial facts — PSE renders some reports as an ` +
+                `attachment-only shell. Open the report itself, or fetch its ` +
+                `text with CompanyDocument (jurisdiction "PH", transaction_id ` +
+                `${result.report.edgeNo})._`,
+              markdownTable(
+                ["Report", "Form", "Filed", "Link"],
+                [[
+                  result.report.template,
+                  result.report.formNumber,
+                  result.report.filedDate,
+                  link("open", result.report.sourceUrl),
+                ]],
+              ),
+              `_${PSE_CAVEAT}_`,
+              PH_SOURCE_NOTE,
+            ));
+          }
+          const requested = concepts?.length
+            ? result.facts.filter((fact) => concepts.includes(fact.concept))
+            : result.facts;
+          const facts = requested.length ? requested : result.facts;
+          const byConcept = new Map<string, FinancialFact[]>();
+          for (const fact of facts) {
+            const bucket = byConcept.get(fact.concept) ?? [];
+            bucket.push(fact);
+            byConcept.set(fact.concept, bucket);
+          }
+          return textResult(joinSections(
+            `# PSE ${label}: ${result.entity.legalName}` +
+              (result.entity.ticker ? ` (${result.entity.ticker})` : ""),
+            result.report?.periodEnd
+              ? `_Period ended ${result.report.periodEnd}; filed ` +
+                `${result.report.filedDate ?? "—"}._`
+              : "",
+            markdownTable(
+              ["Concept", "Label", "Period end", "Value", "Unit"],
+              facts.map((fact) => [
+                fact.concept,
+                fact.label,
+                fact.periodEnd,
+                formatNumber(fact.value, fact.unit),
+                fact.unit,
+              ]),
+            ),
+            "_Figures are the headline statement PSE's own disclosure form " +
+              "carries (balance sheet + income statement), consolidated and in " +
+              "Philippine pesos. This is the form's summary, not the full " +
+              "audited financial statements — those are in the report's PDF " +
+              "attachments._",
+            result.scaleLabel
+              ? `_Scale, as the issuer declared it: **${result.scaleLabel}**._`
+              : "",
+            `_⚠️ ${PSE_SCALE_CAVEAT}_`,
+            result.report
+              ? `_Report: ${link("open", result.report.sourceUrl)} ` +
+                `(transaction_id ${result.report.edgeNo})._`
+              : "",
+            `_${PSE_CAVEAT}_`,
+            PH_SOURCE_NOTE,
+          ), financialsStructured(byConcept, "PH"));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
       if (jurisdiction === "IN") {
         return textResult(
           "CompanyFinancials is unsupported for jurisdiction \"IN\". BSE financial " +
@@ -4859,9 +5288,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
         jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
         jurisdiction === "ID" || jurisdiction === "MY" ||
-        jurisdiction === "TR" || jurisdiction === "AE"
+        jurisdiction === "TR" || jurisdiction === "AE" || jurisdiction === "PH"
       ) {
         if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
+        if (jurisdiction === "PH") return textResult(PH_PRIVATE_RAISES_UNSUPPORTED);
         const registry = jurisdiction === "GB"
           ? "Companies House"
           : jurisdiction === "KR"
@@ -5475,6 +5905,135 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  /**
+   * PH (PSE EDGE). transaction_id is the `edge_no` hash CompanyFilings returned
+   * in its "Transaction id" column, e.g. 6932b5277056185e64d70b69f0a3140b. A
+   * full https://edge.pse.com.ph/openDiscViewer.do?edge_no=… URL is also
+   * accepted.
+   *
+   * Resolution is PSE's three-hop viewer flow, all keyless:
+   *   1. GET /openDiscViewer.do?edge_no=<hash>
+   *   2. parse <iframe src="/downloadHtml.do?file_id=…"> out of the shell
+   *   3. GET that file_id for the document body
+   * Attachments (PDF/xlsx) hang off the same shell's <select id="file_list">.
+   * Every URL is rebuilt from a parsed id and host-validated to
+   * edge.pse.com.ph before any fetch (SSRF guard).
+   */
+  async function companyDocumentPh(
+    transactionId: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!transactionId) {
+      return textResult(joinSections(
+        "Provide a transaction_id (the PSE EDGE edge_no hash from " +
+          "CompanyFilings with jurisdiction \"PH\", e.g. " +
+          "6932b5277056185e64d70b69f0a3140b) to fetch a Philippine " +
+          "disclosure's document.",
+        PH_SOURCE_NOTE,
+      ));
+    }
+    try {
+      if (mode === "pdf") {
+        const pdf = await getPseDocumentPdf(transactionId, options);
+        const target = outputPath
+          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
+          : join(tmpdir(), pdf.suggestedFilename);
+        await writeFile(target, pdf.bytes);
+        return textResult(joinSections(
+          `# PSE EDGE document: ${pdf.suggestedFilename}`,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
+              ["Disclosure", link("view", pdf.viewerUrl)],
+            ],
+          ),
+          `_${PSE_DOCUMENT_CONTENT_WARNING} The file was written to disk; its ` +
+            "bytes are not inlined here._",
+          PH_SOURCE_NOTE,
+        ));
+      }
+
+      if (mode === "xhtml") {
+        const document = await getPseDocument(transactionId, options);
+        const heading = document.formNumber
+          ? `# PSE EDGE document: form ${document.formNumber}` +
+            (document.formTitle ? ` — ${document.formTitle}` : "")
+          : `# PSE EDGE document: ${document.edgeNo}`;
+        if (!document.text) {
+          return textResult(joinSections(
+            heading,
+            "_The disclosure body carried no extractable text — its content is " +
+              "likely in an attachment. " +
+              (document.attachments.length
+                ? `Attachments: ${document.attachments.map((a) => a.filename).join("; ")}. ` +
+                  "Use mode=\"pdf\" to download the PDF."
+                : "This disclosure has no attachments either.") +
+              "_",
+            `_Disclosure: ${link("open", document.viewerUrl)}._`,
+            PH_SOURCE_NOTE,
+          ));
+        }
+        return textResult(joinSections(
+          heading,
+          document.issuerName
+            ? `_Issuer: ${document.issuerName}` +
+              (document.symbol ? ` (${document.symbol})` : "") + "._"
+            : "",
+          "## Extracted text",
+          `_${PSE_DOCUMENT_CONTENT_WARNING}_`,
+          ...documentTextSections(document.text, textOffset ?? 0),
+          document.attachments.length
+            ? `_Attachments (not inlined): ${
+              document.attachments.map((a) => a.filename).join("; ")
+            }. Use mode="pdf" to download the first PDF._`
+            : "",
+          `_Disclosure: ${link("open", document.viewerUrl)}._`,
+          PH_SOURCE_NOTE,
+        ));
+      }
+
+      const shell = await getPseDocumentShell(transactionId, options);
+      return textResult(joinSections(
+        `# PSE EDGE document: ${shell.edgeNo}`,
+        markdownTable(
+          ["Field", "Value"],
+          [
+            ["Transaction id (edge_no)", shell.edgeNo],
+            ["Body file id", shell.bodyFileId],
+            ["Attachments", String(shell.attachments.length)],
+            ["Disclosure", link("view", shell.viewerUrl)],
+          ],
+        ),
+        shell.attachments.length
+          ? joinSections(
+            "## Attachments",
+            markdownTable(
+              ["File", "Posted", "Download"],
+              shell.attachments.map((attachment) => [
+                attachment.filename,
+                attachment.postedDate,
+                link("open", attachment.url),
+              ]),
+            ),
+          )
+          : "_This disclosure has no file attachments — its content is the " +
+            "inline HTML body only._",
+        "_Use mode=\"xhtml\" for the document body's extracted text (paged via " +
+          "text_offset), or mode=\"pdf\" to download the first PDF attachment " +
+          "(saved to disk, 25 MB cap). " + PSE_DOCUMENT_CONTENT_WARNING + "_",
+        PH_SOURCE_NOTE,
+      ));
+    } catch (error) {
+      return failureResult(transactionId, error);
+    }
+  }
+
   async function companyDocumentCn(
     company: string,
     transactionId: string | undefined,
@@ -5670,13 +6229,13 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .min(1)
         .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR/CN)"),
       jurisdiction: z
-        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE"])
+        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE", "PH"])
         .optional()
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
             "\"KR\" (OpenDART), \"FR\" (info-financiere OAM), \"HK\" (HKEXnews), " +
             "\"CN\" (cninfo SSE/SZSE), \"TR\" (KAP, by numeric disclosure id), " +
-            "or \"AE\" (DFM Dubai — Dubai only)",
+            "\"AE\" (DFM Dubai — Dubai only), or \"PH\" (PSE EDGE, by edge_no)",
         ),
       transaction_id: z
         .string()
@@ -5745,6 +6304,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "AE") {
         return companyDocumentAe(company, transaction_id, mode, text_offset, output_path);
+      }
+      if (jurisdiction === "PH") {
+        return companyDocumentPh(transaction_id, mode, text_offset, output_path);
       }
       try {
         let documentId = document_id;
