@@ -197,6 +197,13 @@ export const ccassRateLimiter = new SlidingWindowRateLimiter(30, 60_000);
 // bounded lookup while cross-call abuse still trips it.
 export const acraRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 
+// Thailand DBD OpenAPI (openapi.dbd.go.th) keyless by-id resolver + optional
+// DGA GDX name search (api.egov.go.th). One resolve is a single by-id GET; one
+// name search is a GDX query plus a small capped set of by-id re-resolves, so
+// keep a modest budget that never self-trips on one bounded lookup while
+// cross-call abuse still trips it. Be polite to a government open-data host.
+export const dbdRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -215,4 +222,5 @@ export function resetRateLimiters(): void {
   hkexNewsRateLimiter.reset();
   ccassRateLimiter.reset();
   acraRateLimiter.reset();
+  dbdRateLimiter.reset();
 }
