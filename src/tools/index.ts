@@ -2865,6 +2865,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "TH") {
         return textResult(TH_INSIDERS_UNSUPPORTED);
       }
+      if (jurisdiction === "ID") {
+        return textResult(ID_INSIDERS_UNSUPPORTED);
+      }
       try {
         if (jurisdiction === "DE") {
           const dealings = await getBafinDirectorsDealings(company, options);
