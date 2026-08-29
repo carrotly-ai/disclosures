@@ -18,6 +18,7 @@ export const JURISDICTIONS = {
   FR: "FR",
   HK: "HK",
   SG: "SG",
+  TH: "TH",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -40,6 +41,7 @@ export const DATA_SOURCES = {
   RECHERCHE_ENTREPRISES: "recherche-entreprises",
   HKEX: "HKEXnews",
   ACRA: "ACRA",
+  DBD: "DBD",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -81,6 +83,8 @@ export interface IdentifierSet {
   hkexStockId?: string;
   /** Singapore ACRA Unique Entity Number (UEN), e.g. 197200078R (Singapore Airlines). */
   uen?: string;
+  /** Thailand DBD 13-digit juristic-person registration number, e.g. 0107544000108 (PTT PCL). */
+  juristicId?: string;
   jurisdiction?: string;
 }
 

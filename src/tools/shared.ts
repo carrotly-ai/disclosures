@@ -18,10 +18,11 @@ export const companyInput = {
         "or 5-digit HK stock code (CN, via cninfo), 6-digit BSE scrip code " +
         "(IN), 4-digit TWSE listing code (TW), numeric CVM code (BR), " +
         "8-digit BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), 4/5-digit HKEX " +
-        "stock code (HK), Singapore UEN (SG), or 20-character LEI",
+        "stock code (HK), Singapore UEN (SG), 13-digit juristic-person " +
+        "registration number (TH), or 20-character LEI",
     ),
   jurisdiction: z
-    .enum(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE", "FR", "HK", "SG"])
+    .enum(["US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE", "FR", "HK", "SG", "TH"])
     .optional()
     .describe(
       "Jurisdiction to search: US (SEC EDGAR), GB (Companies House), " +
@@ -34,7 +35,9 @@ export const companyInput = {
         "FR (info-financiere.gouv.fr OAM + recherche-entreprises — French " +
         "regulated filings, threshold crossings, and officers), " +
         "HK (HKEXnews — Hong Kong listed issuers: CompanyResolve, CompanyFilings, " +
-        "CompanyDocument), or SG (ACRA via data.gov.sg — CompanyResolve only). " +
+        "CompanyDocument), SG (ACRA via data.gov.sg — CompanyResolve only), or " +
+        "TH (DBD juristic-person register — CompanyResolve only; keyless by " +
+        "13-digit juristic number, name search needs DBD_API_KEY). " +
         "Omit for the existing US default.",
     ),
 };
