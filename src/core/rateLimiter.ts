@@ -197,6 +197,14 @@ export const ccassRateLimiter = new SlidingWindowRateLimiter(30, 60_000);
 // bounded lookup while cross-call abuse still trips it.
 export const acraRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 
+// Netherlands AFM register exports (www.afm.nl/export.aspx). Keyless whole-file
+// exports with no documented limit, but each request is a multi-MB (up to
+// ~108 MB) download, so the budget is deliberately small: a normal session
+// fetches each of the three registers at most once and then serves everything
+// from the 24h digest cache. A tight budget makes an accidental refetch loop
+// trip immediately rather than repeatedly pulling 100 MB from AFM.
+export const afmRateLimiter = new SlidingWindowRateLimiter(12, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -215,4 +223,5 @@ export function resetRateLimiters(): void {
   hkexNewsRateLimiter.reset();
   ccassRateLimiter.reset();
   acraRateLimiter.reset();
+  afmRateLimiter.reset();
 }

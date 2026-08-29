@@ -18,6 +18,7 @@ export const JURISDICTIONS = {
   FR: "FR",
   HK: "HK",
   SG: "SG",
+  NL: "NL",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -40,6 +41,7 @@ export const DATA_SOURCES = {
   RECHERCHE_ENTREPRISES: "recherche-entreprises",
   HKEX: "HKEXnews",
   ACRA: "ACRA",
+  AFM: "AFM",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
