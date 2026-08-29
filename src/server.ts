@@ -96,6 +96,7 @@ export * as companiesHouse from "./adapters/companiesHouse.js";
 export * as openDart from "./adapters/openDart.js";
 export * as edinet from "./adapters/edinet.js";
 export * as cninfo from "./adapters/cninfo.js";
+export * as szse from "./adapters/szse.js";
 export * as bseIndia from "./adapters/bseIndia.js";
 export * as fcaNsm from "./adapters/fcaNsm.js";
 export * as xbrlFilings from "./adapters/xbrlFilings.js";

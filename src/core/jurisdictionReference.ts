@@ -103,21 +103,32 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
   {
     code: "CN",
     name: "China",
-    source: "cninfo (SSE/SZSE + HKEX mirror)",
+    source: "cninfo (SSE/SZSE + HKEX mirror), SZSE disclosure API",
     credential: "None.",
     identifiers: "6-digit A-share code, 5-digit HK code, or Chinese name",
     intents:
       "CompanyResolve, CompanyFilings (announcement PDFs + latest " +
-      "annual/quarterly), CompanyFinancials (headline figures extracted from " +
-      "the latest periodic-report PDF — bounded/best-effort)",
+      "annual/quarterly), CompanyFinancials (headline figures from the latest " +
+      "periodic-report PDF), CompanyOwners (top-10 shareholders from the " +
+      "freshest periodic report), CompanyInsiders (SZSE structured 董监高 " +
+      "share-change feed; SSE annual-report 董监高 roster), CompanyDocument " +
+      "(announcement PDF metadata/text/download) — the PDF-derived modes are " +
+      "bounded/best-effort",
     caveat:
       "CompanyFinancials extracts revenue/profit/total-assets/net-assets from " +
       "the 主要会计数据 key-data table of the issuer's latest periodic report " +
       "(latest only, no history), normalized to whole RMB from the report's " +
-      "stated unit (元/千元/万元/百万元); it degrades to the PDF link when the " +
-      "report is mojibake (an object-stream the extractor cannot read), over the " +
-      "40 MB cap, or has no readable key-data table. Ownership/insider data still " +
-      "lives inside report PDFs this package does not yet parse.",
+      "stated unit (元/千元/万元/百万元). CompanyOwners parses the 前十名股东 " +
+      "top-10 table as published — a point-in-time snapshot, not a live register " +
+      "and not UBO tracing; column order varies by issuer so only " +
+      "confidently-matched rows are emitted. CompanyInsiders is asymmetric by " +
+      "exchange: SZSE codes (0/3xxxxx) get SZSE's keyless structured " +
+      "董监高及相关人员股份变动 transaction feed, while SSE codes (6xxxxx) have " +
+      "no equivalent public endpoint and fall back to the as-published " +
+      "annual-report board roster (names + positions only). Every PDF-derived " +
+      "mode degrades to the document link when the report is mojibake (an " +
+      "object stream the extractor cannot read), over the size cap, or has no " +
+      "readable table — it never emits figures it could not read.",
   },
   {
     code: "IN",
