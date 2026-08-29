@@ -20,17 +20,17 @@ configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | ⚠️ | — |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | NL |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | — | — | ✅ | — | ✅ | — | — | — | ✅ |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | — | — | ✅ | — | ✅ | ⚠️ | ⚠️ | — | ✅ |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | — | — |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -62,6 +62,17 @@ insurer (百万元 — recovered by the object-stream extractor upgrade). A moji
 objects in an unreadable object stream), an over-cap PDF, or a missing key-data table **degrades
 to the PDF link**. Latest report only — no history. See [CN.md](CN.md).
 
+NL `CompanyOwners` / `CompanyInsiders` come from the AFM's **keyless whole-file register
+exports**, which support **no server-side filtering** (an `?issuer=` parameter is ignored and
+`Range` is not honoured), so a per-issuer view means downloading a register and filtering
+client-side. The substantial-holdings CSV is **108,516,396 bytes / 293,488 rows**, so the
+adapter reduces each register to a compact per-issuer digest at parse time (293k rows →
+~2.4k records, ~0.39 MB) and caches only that digest for 24 h via `AdapterOptions.cache`.
+**The first NL `CompanyOwners` call in a session takes ~20–30 s** (measured: ASML cold 28.8 s,
+warm 7 ms); pass a cache so the digest survives process restarts. NL covers AFM-supervised
+listed issuers only — KVK is paid — and **ESAP (2027+) will eventually overlap this
+coverage**. See [NL.md](NL.md).
+
 `CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
 accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no
 `jurisdiction` parameter.
@@ -87,6 +98,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | FR | info-financiere.gouv.fr (OAM) + recherche-entreprises | None | [FR.md](FR.md) |
 | HK | HKEXnews | None | [HK.md](HK.md) |
 | SG | ACRA (data.gov.sg) | None | [SG.md](SG.md) |
+| NL | AFM disclosure registers (keyless CSV/XML exports) | None | [NL.md](NL.md) |
 
 ## Honesty invariants (all jurisdictions)
 

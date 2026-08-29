@@ -228,6 +228,28 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "is Akamai + auth walled and BizFile extracts are paid, so every other SG " +
       "intent is honest unsupported.",
   },
+  {
+    code: "NL",
+    name: "Netherlands",
+    source: "AFM disclosure registers (keyless export.aspx CSV/XML)",
+    credential: "None.",
+    identifiers:
+      "Issuer name as the AFM register spells it (e.g. \"ASML Holding N.V.\") " +
+      "or a 20-character LEI; no ISIN index in these registers",
+    intents:
+      "CompanyResolve (from the register issuer names, LEI enriched via GLEIF), " +
+      "CompanyOwners (Wft ch. 5.3 substantial holdings — holder, capital and " +
+      "voting %, notification date), CompanyInsiders (Art.19 MAR managers' " +
+      "transactions + directors'/commissioners' holdings); for financials use " +
+      "jurisdiction EU",
+    caveat:
+      "Whole-file register exports with no server-side filtering: the " +
+      "substantial-holdings CSV is ~108 MB, so the first CompanyOwners call in " +
+      "a session takes ~20-30 s while it downloads and reduces the register. " +
+      "Supply AdapterOptions.cache to keep the reduced digest for 24 h — " +
+      "subsequent calls are milliseconds. Listed AFM-supervised issuers only " +
+      "(KVK is paid); ESAP will eventually overlap this coverage.",
+  },
 ] as const;
 
 export function renderJurisdictionReference(

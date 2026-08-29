@@ -36,8 +36,8 @@ import type {
 // only that digest is cached (`AdapterOptions.cache`, 24h TTL). The
 // substantial-holdings digest keeps the latest notification per
 // (issuer, holder) pair, which collapses ~293k rows / 108 MB to ~2.4k records /
-// ~0.3 MB — a ~360x reduction — so the cache stays small enough for a file or
-// KV backend while the raw file is never persisted.
+// ~0.39 MB — a ~265x reduction by size — so the cache stays small enough for a
+// file or KV backend while the raw file is never persisted.
 //
 // Licence posture: AFM asserts copyright ("© Copyright AFM - alle rechten
 // voorbehouden"); these are statutory public registers published under AFM's
