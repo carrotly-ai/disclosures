@@ -224,6 +224,13 @@ export const afmRateLimiter = new SlidingWindowRateLimiter(12, 60_000);
 // and one instance download. Be conspicuously polite to a challenged host.
 export const idxRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
 
+// Turkey KAP (www.kap.org.tr). Keyless SSR pages plus keyless disclosure PDFs,
+// no documented limit. One resolve is a single ~1.5 MB directory page that is
+// then cached for 24h; one document call is a detail page plus a PDF fetch. Keep
+// a modest budget that never self-trips on one bounded lookup while cross-call
+// abuse still trips it — be polite to a statutory disclosure platform.
+export const kapRateLimiter = new SlidingWindowRateLimiter(60, 60_000);
+
 export function resetRateLimiters(): void {
   secRateLimiter.reset();
   gleifRateLimiter.reset();
@@ -246,4 +253,5 @@ export function resetRateLimiters(): void {
   dbdRateLimiter.reset();
   afmRateLimiter.reset();
   idxRateLimiter.reset();
+  kapRateLimiter.reset();
 }

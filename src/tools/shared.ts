@@ -20,12 +20,13 @@ export const companyInput = {
         "8-digit BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), 4/5-digit HKEX " +
         "stock code (HK), Singapore UEN (SG), 13-digit juristic-person " +
         "registration number (TH), AFM-register issuer name or LEI (NL), " +
-        "4-letter IDX ticker / kode emiten (ID), or 20-character LEI",
+        "4-letter IDX ticker / kode emiten (ID), BIST stock code (TR), or " +
+        "20-character LEI",
     ),
   jurisdiction: z
     .enum([
       "US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE", "FR", "HK",
-      "SG", "TH", "NL", "ID",
+      "SG", "TH", "NL", "ID", "TR",
     ])
     .optional()
     .describe(
@@ -48,7 +49,12 @@ export const companyInput = {
         "ID (IDX / Bursa Efek Indonesia — Indonesian listed issuers: " +
         "CompanyResolve, CompanyFilings, CompanyFinancials from real XBRL " +
         "instances; the host is anti-bot protected, so an injected " +
-        "browser-backed fetchFn may be required). " +
+        "browser-backed fetchFn may be required), or " +
+        "TR (KAP / Kamuyu Aydınlatma Platformu — Turkish BIST issuers: " +
+        "CompanyResolve (BIST directory by stock code or name), " +
+        "CompanyDocument (by KAP disclosure id); per-company filing " +
+        "enumeration is not keyless-reachable, so CompanyFilings is " +
+        "honestly unsupported). " +
         "Omit for the existing US default.",
     ),
 };

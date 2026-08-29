@@ -21,6 +21,7 @@ export const JURISDICTIONS = {
   TH: "TH",
   NL: "NL",
   ID: "ID",
+  TR: "TR",
 } as const;
 
 export type Jurisdiction = (typeof JURISDICTIONS)[keyof typeof JURISDICTIONS];
@@ -47,6 +48,7 @@ export const DATA_SOURCES = {
   DBD: "DBD",
   AFM: "AFM",
   IDX: "IDX",
+  KAP: "KAP",
 } as const;
 
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
@@ -92,6 +94,10 @@ export interface IdentifierSet {
   juristicId?: string;
   /** IDX (Indonesia) 4-letter issuer ticker / kode emiten, e.g. BBCA (Bank Central Asia). */
   kodeEmiten?: string;
+  /** KAP (Turkey) numeric company id from the BIST directory, e.g. 1107 (Türk Hava Yolları). */
+  kapCompanyId?: string;
+  /** City/province of the registered office, where the register publishes one (KAP). */
+  city?: string;
   /** Free-text sector/subsector label, where the register publishes one (IDX). */
   sector?: string;
   /** Exchange listing date (ISO), where the register publishes one (IDX). */

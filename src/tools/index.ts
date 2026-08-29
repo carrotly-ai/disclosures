@@ -262,6 +262,17 @@ import {
   searchIdxFilings,
 } from "../adapters/idxIndonesia.js";
 import {
+  getKapDocumentMetadata,
+  getKapDocumentPdf,
+  KAP_DOCUMENT_CONTENT_WARNING,
+  KAP_FILINGS_UNSUPPORTED,
+  KAP_RESOLVE_CAVEAT,
+  kapCompanyDisclosuresUrl,
+  kapDisclosureUrl,
+  searchKapCompanies,
+} from "../adapters/kapTurkey.js";
+import type { KapEntity } from "../adapters/kapTurkey.js";
+import {
   companyInput,
   euUnsupportedResult,
   failureResult,
@@ -1511,6 +1522,45 @@ async function enrichNlCandidatesWithGleif(
   return enriched;
 }
 
+/**
+ * Attach an LEI to KAP directory matches. KAP's BIST directory carries no LEI
+ * at all, so every TR match starts without one; GLEIF (keyless, CC0, already a
+ * dependency of this server) fills the gap by legal name.
+ *
+ * Bounded to the top few candidates — one GLEIF call each — and best-effort: a
+ * GLEIF failure or an ambiguous name leaves the directory match untouched
+ * rather than failing the resolve. A hit is only accepted when it is a Turkish
+ * entity, so a same-named foreign company cannot attach a wrong LEI.
+ */
+const TR_GLEIF_ENRICH_LIMIT = 3;
+
+async function enrichTrCandidatesWithGleif(
+  candidates: KapEntity[],
+  options: AdapterOptions,
+): Promise<KapEntity[]> {
+  return Promise.all(
+    candidates.map(async (candidate, index) => {
+      if (candidate.lei || index >= TR_GLEIF_ENRICH_LIMIT) return candidate;
+      try {
+        const matches = await searchGleifEntities(candidate.legalName, options);
+        const match = matches.find(
+          (entity) => entity.lei && entity.jurisdiction === "TR",
+        );
+        if (!match?.lei) return candidate;
+        return {
+          ...candidate,
+          lei: match.lei,
+          matchReason: `${candidate.matchReason ?? "KAP directory match"}; LEI via GLEIF`,
+          sourceIdentifiers: { ...candidate.sourceIdentifiers, lei: match.lei },
+        } satisfies KapEntity;
+      } catch {
+        // GLEIF is supplementary here — the KAP directory match still stands.
+        return candidate;
+      }
+    }),
+  );
+}
+
 // Render the enriched ACRA profile for the top resolved SG match: previous-name
 // history (like GB), incorporation date, SSIC classification, and auditor firms.
 function buildSgProfileDetailSection(entity: AcraEntity): string {
@@ -1592,6 +1642,43 @@ const TH_FINANCIALS_UNSUPPORTED =
   "financial statements (DBD's statement endpoints are key-gated DGA GDX " +
   "images/PDFs, not normalized figures), and — " + TH_SET_INCAPSULA_REASON +
   " No keyless normalized financials source exists for Thailand.";
+
+// --- TR (KAP) constants ----------------------------------------------------
+
+// Every TR limitation traces to one fact: KAP's Next.js rebuild moved its data
+// layer to kapsitebackend.mkk.com.tr, which does not resolve publicly. Anything
+// addressable by disclosure ID still works keylessly (detail page + PDF);
+// anything requiring a QUERY against the issuer's history does not.
+const TR_BACKEND_REASON =
+  "KAP's data layer moved to kapsitebackend.mkk.com.tr, a backend host that " +
+  "does not resolve publicly, and the documented /tr/api/... JSON endpoints now " +
+  "404. Disclosure pages and PDFs remain keyless BY ID, but no keyless query " +
+  "surface exists.";
+
+const TR_INSIDERS_UNSUPPORTED =
+  "CompanyInsiders is unsupported for jurisdiction \"TR\". KAP publishes " +
+  "shareholding-change and board-composition events as individual DISCLOSURES " +
+  "rather than as a structured insider-dealings register, so there is nothing " +
+  "to normalize into per-insider rows, and MKK's e-YATIRIMCI investor portal is " +
+  "login-gated. " + TR_BACKEND_REASON +
+  " Use CompanyResolve (jurisdiction \"TR\") for the issuer, then " +
+  "CompanyDocument with a KAP disclosure id to read a specific filing.";
+
+const TR_OWNERS_UNSUPPORTED =
+  "CompanyOwners is unsupported for jurisdiction \"TR\". Türkiye has no free " +
+  "keyless substantial-shareholding register: holdings changes appear as KAP " +
+  "disclosure events, not a queryable holdings table, and the depository (MKK) " +
+  "exposes ownership only through login-gated e-YATIRIMCI. " + TR_BACKEND_REASON +
+  " Use OwnershipChain for GLEIF parent/child relationships where the issuer " +
+  "has an LEI.";
+
+const TR_FINANCIALS_UNSUPPORTED =
+  "CompanyFinancials is unsupported for jurisdiction \"TR\". KAP does host " +
+  "financial statements (its company pages offer a \"Financial Statement Item " +
+  "Search\"), but that feed rides the non-public backend: " + TR_BACKEND_REASON +
+  " No keyless normalized figures source exists for Turkish issuers in this " +
+  "release. A specific financial-report disclosure can still be read with " +
+  "CompanyDocument (jurisdiction \"TR\") if you have its KAP id.";
 
 // --- ID (IDX) constants ----------------------------------------------------
 
@@ -1996,6 +2083,50 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "CompanyFilings (jurisdiction \"ID\") for the issuer's " +
                 "disclosure announcements, or CompanyFinancials (jurisdiction " +
                 "\"ID\") for headline totals parsed from its XBRL instance.",
+            ),
+          ), entitiesStructured(top));
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
+      if (jurisdiction === "TR") {
+        try {
+          const results = await searchKapCompanies(company, options);
+          if (!results.length) {
+            return notFoundResult(
+              company,
+              "Try a BIST stock code (e.g. THYAO, GARAN, ASELS) or the " +
+                "issuer's Turkish legal name. KAP's directory covers LISTED " +
+                "issuers only — unlisted Turkish companies are in Ticaret " +
+                "Sicili/MERSIS, which is paid and not read here.",
+            );
+          }
+          const top = await enrichTrCandidatesWithGleif(
+            results.slice(0, 10),
+            options,
+          );
+          const lead = top[0];
+          return textResult(joinSections(
+            `# Company resolution (KAP / Public Disclosure Platform): ${company}`,
+            entityRows(top),
+            markdownTable(
+              ["Stock code(s)", "Issuer", "Province", "Independent audit firm", "KAP id"],
+              top.map((entity) => [
+                entity.tickers.join(", "),
+                entity.legalName,
+                entity.city,
+                entity.auditFirm,
+                entity.kapCompanyId,
+              ]),
+            ),
+            `_${KAP_RESOLVE_CAVEAT}_`,
+            nextStep(
+              "open a specific disclosure with CompanyDocument (jurisdiction " +
+                "\"TR\") using its numeric KAP id, or OwnershipChain if the " +
+                "issuer has an LEI. TR has no keyless per-company filing list " +
+                "— to find a disclosure id, browse the issuer's KAP " +
+                "notifications page" +
+                (lead ? `: ${kapCompanyDisclosuresUrl(lead.permalink)}` : "."),
             ),
           ), entitiesStructured(top));
         } catch (error) {
@@ -2446,6 +2577,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         if (jurisdiction === "TH") {
           return textResult(TH_FILINGS_UNSUPPORTED);
         }
+        if (jurisdiction === "TR") {
+          return textResult(KAP_FILINGS_UNSUPPORTED);
+        }
         if (jurisdiction === "ID") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
             return textResult(
@@ -2865,6 +2999,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "TH") {
         return textResult(TH_INSIDERS_UNSUPPORTED);
       }
+      if (jurisdiction === "TR") {
+        return textResult(TR_INSIDERS_UNSUPPORTED);
+      }
       if (jurisdiction === "ID") {
         return textResult(ID_INSIDERS_UNSUPPORTED);
       }
@@ -3281,6 +3418,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "TH") {
         return textResult(joinSections(
           TH_OWNERS_UNSUPPORTED,
+          "_Absence of a result here is not evidence that no large holder exists._",
+        ));
+      }
+      if (jurisdiction === "TR") {
+        return textResult(joinSections(
+          TR_OWNERS_UNSUPPORTED,
           "_Absence of a result here is not evidence that no large holder exists._",
         ));
       }
@@ -3786,6 +3929,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       if (jurisdiction === "TH") {
         return textResult(TH_FINANCIALS_UNSUPPORTED);
       }
+      if (jurisdiction === "TR") {
+        return textResult(TR_FINANCIALS_UNSUPPORTED);
+      }
       if (jurisdiction === "ID") {
         try {
           const requested = concepts?.filter((concept) =>
@@ -4204,7 +4350,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
         jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
         jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
-        jurisdiction === "ID"
+        jurisdiction === "ID" || jurisdiction === "TR"
       ) {
         const registry = jurisdiction === "GB"
           ? "Companies House"
@@ -4230,7 +4376,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                               ? "ACRA (Singapore)"
                               : jurisdiction === "TH"
                                 ? "DBD (Thailand)"
-                                : "IDX (Indonesia)";
+                                : jurisdiction === "ID"
+                                  ? "IDX (Indonesia)"
+                                  : "KAP (Türkiye)";
         return textResult(
           `PrivateRaises is unsupported for jurisdiction \"${jurisdiction}\". ${registry} ` +
             "does not expose a Form D-equivalent public dataset for normalized " +
@@ -4804,6 +4952,100 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  async function companyDocumentTr(
+    transactionId: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!transactionId) {
+      return textResult(
+        "Provide a transaction_id (the numeric KAP disclosure id, e.g. 1446919 " +
+          "from https://www.kap.org.tr/en/Bildirim/1446919) to fetch a TR " +
+          "disclosure. TR has no keyless per-company filing list, so ids come " +
+          "from the issuer's KAP notifications page rather than CompanyFilings.",
+      );
+    }
+    try {
+      if (mode === "xhtml") {
+        const pdf = await getKapDocumentPdf(transactionId, options);
+        const extracted = extractPdfText(pdf.bytes);
+        if (!extracted.text) {
+          return textResult(joinSections(
+            `# KAP disclosure ${pdf.disclosureIndex}`,
+            ...pdfNoTextSections(extracted),
+          ));
+        }
+        return textResult(joinSections(
+          `# KAP disclosure ${pdf.disclosureIndex}`,
+          ...pdfExtractionSections(
+            extracted,
+            KAP_DOCUMENT_CONTENT_WARNING,
+            textOffset ?? 0,
+          ),
+        ));
+      }
+
+      if (mode === "pdf") {
+        const pdf = await getKapDocumentPdf(transactionId, options);
+        const target = outputPath
+          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
+          : join(tmpdir(), pdf.suggestedFilename);
+        await writeFile(target, pdf.bytes);
+        return textResult(joinSections(
+          `# KAP disclosure ${pdf.disclosureIndex}`,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
+              ["Disclosure", link("view", kapDisclosureUrl(pdf.disclosureIndex))],
+              ["PDF", link("download", pdf.sourceUrl)],
+            ],
+          ),
+          `_${KAP_DOCUMENT_CONTENT_WARNING} The file was written to disk; its bytes are not inlined here._`,
+        ));
+      }
+
+      const metadata = await getKapDocumentMetadata(transactionId, options);
+      return textResult(joinSections(
+        `# KAP disclosure ${metadata.disclosureIndex}${
+          metadata.title ? `: ${metadata.title}` : ""
+        }`,
+        markdownTable(
+          ["Field", "Value"],
+          [
+            ["Disclosure id", metadata.disclosureIndex],
+            ["Company", metadata.companyTitle],
+            ["Stock code", metadata.stockCode],
+            ["Published", metadata.publishDate],
+            ["Disclosure class", metadata.disclosureClass],
+            ["Category", metadata.disclosureCategory],
+            ["Summary", metadata.summary],
+            [
+              "Attachments",
+              metadata.attachmentCount !== undefined
+                ? String(metadata.attachmentCount)
+                : undefined,
+            ],
+            ["Late filing", metadata.isLate === undefined ? undefined : metadata.isLate ? "yes" : "no"],
+            ["Corrects disclosure", metadata.relatedDisclosureIndex],
+            ["PDF size (bytes)", metadata.pdfByteLength !== undefined ? String(metadata.pdfByteLength) : undefined],
+            ["Disclosure", link("view", metadata.sourceUrl)],
+            ["PDF", link("download", metadata.pdfUrl)],
+          ],
+        ),
+        "_Use mode=\"xhtml\" for the PDF's best-effort extracted text (paged via " +
+          "text_offset), or mode=\"pdf\" to download the PDF (saved to disk, 25 MB " +
+          "cap). " + KAP_DOCUMENT_CONTENT_WARNING + "_",
+      ));
+    } catch (error) {
+      return failureResult(transactionId, error);
+    }
+  }
+
   const companyDocument = defineTool(
     "CompanyDocument",
     "Fetch a filed document's content by the transaction_id CompanyFilings " +
@@ -4824,12 +5066,12 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .min(1)
         .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR/CN)"),
       jurisdiction: z
-        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN"])
+        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR"])
         .optional()
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
-            "\"KR\" (OpenDART), \"FR\" (info-financiere OAM), \"HK\" (HKEXnews), or " +
-            "\"CN\" (cninfo SSE/SZSE)",
+            "\"KR\" (OpenDART), \"FR\" (info-financiere OAM), \"HK\" (HKEXnews), " +
+            "\"CN\" (cninfo SSE/SZSE), or \"TR\" (KAP, by numeric disclosure id)",
         ),
       transaction_id: z
         .string()
@@ -4840,7 +5082,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             "number, JP EDINET docID, KR OpenDART receipt number (rcept_no), " +
             "FR info-financiere OAM record id, HK HKEXnews FILE_LINK path " +
             "(e.g. /listedco/listconews/…/….pdf), or CN cninfo announcement PDF " +
-            "URL / adjunctUrl path (finalpage/YYYY-MM-DD/ID.PDF) — all from CompanyFilings",
+            "URL / adjunctUrl path (finalpage/YYYY-MM-DD/ID.PDF) — all from " +
+            "CompanyFilings; for TR, the numeric KAP disclosure id (e.g. 1446919), " +
+            "which comes from the issuer's KAP page rather than CompanyFilings",
         ),
       document_id: z
         .string()
@@ -4889,6 +5133,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "CN") {
         return companyDocumentCn(company, transaction_id, mode, text_offset, output_path);
+      }
+      if (jurisdiction === "TR") {
+        return companyDocumentTr(transaction_id, mode, text_offset, output_path);
       }
       try {
         let documentId = document_id;

@@ -318,6 +318,35 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "entity registry) is a paid PNBP per-document product, and OJK is a " +
       "regulator/licensing site rather than a filing store.",
   },
+  {
+    code: "TR",
+    name: "Türkiye",
+    source: "KAP — Kamuyu Aydınlatma Platformu / Public Disclosure Platform (MKK)",
+    credential: "None.",
+    identifiers:
+      "BIST stock code (e.g. THYAO, GARAN, ASELS), KAP company id, or legal " +
+      "name; for CompanyDocument, the numeric KAP disclosure id from a " +
+      "/en/Bildirim/<id> URL",
+    intents:
+      "CompanyResolve (whole BIST directory — stock code, legal name, " +
+      "province and independent audit firm, plus GLEIF LEI where one matches), " +
+      "CompanyDocument (any disclosure by KAP id: metadata, PDF download, or " +
+      "best-effort extracted text). CompanyFilings, CompanyInsiders, " +
+      "CompanyOwners, CompanyFinancials, CompanyCharges, PersonAppointments " +
+      "and PrivateRaises return an honest unsupported explanation.",
+    caveat:
+      "KAP was rebuilt as a Next.js app whose data layer moved to " +
+      "kapsitebackend.mkk.com.tr, a backend host that does not resolve " +
+      "publicly; the documented /tr/api/... JSON endpoints now 404. Anything " +
+      "keyed by DISCLOSURE ID still works keylessly (detail page + PDF), but " +
+      "per-company ENUMERATION does not: the company notifications page " +
+      "server-renders an empty shell and fetches its rows from that " +
+      "unreachable backend. CompanyFilings is therefore honestly unsupported " +
+      "rather than faked. Coverage is listed issuers only — unlisted Turkish " +
+      "companies are in Ticaret Sicili/MERSIS (paid), and MKK e-YATIRIMCI is " +
+      "login-gated. A company may carry several stock codes (GARAN and TGB); " +
+      "all resolve to the same issuer.",
+  },
 ] as const;
 
 export function renderJurisdictionReference(
