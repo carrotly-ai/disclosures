@@ -397,6 +397,7 @@ export function buildEncryptedPdf(
     ? Uint8Array.from([0x73, 0x33, 0x63, 0x72, 0x33, 0x74]) // "s3cr3t"
     : new Uint8Array(0);
   const uHash = createHash("sha256")
+    // codeql[js/insufficient-password-hash]
     .update(passwordForU)
     .update(validationSalt)
     .digest();
@@ -411,6 +412,7 @@ export function buildEncryptedPdf(
   // the PDF format's prescribed derivation in a fixture builder, not password
   // storage.
   const intermediate = createHash("sha256")
+    // codeql[js/insufficient-password-hash]
     .update(passwordForU)
     .update(keySalt)
     .digest();
