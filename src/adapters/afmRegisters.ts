@@ -733,8 +733,11 @@ function scoreIssuer(name: string, query: string): number | undefined {
 
 /**
  * Rank the distinct issuer names present across the loaded registers against a
- * query. Exact match first, then prefix, then substring, then alphabetical so
- * the ordering is stable.
+ * query. Exact match first, then prefix, then substring; ties break on the
+ * shorter legal name, then alphabetically so the ordering is stable. The
+ * length tiebreak matters because normalisation folds "Holding" away, so
+ * "Heineken" matches both "Heineken N.V." and "Heineken Holding N.V." equally
+ * — the plainer name is the better default for a bare query.
  */
 export function rankIssuerNames(names: Iterable<string>, query: string): string[] {
   const seen = new Map<string, IssuerMatch>();
@@ -745,7 +748,12 @@ export function rankIssuerNames(names: Iterable<string>, query: string): string[
     seen.set(name, { name, rank });
   }
   return [...seen.values()]
-    .sort((left, right) => left.rank - right.rank || left.name.localeCompare(right.name))
+    .sort(
+      (left, right) =>
+        left.rank - right.rank ||
+        left.name.length - right.name.length ||
+        left.name.localeCompare(right.name),
+    )
     .map((match) => match.name);
 }
 
