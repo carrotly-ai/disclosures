@@ -2929,6 +2929,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ),
             `_Regime: Companies Act 2016 s.219 (a director must notify the ` +
               `listed issuer of changes in their interest in its shares)._`,
+            "_\"Direct %\" is the director's resulting DIRECT holding; a " +
+              "transaction marked Indirect Interest changes the deemed limb, " +
+              "whose separate indirect/deemed units and percentage are stated " +
+              "in the linked announcement._",
             detailedCount
               ? `_Transaction, share count and resulting holding were parsed ` +
                 `from ${detailedCount} linked Bursa announcement` +
@@ -3493,6 +3497,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             "_These are notified CHANGES in substantial holdings, not a " +
               "current cap table: a holder appears when it crosses or moves " +
               "within the 5% threshold, so the list is a dealings feed._",
+            "_\"Direct %\" is the holder's resulting DIRECT holding; where the " +
+              "notification also reports an indirect/deemed limb, that separate " +
+              "figure is in the linked announcement._",
             detailNote ? `_${detailNote}_` : "",
             `_${BURSA_CAVEAT}_`,
             "_Source: Bursa Malaysia company announcements (© Bursa Malaysia), " +

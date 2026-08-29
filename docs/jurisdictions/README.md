@@ -20,16 +20,16 @@ configuration, and library API, see the top-level [README](../../README.md).
 
 ## Coverage matrix
 
-| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL |
-|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
-| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — |
-| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ |
-| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ |
-| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — |
-| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — |
-| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — |
+| Intent | US | GB | EU | KR | JP | CN | IN | TW | BR | DE | FR | HK | SG | TH | NL | MY |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|:--:|
+| `CompanyResolve` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `CompanyFilings` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | — | ✅ | ✅ | — | — | — | ✅ |
+| `CompanyInsiders` | ✅ | ✅ | — | ✅ | — | ⚠️ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ |
+| `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | ✅ |
+| `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | — |
+| `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — |
+| `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
@@ -109,6 +109,24 @@ warm 7 ms); pass a cache so the digest survives process restarts. NL covers AFM-
 listed issuers only — KVK is paid — and **ESAP (2027+) will eventually overlap this
 coverage**. See [NL.md](NL.md).
 
+MY is served by **one** source: Bursa Malaysia's ~2.09-million-row company-announcements
+search. It is unusual in carrying **first-class structured categories for both insiders and
+owners** — the s.219 director-interest and s.138 substantial-shareholder announcements —
+which share the exchange's `SH,CHSH` category, so both intents filter that one category and
+separate by announcement-title prefix. The linked announcement documents turned out to be
+**structured HTML, not PDFs**, so `CompanyInsiders` and `CompanyOwners` parse real
+per-transaction detail (holder, trade date, transaction type, share count, resulting direct
+and indirect holding), capped at 10 documents per call with the remainder honestly
+link-only. **Both Bursa hosts are behind a Cloudflare managed challenge** whose clearance is
+cookie-bound: verified live, not even a challenge-solved headless browser's own `fetch` or
+jQuery call clears it — only the page's own auto-issued XHR does. Following the **BSE India
+precedent**, every MY intent detects the interstitial and returns an honest message naming
+`AdapterOptions.fetchFn`, never a fabricated or silently-empty result; with a browser-backed
+`fetchFn` injected the route returns real data (verified live: Maybank 1155, Public Bank
+1295, Glomac 5020). `CompanyFinancials` is unsupported — Bursa's results are announcement
+documents, not a normalized feed — and SSM, the national registry, is paid, so
+private-company lookups are honest unsupported. See [MY.md](MY.md).
+
 `CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, and `HK`; `PersonAppointments`
 accepts `US`, `GB` (default), `DE`, and `FR`; `CompanyCharges` is UK-only and takes no
 `jurisdiction` parameter.
@@ -136,6 +154,7 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | SG | ACRA (data.gov.sg) | None | [SG.md](SG.md) |
 | TH | DBD juristic-person register (openapi.dbd.go.th) | None for the by-id lookup; `DBD_API_KEY` for name search | [TH.md](TH.md) |
 | NL | AFM disclosure registers (keyless CSV/XML exports) | None | [NL.md](NL.md) |
+| MY | Bursa Malaysia company announcements | None (keyless), but Cloudflare-challenged — inject a browser-backed `fetchFn` | [MY.md](MY.md) |
 
 ## Honesty invariants (all jurisdictions)
 
