@@ -268,6 +268,7 @@ import {
   getDfmDocumentPdf,
   getDfmFilings,
   isDfmDisclosureType,
+  isWeakDfmMatch,
   searchDfmCompanies,
 } from "../adapters/dfmDubai.js";
 import type { DfmDocumentMetadata, DfmEntity } from "../adapters/dfmDubai.js";
@@ -1677,6 +1678,21 @@ const AE_NOT_FOUND_HINT =
   "Try a DFM issuer symbol (e.g. EMAAR, EMIRATESNBD, SALIK, TALABAT) or the " +
   "issuer's name in English or Arabic. " + AE_DUBAI_ONLY_NOTE;
 
+/**
+ * Shown when nothing beat a shared-generic-token match ("Properties",
+ * "Holding", "PJSC"). Without it, asking for an Abu Dhabi issuer like Aldar
+ * Properties returns a tidy table of real Dubai issuers that reads as an
+ * answer — the single most likely way an AE caller could be misled, given
+ * that the biggest UAE names are exactly the ones on the walled exchange.
+ */
+const AE_WEAK_MATCH_WARNING =
+  "**No confident match.** Every row below matched only on shared generic " +
+  "words (e.g. \"Properties\", \"Holding\", \"PJSC\"), not on the name you " +
+  "asked for — so this issuer is most likely NOT listed in Dubai. The UAE's " +
+  "largest issuers (ADNOC group, IHC, Aldar, Alpha Dhabi, e&) are listed on " +
+  "**ADX in Abu Dhabi**, which is bot-walled from this library. Do not read " +
+  "these rows as the issuer you searched for.";
+
 const AE_INSIDERS_UNSUPPORTED =
   "CompanyInsiders is unsupported for jurisdiction \"AE\". DFM's efsah feed " +
   "carries no structured insider-dealing or director-holdings disclosure type: " +
@@ -2132,8 +2148,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             results.slice(0, 10),
             options,
           );
+          const weak = isWeakDfmMatch(top);
           return textResult(joinSections(
             `# Company resolution (DFM / Dubai Financial Market): ${company}`,
+            weak ? `_${AE_WEAK_MATCH_WARNING}_` : "",
             entityRows(top),
             markdownTable(
               ["Symbol", "Issuer (EN)", "Issuer (AR)", "Sector", "Listed on"],

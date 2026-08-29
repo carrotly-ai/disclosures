@@ -180,6 +180,30 @@ describe("AE CompanyResolve", () => {
     expect(result.isError).toBeUndefined();
   });
 
+  test("warns loudly when only shared generic words matched (an ADX issuer)", async () => {
+    const fetchFn = dfmFetch([GLEIF_EMPTY]);
+    const result = await toolByName(tools(fetchFn), "CompanyResolve").handler({
+      company: "Aldar Properties",
+      jurisdiction: "AE",
+    } as never);
+    const text = resultText(result);
+    // Aldar is on ADX, so the only hits share the word "Properties". Without
+    // this warning the table would read as an answer to the query.
+    expect(text).toContain("No confident match");
+    expect(text).toContain("ADX in Abu Dhabi");
+    expect(text).toContain("Do not read these rows as the issuer you searched for");
+    expect(text).not.toContain("Aldar Properties PJSC");
+  });
+
+  test("does not warn on a confident symbol match", async () => {
+    const fetchFn = dfmFetch([GLEIF_EMPTY]);
+    const result = await toolByName(tools(fetchFn), "CompanyResolve").handler({
+      company: "EMAAR",
+      jurisdiction: "AE",
+    } as never);
+    expect(resultText(result)).not.toContain("No confident match");
+  });
+
   test("reports an unmatched query honestly, naming the Dubai-only gap", async () => {
     const fetchFn = dfmFetch([GLEIF_EMPTY]);
     const result = await toolByName(tools(fetchFn), "CompanyResolve").handler({

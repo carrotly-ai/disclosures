@@ -11,6 +11,7 @@ import {
   getDfmFilings,
   isDfmDisclosureType,
   isDfmSymbol,
+  isWeakDfmMatch,
   parseDfmDisclosureRow,
   parseDfmDisclosures,
   parseDfmJson,
@@ -162,6 +163,26 @@ describe("searchDfmCompanies", () => {
     const entity = await resolveDfmCompany("إعمار العقارية ش.م.ع", options(fetchFn));
     expect(entity?.dfmSymbol).toBe("EMAAR");
     expect(entity?.legalName).toBe("Emaar Properties PJSC");
+  });
+
+  test("drops zero-overlap candidates instead of padding the result", async () => {
+    const fetchFn = dfmFetch([]);
+    // Nothing on DFM shares a token with this, so the honest answer is nothing.
+    expect(await searchDfmCompanies("Zzyzx Widgets", options(fetchFn))).toEqual([]);
+  });
+
+  test("flags a shared-generic-token-only result as a weak match", async () => {
+    const fetchFn = dfmFetch([]);
+    // Aldar Properties is an ADX (Abu Dhabi) issuer: it is not on DFM, so the
+    // only hits share the word "Properties" and must not read as an answer.
+    const results = await searchDfmCompanies("Aldar Properties", options(fetchFn));
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((entity) => entity.legalName !== "Aldar Properties")).toBe(true);
+    expect(isWeakDfmMatch(results)).toBe(true);
+    // A genuine hit is never flagged weak.
+    expect(isWeakDfmMatch(await searchDfmCompanies("EMAAR", options(fetchFn))))
+      .toBe(false);
+    expect(isWeakDfmMatch([])).toBe(false);
   });
 
   test("returns nothing for a blank query and never calls upstream", async () => {
@@ -351,6 +372,45 @@ describe("getDfmFilings", () => {
     expect(filings.length).toBe(30);
     expect(truncated).toBe(true);
     expect(fetchFn.requests.some(({ url }) => url.includes("skip=20"))).toBe(true);
+  });
+
+  test("retries the gateway's intermittent empty 200 body", async () => {
+    // Measured live: roughly 1 request in 20 answers 200 text/html with a
+    // zero-length body. Treating that as {"root":[]} would report "no
+    // disclosures" for an issuer that has hundreds, so it is retried once.
+    let call = 0;
+    const inner = dfmFetch([]);
+    const fetchFn = (async (url: string, init?: RequestInit) => {
+      if (url.startsWith(DFM_EFSAH_URL)) {
+        fetchFn.requests.push({ url });
+        call += 1;
+        return call === 1
+          ? new Response("", { status: 200, headers: { "Content-Type": "text/html" } })
+          : new Response(EMAAR, { status: 200 });
+      }
+      return inner(url, init);
+    }) as ReturnType<typeof routedFetch>;
+    fetchFn.requests = [];
+    const { filings } = await getDfmFilings(
+      { company: "EMAAR", limit: 3 },
+      options(fetchFn),
+    );
+    expect(filings).toHaveLength(3);
+    expect(call).toBe(2);
+  });
+
+  test("surfaces a persistent empty body as an upstream glitch, not no data", async () => {
+    const inner = dfmFetch([]);
+    const fetchFn = (async (url: string, init?: RequestInit) => {
+      if (url.startsWith(DFM_EFSAH_URL)) {
+        return new Response("", { status: 200, headers: { "Content-Type": "text/html" } });
+      }
+      return inner(url, init);
+    }) as ReturnType<typeof routedFetch>;
+    fetchFn.requests = [];
+    await expect(
+      getDfmFilings({ company: "EMAAR" }, options(fetchFn)),
+    ).rejects.toThrow(/NOT an empty result for the issuer/);
   });
 
   test("returns an empty list (not an error) when the feed has no rows", async () => {

@@ -111,6 +111,17 @@ function mapHttpError(error: unknown): unknown {
 }
 
 /**
+ * The gateway intermittently answers a perfectly valid request with
+ * `200 text/html` and a ZERO-LENGTH body (measured live: roughly 1 request in
+ * 20). That is a transient upstream glitch, and it must never be mistaken for
+ * `{"root":[]}` — the real end-of-results envelope — because doing so would
+ * report "this issuer has no disclosures" when the issuer has hundreds. One
+ * bounded retry clears it; a second empty body in a row is surfaced as an
+ * explicit upstream failure rather than an empty result.
+ */
+export const DFM_EMPTY_BODY_RETRIES = 1;
+
+/**
  * The efsah gateway serves pretty-printed JSON behind a UTF-8 BOM. `Response
  * .json()` copes with the BOM on modern runtimes, but reading text and parsing
  * ourselves makes the BOM handling explicit and testable, matching the HKEXnews
@@ -118,25 +129,34 @@ function mapHttpError(error: unknown): unknown {
  * reported as an upstream failure rather than leaking a SyntaxError.
  */
 async function dfmGetJson(url: string, options: AdapterOptions): Promise<unknown> {
-  acquireRequest();
-  let text: string;
-  try {
-    text = await getText(
-      url,
-      BROWSER_HEADERS,
-      DFM_REQUEST_TIMEOUT_MS,
-      options.fetchFn ?? fetch,
-    );
-  } catch (error) {
-    throw mapHttpError(error);
+  for (let attempt = 0; ; attempt += 1) {
+    acquireRequest();
+    let text: string;
+    try {
+      text = await getText(
+        url,
+        BROWSER_HEADERS,
+        DFM_REQUEST_TIMEOUT_MS,
+        options.fetchFn ?? fetch,
+      );
+    } catch (error) {
+      throw mapHttpError(error);
+    }
+    if (text.trim() === "" && attempt < DFM_EMPTY_BODY_RETRIES) continue;
+    return parseDfmJson(text);
   }
-  return parseDfmJson(text);
 }
 
 /** Strip a leading BOM and parse; a non-JSON body is an upstream failure. */
 export function parseDfmJson(text: string): unknown {
   const cleaned = text.replace(/^﻿/, "").trim();
-  if (!cleaned) throw new DfmApiError("DFM returned an empty response body.");
+  if (!cleaned) {
+    throw new DfmApiError(
+      "DFM returned an empty response body (the gateway intermittently " +
+        "answers 200 with no content). This is an upstream glitch, NOT an " +
+        "empty result for the issuer — please retry.",
+    );
+  }
   try {
     return JSON.parse(cleaned);
   } catch {
@@ -377,6 +397,9 @@ function securityToEntity(security: DfmSecurity, matchReason: string): DfmEntity
   };
 }
 
+/** Ranking fallback reason, used to detect and drop zero-overlap candidates. */
+const DFM_NO_MATCH_REASON = "DFM listed-securities name search result";
+
 export async function searchDfmCompanies(
   query: string,
   options: AdapterOptions = {},
@@ -396,11 +419,31 @@ export async function searchDfmCompanies(
   }
 
   const candidates = securities.map((security) =>
-    securityToEntity(security, "DFM listed-securities name search result"),
+    securityToEntity(security, DFM_NO_MATCH_REASON),
   );
+  // Drop zero-overlap candidates: the roster is small enough that ranking every
+  // security would otherwise return a full page of unrelated issuers for a name
+  // that is simply not listed in Dubai — which reads as "here are your matches"
+  // when the honest answer is "this issuer is not on DFM". `rankEntities`
+  // leaves the fallback reason on exactly those rows.
   return rankEntities(trimmed, candidates, {
-    fallbackReason: "DFM listed-securities name search result",
-  }).slice(0, 25) as DfmEntity[];
+    fallbackReason: DFM_NO_MATCH_REASON,
+  }).filter((entity) => entity.matchReason !== DFM_NO_MATCH_REASON)
+    .slice(0, 25) as DfmEntity[];
+}
+
+/**
+ * A candidate that matched only on shared generic tokens ("Properties",
+ * "Holding", "PJSC"). Real on DFM, but not a confident answer to the query — an
+ * Abu Dhabi issuer like Aldar Properties lands here, and the caller must be told
+ * so rather than shown a plausible-looking Dubai substitute.
+ */
+export const DFM_WEAK_MATCH_REASON = "Best normalized token match";
+
+/** True when nothing in the result set is better than a shared-token match. */
+export function isWeakDfmMatch(entities: readonly DfmEntity[]): boolean {
+  const top = entities[0];
+  return top !== undefined && top.matchReason === DFM_WEAK_MATCH_REASON;
 }
 
 export async function resolveDfmCompany(
