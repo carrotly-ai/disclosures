@@ -263,6 +263,8 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "honest unsupported. The keyless endpoint is keyed by exact 13-digit " +
       "juristic number only; name search needs DBD_API_KEY. SET is " +
       "Incapsula-walled and the SEC idisc filings API is keyless but brittle.",
+  },
+  {
     code: "NL",
     name: "Netherlands",
     source: "AFM disclosure registers (keyless export.aspx CSV/XML)",

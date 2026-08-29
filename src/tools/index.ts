@@ -1915,6 +1915,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             joinSections(...sections),
             entitiesStructured(results.slice(0, 10)),
           );
+        } catch (error) {
+          return failureResult(company, error);
+        }
+      }
       if (jurisdiction === "NL") {
         try {
           const registerHits = await searchAfmCompanies(company, options);
@@ -2358,6 +2362,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         }
         if (jurisdiction === "TH") {
           return textResult(TH_FILINGS_UNSUPPORTED);
+        }
         if (jurisdiction === "NL") {
           return textResult(AFM_FILINGS_UNSUPPORTED);
         }
@@ -3643,6 +3648,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "TH") {
         return textResult(TH_FINANCIALS_UNSUPPORTED);
+      }
       if (jurisdiction === "NL") {
         return textResult(AFM_FINANCIALS_UNSUPPORTED);
       }
