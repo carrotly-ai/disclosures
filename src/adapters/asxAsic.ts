@@ -19,11 +19,10 @@ import type { AdapterOptions, Entity, Filing, Insider } from "../core/types.js";
 //      prohibit using any "spider, screen scraper, robot, other similar
 //      software or device, or other similar process" to access the site. See
 //      docs/jurisdictions/AU.md § "ASX Terms of Use conflict" for the verbatim
-//      quotes. This is a REAL, UNRESOLVED legal conflict with redistributing
-//      ASX-derived content through this package; the repository owner has
-//      decided to build the ASX path anyway, and every ASX-derived response
-//      carries ASX_TERMS_NOTE so the operator is told, at point of use, that
-//      having rights to use ASX data is their responsibility.
+//      quotes. This is a REAL legal constraint: public tool routes refuse ASX
+//      access before the first request unless the operator explicitly sets
+//      DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1. Enabled responses still carry
+//      ASX_TERMS_NOTE so the responsibility remains visible at point of use.
 //
 //   B. ASIC on data.gov.au — Commonwealth open data under
 //      Creative Commons Attribution 3.0 Australia (CC BY 3.0 AU), verified per

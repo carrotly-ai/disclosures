@@ -34,7 +34,10 @@ import {
   resetAfmRegisterCache,
 } from "../src/adapters/afmRegisters.js";
 
-const ENV: Env = { DISCLOSURES_USER_AGENT: "Test test@example.com" };
+const ENV: Env = {
+  DISCLOSURES_USER_AGENT: "Test test@example.com",
+  DISCLOSURES_ACKNOWLEDGE_PSE_TERMS: "1",
+};
 const GB_ENV: Env = {
   ...ENV,
   COMPANIES_HOUSE_API_KEY: "test-companies-house-key",
@@ -4176,6 +4179,36 @@ describe("explicit PH routing (PSE EDGE)", () => {
     expect(text).toContain("PSE EDGE (© The Philippine Stock Exchange, Inc.)");
     expect(text).toContain("personal, non-commercial use");
     expect(text).toContain("https://edge.pse.com.ph/page/disclaimer.do");
+  }
+
+  const restrictedCases: Array<[string, Record<string, unknown>]> = [
+    ["CompanyResolve", { company: "SM", jurisdiction: "PH" }],
+    ["CompanyFilings", { company: "SM", jurisdiction: "PH" }],
+    ["CompanyInsiders", { company: "SM", jurisdiction: "PH" }],
+    ["CompanyOwners", { company: "SM", jurisdiction: "PH" }],
+    ["CompanyFinancials", { company: "SM", jurisdiction: "PH" }],
+    [
+      "CompanyDocument",
+      {
+        company: "SM",
+        jurisdiction: "PH",
+        transaction_id: "65b318b2cef5898264d70b69f0a3140b",
+      },
+    ],
+  ];
+
+  for (const [name, args] of restrictedCases) {
+    test(`${name} refuses PSE access before fetching without acknowledgement`, async () => {
+      const fetchFn = routedFetch([]);
+      const tools = createTools({
+        fetchFn,
+        env: { DISCLOSURES_USER_AGENT: "Test test@example.com" },
+      });
+      const result = await toolByName(tools, name).handler(args as never);
+      expect(result.isError).toBe(true);
+      expect(resultText(result)).toContain("DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1");
+      expect(fetchFn.requests).toHaveLength(0);
+    });
   }
 
   test("CompanyResolve returns the issuer and points at the PH follow-on tools", async () => {

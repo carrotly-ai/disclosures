@@ -36,6 +36,19 @@
           "name": "EDINET_API_KEY",
           "description": "Japan EDINET API key. Required only for JP document search; JP resolution is keyless.",
           "isSecret": true
+        },
+        {
+          "name": "DBD_API_KEY",
+          "description": "Thailand DBD API key. Required only for company-name search; exact 13-digit juristic-person lookups are keyless.",
+          "isSecret": true
+        },
+        {
+          "name": "DISCLOSURES_ACKNOWLEDGE_ASX_TERMS",
+          "description": "Set to 1 only after reviewing ASX's restrictive terms and confirming you have the rights to use ASX data. ASIC open-data routes remain available without it."
+        },
+        {
+          "name": "DISCLOSURES_ACKNOWLEDGE_PSE_TERMS",
+          "description": "Set to 1 only after reviewing PSE EDGE's restrictive terms and confirming you have the rights to use PSE data."
         }
       ]
     }

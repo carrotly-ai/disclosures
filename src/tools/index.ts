@@ -25,6 +25,10 @@ import type {
   PrivateRaise,
 } from "../core/types.js";
 import {
+  hasRestrictedSourceAcknowledgement,
+  restrictedSourceDisabledMessage,
+} from "../core/restrictedSources.js";
+import {
   NO_SEC_CONFIG_MESSAGE,
   SEC_DOCUMENT_CONTENT_WARNING,
   SEC_DOCUMENT_IMAGE_ONLY_MESSAGE,
@@ -330,6 +334,8 @@ import {
   getAsxDocumentMetadata,
   getAsxDocumentPdf,
   getAsxFilings,
+  isAbn,
+  isAcn,
   searchAsicBannedPersons,
   searchAsicCompanies,
   searchAsxCompanies,
@@ -1809,11 +1815,9 @@ const MY_PRIVATE_RAISES_UNSUPPORTED =
 // (form 13-1), owners (POR-1 roster / 17-7 dealings) and financials (17-A/17-Q).
 //
 // TERMS: PSE's disclaimer restricts its contents to "personal, non-commercial
-// use" and forbids redistribution to third parties. That conflicts with serving
-// PSE content through this package and is near-identical to the ASX wording
-// this project treated as disqualifying; PH ships anyway as an explicit
-// maintainer decision. PSE_TERMS_NOTE is therefore appended to EVERY PH
-// response — do not drop it from a rendering path.
+// use" and forbids redistribution to third parties. Public PSE routes therefore
+// require DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1 before any request, and
+// PSE_TERMS_NOTE is appended to every enabled PH response.
 
 const PH_PRIVATE_RAISES_UNSUPPORTED =
   "PrivateRaises is unsupported for jurisdiction \"PH\". The Philippines has " +
@@ -2050,11 +2054,9 @@ async function enrichAeCandidatesWithGleif(
 //   * ASX (asx.api.markitdigital.com) — technically clean, LEGALLY RESTRICTED.
 //     The ASX Terms of Use grant only "personal, non-commercial use" and
 //     prohibit reproducing/downloading/transmitting/distributing site content.
-//     That is a real, unresolved conflict with redistributing ASX content
-//     through this package. The repository owner decided to build it anyway;
-//     every ASX-derived response therefore carries AU_ASX_TERMS_NOTE, which
-//     states the restriction and puts the rights question on the operator.
-//     Full quotes: docs/jurisdictions/AU.md.
+//     Public ASX routes require DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1 before any
+//     request, and every enabled response carries AU_ASX_TERMS_NOTE. Full
+//     quotes: docs/jurisdictions/AU.md.
 //   * ASIC on data.gov.au — CC BY 3.0 AU, genuinely redistributable with
 //     attribution. Those responses carry AU_ASIC_LICENCE_NOTE instead.
 const AU_ASX_TERMS_NOTE = ASX_TERMS_NOTE;
@@ -2702,13 +2704,13 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "AU") {
         try {
-          // Both AU halves are queried in parallel and rendered as SEPARATE,
-          // separately-labelled tables, because they carry opposite licences:
-          // the ASX directory is restricted exchange content, the ASIC register
-          // is CC-BY open data. One half failing must not lose the other, so
-          // each is caught independently.
+          const asxAcknowledged = hasRestrictedSourceAcknowledgement("ASX", options);
+          const exactAsicIdentifier = isAcn(company) || isAbn(company);
+          // ASIC is always available. ASX is contacted only after an explicit
+          // terms acknowledgement, and never for an exact ACN/ABN lookup.
+          const queryAsx = asxAcknowledged && !exactAsicIdentifier;
           const [listedResult, registerResult] = await Promise.allSettled([
-            searchAsxCompanies(company, options),
+            queryAsx ? searchAsxCompanies(company, options) : Promise.resolve([]),
             searchAsicCompanies(company, options),
           ]);
           const listedRaw = listedResult.status === "fulfilled"
@@ -2718,7 +2720,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ? registerResult.value
             : [];
           const warnings: string[] = [];
-          if (listedResult.status === "rejected") {
+          if (queryAsx && listedResult.status === "rejected") {
             warnings.push(
               "ASX listed-directory lookup was unavailable for this request: " +
                 (listedResult.reason instanceof Error
@@ -2734,7 +2736,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 (registerResult.reason instanceof Error
                   ? registerResult.reason.message
                   : String(registerResult.reason)) +
-                ". Any ASX results below are unaffected.",
+                (queryAsx ? ". Any ASX results below are unaffected." : "."),
             );
           }
           if (!listedRaw.length && !register.length) {
@@ -2744,7 +2746,17 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                   warnings.join(" "),
               );
             }
-            return notFoundResult(company, AU_NOT_FOUND_HINT);
+            return notFoundResult(
+              company,
+              joinSections(
+                AU_NOT_FOUND_HINT,
+                !asxAcknowledged
+                  ? restrictedSourceDisabledMessage("ASX")
+                  : exactAsicIdentifier
+                    ? "Exact ACN/ABN lookups intentionally query only the CC-BY ASIC register."
+                    : undefined,
+              ),
+            );
           }
           // The ASX directory carries no LEI, so top listed matches are
           // enriched from GLEIF (keyless, CC0) — conservatively, withholding
@@ -2753,27 +2765,38 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             listedRaw.slice(0, 10),
             options,
           );
-          const combined: Entity[] = [...listed, ...register.slice(0, 10)];
+          const shownRegister = register.slice(0, 10);
+          const combined: Entity[] = [...listed, ...shownRegister];
+          const accessNote = !asxAcknowledged
+            ? restrictedSourceDisabledMessage("ASX")
+            : exactAsicIdentifier
+              ? "Exact ACN/ABN lookups intentionally query only the CC-BY ASIC register; no ASX request was made."
+              : undefined;
           return textResult(joinSections(
-            `# Company resolution (ASX + ASIC): ${company}`,
+            `# Company resolution (${queryAsx ? "ASX + ASIC" : "ASIC"}): ${company}`,
             entityRows(combined),
-            ...buildAuResolveSections(listed, register.slice(0, 10)),
+            ...buildAuResolveSections(listed, shownRegister),
             warnings.map((warning) => `_${warning}_`).join("\n") || undefined,
-            `_${AU_RESOLVE_CAVEAT}_`,
+            accessNote ? `_${accessNote}_` : undefined,
+            `_${queryAsx ? AU_RESOLVE_CAVEAT : ASIC_COMPANY_CAVEAT}_`,
             nextStep(
               listed.length
                 ? "use the ASX code from this table with CompanyFilings " +
                   "(jurisdiction \"AU\") for the issuer's five most recent " +
                   "announcements — that feed is capped at five and is NOT a " +
                   "filing history — then CompanyDocument (jurisdiction \"AU\") " +
-                  "for an announcement's PDF or text. An LEI here also works " +
+                  "for an announcement's PDF or text. Both ASX tools require " +
+                  "DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1. An LEI here also works " +
                   "with OwnershipChain."
-                : "this company resolved from the ASIC register only, so it is " +
-                  "not ASX-listed and has no announcements feed. AU filings, " +
-                  "owners, insiders and financials are unsupported for " +
-                  "unlisted companies — the remaining free AU surface is " +
-                  "PersonAppointments mode \"disqualifications\" (ASIC's " +
-                  "banned-persons register) and OwnershipChain via GLEIF.",
+                : queryAsx
+                  ? "this company resolved from the ASIC register and did not " +
+                    "match the ASX directory. The remaining free AU surface is " +
+                    "PersonAppointments mode \"disqualifications\" and " +
+                    "OwnershipChain via GLEIF."
+                  : "only the CC-BY ASIC register was queried. Use " +
+                    "PersonAppointments mode \"disqualifications\" for ASIC's " +
+                    "banned-persons register; enable ASX explicitly only after " +
+                    "reviewing its terms.",
             ),
           ), entitiesStructured(combined));
         } catch (error) {
@@ -2837,6 +2860,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
 
       if (jurisdiction === "PH") {
+        if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+          return errorResult(restrictedSourceDisabledMessage("PSE"));
+        }
         try {
           const hits = await searchPseCompanies(company, options);
           if (!hits.length) {
@@ -3401,6 +3427,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "issuer is dual-listed and files a Form 20-F.",
             );
           }
+          if (!hasRestrictedSourceAcknowledgement("ASX", options)) {
+            return errorResult(restrictedSourceDisabledMessage("ASX"));
+          }
           const {
             entity,
             filings,
@@ -3542,6 +3571,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "[\"Quarterly Report\"].",
               PH_SOURCE_NOTE,
             ));
+          }
+          if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+            return errorResult(restrictedSourceDisabledMessage("PSE"));
           }
           // PSE filters the disclosure index by a template-name substring
           // server-side, so the first `forms` entry becomes that filter.
@@ -4061,6 +4093,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ), insidersStructured(insiders, "MY"));
         }
         if (jurisdiction === "PH") {
+          if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+            return errorResult(restrictedSourceDisabledMessage("PSE"));
+          }
           const { entity, rows: insiders, recordsTotal, detailedCount, detailNote } =
             await getPseInsiders({ company }, options);
           if (!insiders.length) {
@@ -4699,6 +4734,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ), ownersStructured(owners, "MY"));
         }
         if (jurisdiction === "PH") {
+          if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+            return errorResult(restrictedSourceDisabledMessage("PSE"));
+          }
           // The POR-1 public-ownership roster is the default: a named,
           // point-in-time holder list, which is what "who owns it?" means. A
           // date window is a request for a dealings history instead, so it
@@ -5255,6 +5293,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         return textResult(MY_FINANCIALS_UNSUPPORTED);
       }
       if (jurisdiction === "PH") {
+        if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+          return errorResult(restrictedSourceDisabledMessage("PSE"));
+        }
         try {
           // PSE publishes annual (17-A) and quarterly (17-Q) reports in one
           // index; this tool has no period-kind input, so the annual report is
@@ -6798,9 +6839,15 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         return companyDocumentAe(company, transaction_id, mode, text_offset, output_path);
       }
       if (jurisdiction === "PH") {
+        if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+          return errorResult(restrictedSourceDisabledMessage("PSE"));
+        }
         return companyDocumentPh(transaction_id, mode, text_offset, output_path);
       }
       if (jurisdiction === "AU") {
+        if (!hasRestrictedSourceAcknowledgement("ASX", options)) {
+          return errorResult(restrictedSourceDisabledMessage("ASX"));
+        }
         return companyDocumentAu(transaction_id, mode, text_offset, output_path);
       }
       try {

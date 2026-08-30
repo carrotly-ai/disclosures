@@ -51,8 +51,16 @@ function resultText(result: ToolResult): string {
   return result.content.map((item) => (item.type === "text" ? item.text : "")).join("\n");
 }
 
-function tools(fetchFn: AdapterOptions["fetchFn"], cache?: AdapterOptions["cache"]) {
-  return createTools({ fetchFn, env: {}, ...(cache ? { cache } : {}) });
+const ASX_ACKNOWLEDGED_ENV = {
+  DISCLOSURES_ACKNOWLEDGE_ASX_TERMS: "1",
+};
+
+function tools(
+  fetchFn: AdapterOptions["fetchFn"],
+  cache?: AdapterOptions["cache"],
+  env: AdapterOptions["env"] = ASX_ACKNOWLEDGED_ENV,
+) {
+  return createTools({ fetchFn, env, ...(cache ? { cache } : {}) });
 }
 
 const DIRECTORY_ROUTE: Route = { pattern: "companies/directory", body: DIRECTORY };
@@ -111,6 +119,23 @@ describe("AU CompanyResolve", () => {
     expect(text).toContain("prohibit");
     expect(text).toContain("responsible for having the rights to use ASX data");
     expect(text).toContain("https://www.asx.com.au/legals/terms-of-use");
+  });
+
+  test("queries only ASIC when ASX terms are not acknowledged", async () => {
+    const fetchFn = routedFetch([{
+      pattern: "resource_id=5c3914e6",
+      body: COMPANY_NAME_ATLASSIAN,
+    }]);
+    const result = await toolByName(tools(fetchFn, undefined, {}), "CompanyResolve").handler({
+      company: "ATLASSIAN",
+      jurisdiction: "AU",
+    } as never);
+    const text = resultText(result);
+    expect(text).toContain("ASIC company register (CC-BY open data)");
+    expect(text).toContain("ASX access is disabled by default");
+    expect(text).toContain("DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1");
+    expect(fetchFn.requests.some(({ url }) => url.includes("asx.api.markitdigital.com"))).toBe(false);
+    expect(result.isError).toBeUndefined();
   });
 
   test("resolves by company name against the ASX directory", async () => {
@@ -175,6 +200,8 @@ describe("AU CompanyResolve", () => {
     expect(
       fetchFn.requests.some(({ url }) => url.includes("filters=") && url.includes("ACN")),
     ).toBe(true);
+    expect(fetchFn.requests.some(({ url }) => url.includes("asx.api.markitdigital.com"))).toBe(false);
+    expect(text).toContain("Exact ACN/ABN lookups intentionally query only");
   });
 
   test("returns an honest miss when neither source has the company", async () => {
@@ -349,6 +376,17 @@ describe("AU CompanyResolve", () => {
 });
 
 describe("AU CompanyFilings", () => {
+  test("refuses ASX access before fetching without acknowledgement", async () => {
+    const fetchFn = routedFetch([]);
+    const result = await toolByName(tools(fetchFn, undefined, {}), "CompanyFilings").handler({
+      company: "BHP",
+      jurisdiction: "AU",
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
   test("maps the five most recent announcements and says so plainly", async () => {
     const fetchFn = routedFetch(auRoutes([
       { pattern: "companies/bhp/announcements", body: ANNOUNCEMENTS_BHP },
@@ -469,6 +507,18 @@ describe("AU CompanyFilings", () => {
 });
 
 describe("AU CompanyDocument", () => {
+  test("refuses ASX access before fetching without acknowledgement", async () => {
+    const fetchFn = routedFetch([]);
+    const result = await toolByName(tools(fetchFn, undefined, {}), "CompanyDocument").handler({
+      company: "BHP",
+      jurisdiction: "AU",
+      transaction_id: BHP_DOCUMENT_KEY,
+    } as never);
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain("DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1");
+    expect(fetchFn.requests).toHaveLength(0);
+  });
+
   test("returns metadata measured from a real fetch", async () => {
     const pdf = buildTextLayoutPdf(["Dividend/Distribution - BHP"]);
     const fetchFn = routedFetch([{ pattern: `file/${BHP_DOCUMENT_KEY}`, body: pdf }]);

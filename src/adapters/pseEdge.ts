@@ -29,14 +29,12 @@ import type {
 //
 // That is materially stricter than the generic exchange copyright reservations
 // this package relies on elsewhere (e.g. HKEXnews), and it reads almost
-// word-for-word like the ASX Terms of Use that this repo's own AU feasibility
-// finding treated as DISQUALIFYING. The repository owner nevertheless made an
-// explicit, eyes-open decision to ship PH. That conflict is documented in
-// docs/jurisdictions/PH.md, surfaced in the PH jurisdiction reference card's
-// caveat, and every PH tool response carries a short source/terms note
-// pointing at the disclaimer page. Do not remove those notices — the operator,
-// not this package, is responsible for holding the rights to use PSE data in
-// whatever context they deploy it.
+// word-for-word like ASX's restrictions. Public tool routes therefore refuse
+// PSE access before the first request unless the operator explicitly sets
+// DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1. Enabled responses still carry a short
+// source/terms note pointing at the disclaimer page. Do not remove those
+// notices — the operator remains responsible for holding the rights to use PSE
+// data in whatever context they deploy it.
 //
 // -------------------------------------------------------------------------
 // Endpoint map (all verified live 2026-08-29)
