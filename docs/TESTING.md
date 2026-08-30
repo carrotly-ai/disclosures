@@ -78,12 +78,21 @@ supply the same variables directly. The suite currently covers:
 - keyless **SG** UEN resolution through ACRA open data;
 - keyless **TH** juristic-number resolution through the DBD register (PTT PCL — Thai
   text round-trip and the registered-capital line);
+- keyless **NL** insider disclosures through the two bounded AFM XML exports;
+- keyless **ID** and **MY** resolution, accepting either real issuer data or each
+  adapter's exact actionable anti-bot refusal (never a generic 4xx skip);
+- keyless **TR** KAP resolution and a known disclosure opened by numeric id;
+- keyless **AE** DFM resolution, filings, and document metadata, plus an off-host
+  transaction-id refusal;
+- keyless **AU** ASIC banned/disqualified-person lookup, deliberately exercising no
+  ASX path or terms acknowledgement;
 - keyless **TW** whole-market financials (TSMC) from TWSE open data — all five
   concepts, NT$ formatting, `structuredContent.concepts`;
 - credentialed **JP** annual financials (Toyota) parsed from EDINET XBRL — JPY
   formatting and consolidated basis; and
-- keyless **BR** (CVM), **DE** (BaFin), **CN** (cninfo) and **IN** (BSE India)
-  resolution, each guarded by a tolerant skip (see below).
+- keyless **BR** (CVM), **CN** (cninfo) and **IN** (BSE India) resolution guarded by
+  a tolerant transport skip, while **DE** BaFin now asserts normally through the
+  allowlisted lenient HTTP path (see below).
 
 Assertions intentionally target stable invariants (issuer identity, identifier formats,
 source hosts, headings, and response shape), never exact live counts, dates, or amounts.
@@ -93,27 +102,29 @@ timeout, and 5xx failures are retried once. Per-call and per-test timeouts bound
 error diagnostics redact configured API keys. Missing credentials skip only their
 jurisdiction in `test:live`; `test:live:all` is the strict pre-release mode.
 
-**Tolerant jurisdictions (BR, DE, CN, IN).** These four keyless sources cannot be relied on
-from an arbitrary datacenter host, so an upstream/runtime *transport* block is logged and
-treated as a SKIP (never a failure) while a genuine assertion mismatch still fails:
-cninfo (CN) and BSE India (IN, Akamai) are anti-bot walled and may answer 403/redirect/
-timeout; and BaFin's portal (DE) emits an obsolete line-folded `Permissions-Policy` response
-header that Node's undici HTTP/1.1 parser rejects (`Invalid header value char`), so the
-built server's global `fetch` can never read it even though `curl` can — DE therefore skips
-on this runtime today. The spawned server also runs with `--dns-result-order=ipv4first
---no-network-family-autoselection`, because some upstreams (notably Brazil's
-dados.cvm.gov.br) publish AAAA records that are unroutable from hosts with broken IPv6 and
-undici does not reliably fall back to IPv4.
+**Tolerant transports (BR, CN, IN).** These three keyless sources cannot be relied on from
+an arbitrary datacenter host, so an upstream/runtime *transport* block is logged and treated
+as a SKIP (never a failure) while a genuine assertion mismatch still fails: cninfo (CN) and
+BSE India (IN, Akamai) are anti-bot walled and may answer 403/redirect/timeout; Brazil's CVM
+host can be unreachable where IPv6 routing is broken. BaFin (DE) no longer belongs in this
+set: its obsolete line-folded response header is handled by the adapter's allowlisted lenient
+HTTP path, so the built-server DE case asserts normally. ID and MY also do not use this broad
+skip: their live cases accept only the adapters' specific, actionable anti-bot refusals, so
+an unrelated 4xx remains a regression. The spawned server runs with
+`--dns-result-order=ipv4first --no-network-family-autoselection` because undici does not
+reliably fall back from unroutable AAAA records.
 
 The file uses the non-discoverable `.live.ts` suffix. Do not rename it to `.test.ts` or
 `.spec.ts`: bare `bun test` discovers those names recursively and would violate the offline
 contract. Neither normal CI nor the npm release workflow runs live tests. The separate
 `Live E2E` GitHub Actions workflow is manual-only and requires the four repository secrets.
+The release process deliberately requires a successful strict run before merging a release
+PR; this is an operator-enforced gate, not a branch-protection rule.
 
 The older `bun run smoke:live` command remains as a small SEC/GLEIF diagnostic and now
 builds first; use `test:live:all` for the full credentialed gate.
 
-## Roadmap
+## Fixture policy
 
 The inline-fixture majority is deliberate and readable. The largest verbatim payloads have
 been consolidated into per-adapter recorded-fixtures directories under
