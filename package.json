@@ -1,6 +1,6 @@
 {
   "name": "disclosures",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "mcpName": "io.github.carrotly-ai/disclosures",
   "description": "Corporate-disclosure research across 26 official sources and 21 jurisdiction routes behind ten intent-based tools, as a TypeScript library and MCP server.",
   "type": "module",
