@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented here.
 
-## 0.8.0 - 2026-08-30
+## 0.8.0 - 2026-08-31
 
 The coverage-expansion release: eight new jurisdiction routes across APAC, Europe, and the Middle East; deeper ownership, insider, and document coverage for Brazil and China; and cross-jurisdiction PDF correctness fixes. All tool additions remain behind the existing ten intent-based names.
 
