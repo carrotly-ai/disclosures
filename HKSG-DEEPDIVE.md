@@ -1,5 +1,7 @@
 # HK + SG deep-dive re-probe — what the zero-dep PDF extractor and harder wall-probing open
 
+> **Historical research record.** The bounded HK financials and CCASS-owner recommendations subsequently shipped; SG's deeper disclosure wall remains. See the current jurisdiction pages and changelog.
+
 > **Status:** finding only — no code change ships with this document. Follow-up to
 > `HKSG-FEASIBILITY.md`. Re-verifies each surface the original finding marked blocked, in
 > light of two changes since: (1) the repo now ships a zero-dependency PDF text-layer

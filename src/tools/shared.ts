@@ -6,6 +6,19 @@ import {
 import type { AdapterOptions, ToolResult } from "../core/types.js";
 import { errorResult, textResult } from "../core/toolDefs.js";
 
+export const COMPANY_JURISDICTIONS = [
+  "US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE", "FR", "HK",
+  "SG", "TH", "NL", "ID", "MY", "TR", "AE", "PH", "AU",
+] as const;
+
+export const DOCUMENT_JURISDICTIONS = [
+  "US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE", "PH", "AU",
+] as const;
+
+export const PERSON_APPOINTMENT_JURISDICTIONS = [
+  "US", "GB", "DE", "FR", "AU",
+] as const;
+
 export const companyInput = {
   company: z
     .string()
@@ -26,59 +39,14 @@ export const companyInput = {
         "9-digit ACN / 11-digit ABN (AU), or 20-character LEI",
     ),
   jurisdiction: z
-    .enum([
-      "US", "GB", "EU", "KR", "JP", "CN", "IN", "TW", "BR", "DE", "FR", "HK",
-      "SG", "TH", "NL", "ID", "MY", "TR", "AE", "PH", "AU",
-    ])
+    .enum(COMPANY_JURISDICTIONS)
     .optional()
     .describe(
-      "Jurisdiction to search: US (SEC EDGAR), GB (Companies House), " +
-        "EU (pan-European ESEF filers via filings.xbrl.org — CompanyResolve, " +
-        "CompanyFilings, and CompanyFinancials), KR (OpenDART/DART), JP (EDINET), " +
-        "CN (cninfo — SSE/SZSE), " +
-        "IN (BSE India), TW (TWSE OpenAPI — Taiwan listed companies), " +
-        "BR (CVM open data — Brazilian listed companies), " +
-        "DE (BaFin — German major-holding voting rights + directors' dealings), " +
-        "FR (info-financiere.gouv.fr OAM + recherche-entreprises — French " +
-        "regulated filings, threshold crossings, and officers), " +
-        "HK (HKEXnews — Hong Kong listed issuers: CompanyResolve, CompanyFilings, " +
-        "CompanyDocument), SG (ACRA via data.gov.sg — CompanyResolve only), or " +
-        "TH (DBD juristic-person register — CompanyResolve only; keyless by " +
-        "13-digit juristic number, name search needs DBD_API_KEY), or " +
-        "NL (AFM disclosure registers — Dutch listed issuers: CompanyResolve, " +
-        "CompanyOwners (Wft substantial holdings), CompanyInsiders (Art.19 MAR " +
-        "managers' transactions + directors' holdings)), or " +
-        "ID (IDX / Bursa Efek Indonesia — Indonesian listed issuers: " +
-        "CompanyResolve, CompanyFilings, CompanyFinancials from real XBRL " +
-        "instances; the host is anti-bot protected, so an injected " +
-        "browser-backed fetchFn may be required), or " +
-        "MY (Bursa Malaysia announcements — CompanyResolve, CompanyFilings, " +
-        "CompanyInsiders (s.219 director interest), CompanyOwners (s.138 " +
-        "substantial shareholding); Cloudflare-challenged, needs a " +
-        "browser-backed AdapterOptions.fetchFn), or " +
-        "TR (KAP / Kamuyu Aydınlatma Platformu — Turkish BIST issuers: " +
-        "CompanyResolve (BIST directory by stock code or name), " +
-        "CompanyDocument (by KAP disclosure id); per-company filing " +
-        "enumeration is not keyless-reachable, so CompanyFilings is " +
-        "honestly unsupported). " +
-        "AE (Dubai Financial Market — DUBAI ONLY, not the whole UAE: " +
-        "CompanyResolve, CompanyFilings, CompanyDocument; ADX, DIFC and ADGM " +
-        "are bot-walled from a server). " +
-        "PH (PSE EDGE — Philippine listed issuers, fully keyless: " +
-        "CompanyResolve, CompanyFilings, CompanyDocument, CompanyInsiders " +
-        "(form 13-1), CompanyOwners (POR-1 / 17-7), CompanyFinancials " +
-        "(17-A / 17-Q). NOTE: PSE's terms restrict its contents to personal, " +
-        "non-commercial use and forbid redistribution to third parties — see " +
-        "the PH jurisdiction card before relying on this route), or " +
-        "AU (Australia — TWO sources with OPPOSITE licences: ASX company " +
-        "announcements via the exchange's own JSON API for CompanyResolve, " +
-        "CompanyFilings and CompanyDocument, whose Terms of Use permit only " +
-        "personal, non-commercial use and prohibit redistribution — see " +
-        "docs/jurisdictions/AU.md; plus the CC-BY ASIC registers on " +
-        "data.gov.au for unlisted-company CompanyResolve and " +
-        "PersonAppointments disqualifications. The ASX announcements feed is " +
-        "hard-capped at the 5 most recent items per company). " +
-        "Omit for the existing US default.",
+      "Jurisdiction route. Omit for the US default. Read " +
+        "disclosures://jurisdictions/{code} before use for identifiers, " +
+        "credentials, supported intents, source licences, and access caveats. " +
+        "PH/PSE and AU/ASX network paths require explicit terms acknowledgement; " +
+        "AU/ASIC open-data paths do not.",
     ),
 };
 

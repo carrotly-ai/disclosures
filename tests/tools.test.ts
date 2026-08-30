@@ -3,6 +3,11 @@ import { existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TOOL_NAMES, createTools } from "../src/tools/index.js";
+import {
+  COMPANY_JURISDICTIONS,
+  DOCUMENT_JURISDICTIONS,
+  PERSON_APPOINTMENT_JURISDICTIONS,
+} from "../src/tools/shared.js";
 import { JURISDICTION_REFERENCE } from "../src/core/jurisdictionReference.js";
 import type { ToolDefinition } from "../src/core/toolDefs.js";
 import { resetSecTickerCache } from "../src/adapters/secEdgar.js";
@@ -595,11 +600,9 @@ describe("createTools", () => {
     expect(TOOL_NAMES).toHaveLength(10);
   });
 
-  // OwnershipChain (GLEIF-global) and CompanyCharges have no jurisdiction dispatch
-  // param. CompanyDocument and PersonAppointments each have one, but restricted to
-  // the jurisdictions that support that capability (US/GB), so they are excluded
-  // from the full-set assertion below and checked separately. Every other tool
-  // routes on the full jurisdiction enum.
+  // OwnershipChain (GLEIF-global) and CompanyCharges have no jurisdiction
+  // parameter. CompanyDocument and PersonAppointments use narrower canonical
+  // arrays; every other intent accepts the full route set.
   const JURISDICTION_AGNOSTIC = new Set([
     "OwnershipChain",
     "CompanyDocument",
@@ -607,45 +610,38 @@ describe("createTools", () => {
     "PersonAppointments",
   ]);
 
-  test("CompanyDocument jurisdiction is restricted to the document-serving set", () => {
+  test("CompanyDocument jurisdiction matches the canonical document-serving set", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     const jurisdiction = toolByName(tools, "CompanyDocument").inputSchema.jurisdiction;
-    for (const supported of ["US", "GB", "JP", "KR", "FR", "HK", "CN"]) {
+    for (const supported of DOCUMENT_JURISDICTIONS) {
       expect(jurisdiction?.safeParse(supported).success).toBe(true);
     }
-    // Jurisdictions with no per-filing document fetch stay rejected.
-    for (const unsupported of ["TW", "IN", "BR", "DE", "SG", "EU"]) {
+    const supportedSet = new Set<string>(DOCUMENT_JURISDICTIONS);
+    for (const unsupported of COMPANY_JURISDICTIONS.filter((code) => !supportedSet.has(code))) {
       expect(jurisdiction?.safeParse(unsupported).success).toBe(false);
     }
   });
 
-  test("PersonAppointments jurisdiction is restricted to US, GB, DE and FR", () => {
+  test("PersonAppointments jurisdiction matches the canonical person-serving set", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     const jurisdiction = toolByName(tools, "PersonAppointments").inputSchema.jurisdiction;
-    expect(jurisdiction?.safeParse("US").success).toBe(true);
-    expect(jurisdiction?.safeParse("GB").success).toBe(true);
-    expect(jurisdiction?.safeParse("DE").success).toBe(true);
-    expect(jurisdiction?.safeParse("FR").success).toBe(true);
-    expect(jurisdiction?.safeParse("JP").success).toBe(false);
+    for (const supported of PERSON_APPOINTMENT_JURISDICTIONS) {
+      expect(jurisdiction?.safeParse(supported).success).toBe(true);
+    }
+    const supportedSet = new Set<string>(PERSON_APPOINTMENT_JURISDICTIONS);
+    for (const unsupported of COMPANY_JURISDICTIONS.filter((code) => !supportedSet.has(code))) {
+      expect(jurisdiction?.safeParse(unsupported).success).toBe(false);
+    }
   });
 
-  test("company jurisdiction accepts US/GB/KR/JP/CN/IN/TW and descriptions cover KR and JP", () => {
+  test("company jurisdiction schemas accept every canonical route", () => {
     const tools = createTools({ fetchFn: routedFetch([]), env: GB_ENV });
     for (const tool of tools.filter((candidate) => !JURISDICTION_AGNOSTIC.has(candidate.name))) {
       const jurisdiction = tool.inputSchema.jurisdiction;
-      expect(jurisdiction?.safeParse("US").success).toBe(true);
-      expect(jurisdiction?.safeParse("GB").success).toBe(true);
-      expect(jurisdiction?.safeParse("KR").success).toBe(true);
-      expect(jurisdiction?.safeParse("JP").success).toBe(true);
-      expect(jurisdiction?.safeParse("CN").success).toBe(true);
-      expect(jurisdiction?.safeParse("IN").success).toBe(true);
-      expect(jurisdiction?.safeParse("TW").success).toBe(true);
-      expect(jurisdiction?.safeParse("BR").success).toBe(true);
-      expect(jurisdiction?.safeParse("DE").success).toBe(true);
-      expect(jurisdiction?.safeParse("FR").success).toBe(true);
+      for (const code of COMPANY_JURISDICTIONS) {
+        expect(jurisdiction?.safeParse(code).success).toBe(true);
+      }
       expect(jurisdiction?.safeParse("ZZ").success).toBe(false);
-      expect(tool.description).toMatch(/KR|OpenDART/);
-      expect(tool.description).toMatch(/JP|EDINET/);
     }
   });
 });
@@ -4478,12 +4474,13 @@ describe("explicit PH routing (PSE EDGE)", () => {
     const card = JURISDICTION_REFERENCE.find((entry) => entry.code === "PH");
     expect(card).toBeDefined();
     expect(card?.source).toContain("PSE EDGE");
-    expect(card?.credential).toContain("None");
-    // The caveat is the only machine-readable warning a client sees at dispatch
-    // time, so the conflict must be stated there — not merely in the docs.
+    expect(card?.credential).toContain("DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1");
+    // The caveat is the machine-readable pre-use warning, so it must state both
+    // the restriction and the zero-request opt-in gate.
     expect(card?.caveat).toContain("TERMS-OF-USE CONFLICT");
     expect(card?.caveat).toContain("personal, non-commercial use");
-    expect(card?.caveat).toContain("ASX");
-    expect(card?.caveat).toContain("responsible for holding the rights");
+    expect(card?.caveat).toContain("disabled by default");
+    expect(card?.caveat).toContain("DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1");
+    expect(card?.caveat).toContain("responsible");
   });
 });

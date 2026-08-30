@@ -1,5 +1,7 @@
 # FR (France) adapter — open-data feasibility finding
 
+> **Historical research record.** FR resolution, filings, documents, person appointments, and bounded owner extraction subsequently shipped. See [`docs/jurisdictions/FR.md`](docs/jurisdictions/FR.md) and the changelog.
+
 > **Status:** finding only — no adapter or tool change ships with this document. Records
 > the research for a future `FR` jurisdiction adapter behind the existing intent tools,
 > using only free, keyless-or-free-key, redistributable data and **zero runtime

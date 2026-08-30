@@ -194,14 +194,16 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "the OAM; others via recherche-entreprises)",
     intents:
       "CompanyResolve, CompanyFilings (OAM regulated-information index with " +
-      "direct PDFs), CompanyOwners (threshold-crossing notifications — linked " +
-      "PDFs only, holder/% inside the document), CompanyDocument (OAM record id; " +
-      "metadata/pdf, xhtml reports the OAM serves PDFs), PersonAppointments " +
-      "(dirigeants; person→companies). For financials use jurisdiction EU.",
+      "direct PDFs), CompanyOwners (threshold-crossing notifications with a " +
+      "best-effort structured extraction for the newest five), CompanyDocument " +
+      "(OAM record id; metadata/pdf or best-effort PDF text extraction), " +
+      "PersonAppointments (dirigeants; person→companies). For financials use " +
+      "jurisdiction EU.",
     caveat:
-      "CompanyOwners is a linked-notification list, not a structured cap table " +
-      "(the crossing holder and % live inside the PDF). No managers'-transaction " +
-      "feed; recherche-entreprises keys people by name, so homonyms are common.",
+      "CompanyOwners emits only confidently parsed holder/threshold/percentage " +
+      "fields; scanned, non-standard, and older notifications remain link-only. " +
+      "It is not a maintained cap table. No managers'-transaction feed; " +
+      "recherche-entreprises keys people by name, so homonyms are common.",
   },
   {
     code: "HK",
@@ -405,7 +407,9 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
     code: "PH",
     name: "Philippines",
     source: "PSE EDGE (edge.pse.com.ph — keyless disclosure portal)",
-    credential: "None (fully keyless HTML/JSON; no browser required).",
+    credential:
+      "DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1 after reviewing PSE's terms and " +
+      "confirming the operator has the necessary rights. No API key or browser.",
     identifiers:
       "PSE ticker symbol (e.g. SM, SMPH, SMC), the numeric PSE company id " +
       "(cmpyId, e.g. 599), or the issuer name as PSE EDGE spells it",
@@ -425,12 +429,10 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "contents to \"personal, non-commercial use\" and expressly forbids " +
       "transmitting, reproducing or distributing them \"to any third person, " +
       "including others in your company or organization\" without PSE's prior " +
-      "written consent. That conflicts with redistributing PSE content through " +
-      "this package, and it is near-identical to the ASX wording this project " +
-      "treated as disqualifying (AU was skipped on that basis; PH was shipped " +
-      "anyway as an explicit maintainer decision). The operator deploying this " +
-      "package — not the package — is responsible for holding the rights to " +
-      "use PSE data in their context. Coverage caveats: EDGE covers " +
+      "written consent. Every PSE network path is disabled by default and makes " +
+      "no request unless DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1 is set. Enabled " +
+      "responses retain the source/terms notice; the operator remains responsible " +
+      "for having the rights to use PSE data. Coverage caveats: EDGE covers " +
       "PSE-LISTED issuers only (unlisted Philippine companies file with the " +
       "SEC's login-walled, paid eFAST); insiders/owners always list the index " +
       "rows but parse per-document detail for a capped number per call, the " +
@@ -443,20 +445,21 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
     source:
       "ASX company announcements (asx.api.markitdigital.com — RESTRICTED " +
       "terms) + ASIC registers on data.gov.au (CC BY 3.0 AU)",
-    credential: "None — both sources are keyless.",
+    credential:
+      "ASIC: none. ASX: DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1 after reviewing " +
+      "ASX's terms and confirming the operator has the necessary rights.",
     identifiers:
       "ASX listing code (e.g. BHP, CBA, CSL), 9-digit ACN, 11-digit ABN, or " +
       "company name; for CompanyDocument, the ASX announcement documentKey " +
       "(e.g. 2924-03122554-3A699070)",
     intents:
-      "CompanyResolve (ASX listed directory — code, name, industry, listing " +
-      "date, market cap, ISIN, plus GLEIF LEI where a confident AU match " +
-      "exists — AND the CC-BY ASIC Company Dataset, which covers 4.4M listed " +
-      "and unlisted Australian companies by ACN/ABN/name), CompanyFilings " +
-      "(the 5 most recent ASX announcements only), CompanyDocument (an " +
-      "announcement PDF by documentKey: metadata, extracted text, or " +
-      "download), PersonAppointments mode \"disqualifications\" (ASIC's CC-BY " +
-      "Banned and Disqualified Persons register). CompanyInsiders, " +
+      "CompanyResolve always serves the CC-BY ASIC Company Dataset (4.4M listed " +
+      "and unlisted companies by ACN/ABN/name) and adds the ASX listed directory " +
+      "only after ASX acknowledgement; exact ACN/ABN inputs remain ASIC-only. " +
+      "Acknowledged ASX paths also serve CompanyFilings (the 5 most recent " +
+      "announcements only) and CompanyDocument (an announcement PDF by " +
+      "documentKey). PersonAppointments mode \"disqualifications\" uses ASIC's " +
+      "CC-BY Banned and Disqualified Persons register. CompanyInsiders, " +
       "CompanyOwners, CompanyFinancials, CompanyCharges, PrivateRaises and " +
       "PersonAppointments modes \"search\"/\"appointments\" return an honest " +
       "unsupported explanation.",
@@ -465,11 +468,11 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
       "Terms of Use permit only \"personal, non-commercial use\" and prohibit " +
       "reproducing, downloading, transmitting or distributing site content, " +
       "and prohibit using any \"spider, screen scraper, robot ... or other " +
-      "similar process\" to access the site — which conflicts with " +
-      "redistributing ASX content through this package, and with programmatic " +
-      "access generally — " +
-      "the operator is responsible for having rights to use ASX data (full " +
-      "quotes in docs/jurisdictions/AU.md). The ASIC half on data.gov.au IS " +
+      "similar process\" to access the site. ASX routes are disabled before " +
+      "network access unless DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1 is set; enabled " +
+      "responses retain the terms notice, and the operator remains responsible " +
+      "for having rights to use ASX data (full quotes in docs/jurisdictions/AU.md). " +
+      "The ASIC half on data.gov.au IS " +
       "CC BY 3.0 AU and freely redistributable with attribution. Separately, " +
       "the ASX announcements feed is HARD-CAPPED at exactly the 5 most recent " +
       "items per company — every count/page/timescale parameter is ignored — " +

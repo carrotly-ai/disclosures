@@ -1,5 +1,7 @@
 # CN (cninfo) deep-dive — can the zero-dep PDF extractor read Chinese periodic reports?
 
+> **Historical research record.** The recommended CN financials, owners, insiders, and document capabilities subsequently shipped. See [`docs/jurisdictions/CN.md`](docs/jurisdictions/CN.md) and the changelog for current behavior.
+
 > **Status:** finding only — no code change ships with this document. Applies the
 > `HKSG-DEEPDIVE.md` corpus method to **China (CN)**, the largest unfilled cell in the
 > coverage matrix: fetch N real filings through the shipped `cninfo` adapter's endpoints →

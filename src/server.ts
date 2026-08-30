@@ -89,6 +89,7 @@ export * from "./core/http.js";
 export * from "./core/markdown.js";
 export * from "./core/parsing.js";
 export * from "./core/rateLimiter.js";
+export * from "./core/restrictedSources.js";
 export * from "./core/zip.js";
 export * as secEdgar from "./adapters/secEdgar.js";
 export * as gleif from "./adapters/gleif.js";

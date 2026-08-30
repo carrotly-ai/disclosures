@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.carrotly-ai/disclosures",
-  "description": "Corporate-disclosure research across 12 official sources behind ten intent-based tools.",
+  "description": "Corporate-disclosure research across 26 official sources and 21 jurisdiction routes behind ten intent-based tools.",
   "repository": {
     "url": "https://github.com/carrotly-ai/disclosures",
     "source": "github"
@@ -19,8 +19,7 @@
       "environmentVariables": [
         {
           "name": "DISCLOSURES_USER_AGENT",
-          "description": "Descriptive User-Agent with contact info, required by SEC EDGAR (e.g. 'Your Org you@example.com'). SEC_EDGAR_USER_AGENT is also accepted.",
-          "isRequired": true
+          "description": "Descriptive User-Agent with contact info, required only for SEC-backed US operations (e.g. 'Your Org you@example.com'). SEC_EDGAR_USER_AGENT is also accepted."
         },
         {
           "name": "COMPANIES_HOUSE_API_KEY",

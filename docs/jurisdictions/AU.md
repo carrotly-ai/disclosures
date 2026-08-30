@@ -7,7 +7,9 @@
 | **ASX** | [`asx.api.markitdigital.com`](https://www.asx.com.au/) — the exchange's own front-end JSON API (listed-company directory, per-company announcements, key statistics, announcement PDFs) | **ASX proprietary, © reserved — NOT open data.** See the section below. | `CompanyResolve` (listed), `CompanyFilings`, `CompanyDocument` |
 | **ASIC** | [`data.gov.au`](https://data.gov.au/data/dataset/7b8656f9-606d-4337-af29-66b89b2eeefb) CKAN — the ASIC **Company Dataset** and **Banned and Disqualified Persons** register | **CC BY 3.0 AU** — freely redistributable with attribution | `CompanyResolve` (any Australian company), `PersonAppointments` (`disqualifications`) |
 
-**Credentials:** none. Both halves are keyless.
+**Configuration:** ASIC requires no credential. ASX is keyless but disabled before network
+access unless `DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1` is set after a rights review. Exact ACN
+and ABN resolution remains ASIC-only even when ASX is acknowledged.
 
 Implemented from the live-verified [`AU-FEASIBILITY.md`](../../AU-FEASIBILITY.md)
 finding, with two material corrections to it recorded below. Endpoints re-verified
@@ -17,11 +19,10 @@ from this box on **2026-08-29**.
 
 ## ⚠️ ASX Terms of Use conflict — read this first
 
-**The ASX half of this adapter is not open data, and its terms conflict with what
-this package does.** The repository owner has reviewed the conflict and
-**explicitly decided to proceed with a full build anyway**. That decision is
-recorded here, not hidden, and the restriction is repeated in every ASX-derived
-tool response so it reaches the operator at the point of use.
+**The ASX half of this adapter is not open data, and its terms restrict what this
+package may do.** ASX-backed routes are therefore disabled before the first request unless
+the operator explicitly sets `DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1`. The restriction remains
+visible in every enabled ASX-derived response.
 
 The ASX Terms of Use ([`asx.com.au/legals/terms-of-use`](https://www.asx.com.au/legals/terms-of-use),
 fetched live 2026-08-29) say, **verbatim**:
@@ -73,11 +74,15 @@ make a licence permissive.
 
 **Consequences, and what this repository does about them:**
 
+- **No acknowledgement, no ASX request.** Without
+  `DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1`, `CompanyFilings` and `CompanyDocument` return an
+  actionable error, while `CompanyResolve` queries only ASIC. Exact ACN/ABN inputs are
+  ASIC-only regardless, because an ASX lookup is unnecessary.
 - **The operator is responsible for having the rights to use ASX data for their
   purpose.** ASX grants written consent case by case; if you are running this
   commercially, or at all beyond personal use, that consent is yours to obtain.
   This package cannot grant it and does not imply it exists.
-- **Every ASX-derived response says so.** `CompanyResolve` (listed half),
+- **Every enabled ASX-derived response says so.** `CompanyResolve` (listed half),
   `CompanyFilings` and `CompanyDocument` each carry a source-and-terms note
   quoting the restriction and naming the operator's responsibility. The note is
   not a footnote in this file only — it ships in the tool output.
@@ -90,10 +95,10 @@ make a licence permissive.
 - **Nothing is mixed silently.** No AU response blends ASX and ASIC data into one
   table.
 
-If the ASX terms are a blocker for your deployment, the AU route still has a
-fully-usable open-data half: `CompanyResolve` against the ASIC Company Dataset
-(4.4 million Australian companies, listed and unlisted) and `PersonAppointments`
-`disqualifications` both work standalone, and both are CC-BY.
+Without ASX acknowledgement, the AU route remains a fully usable open-data path:
+`CompanyResolve` queries the ASIC Company Dataset (4.4 million Australian companies, listed
+and unlisted), and `PersonAppointments` `disqualifications` queries ASIC's ban register. Both
+are CC-BY and make no ASX request.
 
 ---
 

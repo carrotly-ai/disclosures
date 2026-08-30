@@ -818,7 +818,8 @@ describe("AU jurisdiction reference card", () => {
     expect(card?.caveat).toContain("CC BY 3.0 AU");
     expect(card?.caveat).toContain("HARD-CAPPED");
     expect(card?.caveat).toContain("5 most recent");
-    expect(card?.credential).toContain("None");
+    expect(card?.credential).toContain("DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1");
+    expect(card?.caveat).toContain("disabled before network access");
     expect(card?.intents).toContain("disqualifications");
   });
 });
