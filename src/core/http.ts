@@ -95,39 +95,36 @@ export interface RedirectResult {
   finalUrl: string;
 }
 
-/**
- * GET a URL while manually following redirects, so we control header
- * forwarding across hops. Companies House document content endpoints 302 to a
- * pre-signed S3 URL that REJECTS a forwarded `Authorization` header, so we
- * strip credentials on any cross-origin hop. Returns the final (non-redirect)
- * response together with the URL it came from. Throws `HttpError` on a non-2xx
- * final response or if the redirect budget is exhausted.
- */
-export async function getFollowingRedirects(
+export interface RedirectRequestOptions {
+  method?: "GET" | "HEAD";
+  headers?: Record<string, string>;
+  timeoutMs?: number;
+  fetchFn?: FetchFn;
+  maxRedirects?: number;
+  validateUrl?: (url: string) => void;
+}
+
+async function fetchFollowingRedirects(
   url: string,
-  headers: Record<string, string> = {},
-  timeoutMs = 15_000,
-  fetchFn: FetchFn = fetch,
-  maxRedirects = 5,
+  options: RedirectRequestOptions,
+  signal: AbortSignal,
 ): Promise<RedirectResult> {
+  const method = options.method ?? "GET";
+  const fetchFn = options.fetchFn ?? fetch;
+  const maxRedirects = options.maxRedirects ?? 5;
   let currentUrl = url;
-  let currentHeaders = headers;
+  let currentHeaders = options.headers ?? {};
   for (let hop = 0; hop <= maxRedirects; hop += 1) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    let response: Response;
-    try {
-      response = await fetchFn(currentUrl, {
-        method: "GET",
-        headers: currentHeaders,
-        redirect: "manual",
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+    options.validateUrl?.(currentUrl);
+    const response = await fetchFn(currentUrl, {
+      method,
+      headers: currentHeaders,
+      redirect: "manual",
+      signal,
+    });
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
+      await response.body?.cancel();
       if (!location) {
         throw new HttpError(
           `HTTP ${response.status} redirect without Location`,
@@ -136,6 +133,7 @@ export async function getFollowingRedirects(
         );
       }
       const nextUrl = new URL(location, currentUrl).toString();
+      options.validateUrl?.(nextUrl);
       if (!sameOrigin(currentUrl, nextUrl)) {
         currentHeaders = stripAuthorization(currentHeaders);
       }
@@ -156,6 +154,161 @@ export async function getFollowingRedirects(
     undefined,
     currentUrl,
   );
+}
+
+function timeoutError(url: string, timeoutMs: number): HttpError {
+  return new HttpError(
+    `Request to ${url} timed out after ${timeoutMs}ms`,
+    undefined,
+    url,
+  );
+}
+
+export async function requestFollowingRedirects(
+  url: string,
+  options: RedirectRequestOptions = {},
+): Promise<RedirectResult> {
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchFollowingRedirects(url, options, controller.signal);
+  } catch (error) {
+    if (controller.signal.aborted) throw timeoutError(url, timeoutMs);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * GET a URL while manually following redirects, so we control header
+ * forwarding across hops. Companies House document content endpoints 302 to a
+ * pre-signed S3 URL that REJECTS a forwarded `Authorization` header, so we
+ * strip credentials on any cross-origin hop.
+ */
+export async function getFollowingRedirects(
+  url: string,
+  headers: Record<string, string> = {},
+  timeoutMs = 15_000,
+  fetchFn: FetchFn = fetch,
+  maxRedirects = 5,
+): Promise<RedirectResult> {
+  return requestFollowingRedirects(url, {
+    headers,
+    timeoutMs,
+    fetchFn,
+    maxRedirects,
+  });
+}
+
+export interface BoundedBinaryResult {
+  bytes: Uint8Array;
+  finalUrl: string;
+  headers: Headers;
+  declaredBytes?: number;
+}
+
+export class ResponseSizeLimitError extends HttpError {
+  constructor(
+    message: string,
+    readonly limitBytes: number,
+    readonly finalUrl: string,
+    readonly responseHeaders: Headers,
+    readonly declaredBytes?: number,
+    readonly observedBytes?: number,
+  ) {
+    super(message, undefined, finalUrl);
+    this.name = "ResponseSizeLimitError";
+  }
+}
+
+function contentLength(headers: Headers): number | undefined {
+  const value = headers.get("content-length");
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : undefined;
+}
+
+export async function getBoundedBinaryFollowingRedirects(
+  url: string,
+  maxBytes: number,
+  options: Omit<RedirectRequestOptions, "method"> = {},
+): Promise<BoundedBinaryResult> {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
+    throw new RangeError("maxBytes must be a non-negative safe integer");
+  }
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const { response, finalUrl } = await fetchFollowingRedirects(
+      url,
+      { ...options, method: "GET" },
+      controller.signal,
+    );
+    const headers = new Headers(response.headers);
+    const declaredBytes = contentLength(headers);
+    if (declaredBytes !== undefined && declaredBytes > maxBytes) {
+      await response.body?.cancel();
+      throw new ResponseSizeLimitError(
+        `Response declared ${declaredBytes} bytes, above the ${maxBytes}-byte limit`,
+        maxBytes,
+        finalUrl,
+        headers,
+        declaredBytes,
+      );
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) {
+      return {
+        bytes: new Uint8Array(),
+        finalUrl,
+        headers,
+        ...(declaredBytes !== undefined ? { declaredBytes } : {}),
+      };
+    }
+    const chunks: Uint8Array[] = [];
+    let observedBytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const nextBytes = observedBytes + value.byteLength;
+      if (nextBytes > maxBytes) {
+        await reader.cancel();
+        controller.abort();
+        throw new ResponseSizeLimitError(
+          `Response exceeded the ${maxBytes}-byte limit while streaming`,
+          maxBytes,
+          finalUrl,
+          headers,
+          declaredBytes,
+          nextBytes,
+        );
+      }
+      chunks.push(value);
+      observedBytes = nextBytes;
+    }
+    const bytes = new Uint8Array(observedBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return {
+      bytes,
+      finalUrl,
+      headers,
+      ...(declaredBytes !== undefined ? { declaredBytes } : {}),
+    };
+  } catch (error) {
+    if (error instanceof ResponseSizeLimitError) throw error;
+    if (controller.signal.aborted) throw timeoutError(url, timeoutMs);
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // --- Lenient node:https GET for hosts with malformed response headers -------
