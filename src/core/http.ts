@@ -141,6 +141,7 @@ async function fetchFollowingRedirects(
       continue;
     }
     if (!response.ok) {
+      await response.body?.cancel();
       throw new HttpError(
         `HTTP ${response.status} ${response.statusText}`.trim(),
         response.status,
