@@ -1,5 +1,7 @@
 # Document / charges / person-lookup parity — cross-jurisdiction feasibility finding
 
+> **Historical research record.** US/JP/KR/DE/CN recommendations subsequently shipped. IN `CompanyDocument` remains the clearest pending parity item; charges outside GB remain unsupported by design. See current jurisdiction pages and the changelog.
+
 **Question (roadmap task #43):** PR #18 added three Companies-House-specific tools —
 `CompanyDocument` (filed-document content), `CompanyCharges` (security-interest register),
 and `PersonAppointments` (person-level appointments + disqualifications). Which of the

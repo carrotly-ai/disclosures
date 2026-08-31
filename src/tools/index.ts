@@ -25,6 +25,10 @@ import type {
   PrivateRaise,
 } from "../core/types.js";
 import {
+  hasRestrictedSourceAcknowledgement,
+  restrictedSourceDisabledMessage,
+} from "../core/restrictedSources.js";
+import {
   NO_SEC_CONFIG_MESSAGE,
   SEC_DOCUMENT_CONTENT_WARNING,
   SEC_DOCUMENT_IMAGE_ONLY_MESSAGE,
@@ -330,6 +334,8 @@ import {
   getAsxDocumentMetadata,
   getAsxDocumentPdf,
   getAsxFilings,
+  isAbn,
+  isAcn,
   searchAsicBannedPersons,
   searchAsicCompanies,
   searchAsxCompanies,
@@ -338,9 +344,11 @@ import {
 import type { AsicEntity, AsxEntity } from "../adapters/asxAsic.js";
 import {
   companyInput,
+  DOCUMENT_JURISDICTIONS,
   euUnsupportedResult,
   failureResult,
   notFoundResult,
+  PERSON_APPOINTMENT_JURISDICTIONS,
 } from "./shared.js";
 
 const CONSOLIDATION_CAVEAT =
@@ -1809,11 +1817,9 @@ const MY_PRIVATE_RAISES_UNSUPPORTED =
 // (form 13-1), owners (POR-1 roster / 17-7 dealings) and financials (17-A/17-Q).
 //
 // TERMS: PSE's disclaimer restricts its contents to "personal, non-commercial
-// use" and forbids redistribution to third parties. That conflicts with serving
-// PSE content through this package and is near-identical to the ASX wording
-// this project treated as disqualifying; PH ships anyway as an explicit
-// maintainer decision. PSE_TERMS_NOTE is therefore appended to EVERY PH
-// response — do not drop it from a rendering path.
+// use" and forbids redistribution to third parties. Public PSE routes therefore
+// require DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1 before any request, and
+// PSE_TERMS_NOTE is appended to every enabled PH response.
 
 const PH_PRIVATE_RAISES_UNSUPPORTED =
   "PrivateRaises is unsupported for jurisdiction \"PH\". The Philippines has " +
@@ -2050,11 +2056,9 @@ async function enrichAeCandidatesWithGleif(
 //   * ASX (asx.api.markitdigital.com) — technically clean, LEGALLY RESTRICTED.
 //     The ASX Terms of Use grant only "personal, non-commercial use" and
 //     prohibit reproducing/downloading/transmitting/distributing site content.
-//     That is a real, unresolved conflict with redistributing ASX content
-//     through this package. The repository owner decided to build it anyway;
-//     every ASX-derived response therefore carries AU_ASX_TERMS_NOTE, which
-//     states the restriction and puts the rights question on the operator.
-//     Full quotes: docs/jurisdictions/AU.md.
+//     Public ASX routes require DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1 before any
+//     request, and every enabled response carries AU_ASX_TERMS_NOTE. Full
+//     quotes: docs/jurisdictions/AU.md.
 //   * ASIC on data.gov.au — CC BY 3.0 AU, genuinely redistributable with
 //     attribution. Those responses carry AU_ASIC_LICENCE_NOTE instead.
 const AU_ASX_TERMS_NOTE = ASX_TERMS_NOTE;
@@ -2302,12 +2306,10 @@ function describeParent(parent: OwnershipParent | undefined): string {
 export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
   const companyResolve = defineTool(
     "CompanyResolve",
-    "Resolve a company name, ticker, or register identifier (CIK, LEI, ISIN, " +
-      "company number, corp code…) to canonical candidates with identifier " +
-      "sets and match reasons. US/default combines SEC EDGAR and GLEIF; other " +
-      "jurisdictions (GB, KR, JP, CN, IN, TW, BR, DE, HK, SG, TH) search their " +
-      "national register. Ambiguous matches are listed, never silently merged. " +
-      "Start here to get the identifiers the other tools accept.",
+    "Resolve a company name, ticker, or register identifier to canonical " +
+      "candidates with identifier sets and match reasons. Ambiguous matches are " +
+      "listed, never silently merged. Start here, then read the selected route's " +
+      "disclosures://jurisdictions/{code} card for coverage and access caveats.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") {
@@ -2702,13 +2704,13 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "AU") {
         try {
-          // Both AU halves are queried in parallel and rendered as SEPARATE,
-          // separately-labelled tables, because they carry opposite licences:
-          // the ASX directory is restricted exchange content, the ASIC register
-          // is CC-BY open data. One half failing must not lose the other, so
-          // each is caught independently.
+          const asxAcknowledged = hasRestrictedSourceAcknowledgement("ASX", options);
+          const exactAsicIdentifier = isAcn(company) || isAbn(company);
+          // ASIC is always available. ASX is contacted only after an explicit
+          // terms acknowledgement, and never for an exact ACN/ABN lookup.
+          const queryAsx = asxAcknowledged && !exactAsicIdentifier;
           const [listedResult, registerResult] = await Promise.allSettled([
-            searchAsxCompanies(company, options),
+            queryAsx ? searchAsxCompanies(company, options) : Promise.resolve([]),
             searchAsicCompanies(company, options),
           ]);
           const listedRaw = listedResult.status === "fulfilled"
@@ -2718,7 +2720,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             ? registerResult.value
             : [];
           const warnings: string[] = [];
-          if (listedResult.status === "rejected") {
+          if (queryAsx && listedResult.status === "rejected") {
             warnings.push(
               "ASX listed-directory lookup was unavailable for this request: " +
                 (listedResult.reason instanceof Error
@@ -2734,7 +2736,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 (registerResult.reason instanceof Error
                   ? registerResult.reason.message
                   : String(registerResult.reason)) +
-                ". Any ASX results below are unaffected.",
+                (queryAsx ? ". Any ASX results below are unaffected." : "."),
             );
           }
           if (!listedRaw.length && !register.length) {
@@ -2744,7 +2746,17 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                   warnings.join(" "),
               );
             }
-            return notFoundResult(company, AU_NOT_FOUND_HINT);
+            return notFoundResult(
+              company,
+              joinSections(
+                AU_NOT_FOUND_HINT,
+                !asxAcknowledged
+                  ? restrictedSourceDisabledMessage("ASX")
+                  : exactAsicIdentifier
+                    ? "Exact ACN/ABN lookups intentionally query only the CC-BY ASIC register."
+                    : undefined,
+              ),
+            );
           }
           // The ASX directory carries no LEI, so top listed matches are
           // enriched from GLEIF (keyless, CC0) — conservatively, withholding
@@ -2753,27 +2765,38 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
             listedRaw.slice(0, 10),
             options,
           );
-          const combined: Entity[] = [...listed, ...register.slice(0, 10)];
+          const shownRegister = register.slice(0, 10);
+          const combined: Entity[] = [...listed, ...shownRegister];
+          const accessNote = !asxAcknowledged
+            ? restrictedSourceDisabledMessage("ASX")
+            : exactAsicIdentifier
+              ? "Exact ACN/ABN lookups intentionally query only the CC-BY ASIC register; no ASX request was made."
+              : undefined;
           return textResult(joinSections(
-            `# Company resolution (ASX + ASIC): ${company}`,
+            `# Company resolution (${queryAsx ? "ASX + ASIC" : "ASIC"}): ${company}`,
             entityRows(combined),
-            ...buildAuResolveSections(listed, register.slice(0, 10)),
+            ...buildAuResolveSections(listed, shownRegister),
             warnings.map((warning) => `_${warning}_`).join("\n") || undefined,
-            `_${AU_RESOLVE_CAVEAT}_`,
+            accessNote ? `_${accessNote}_` : undefined,
+            `_${queryAsx ? AU_RESOLVE_CAVEAT : ASIC_COMPANY_CAVEAT}_`,
             nextStep(
               listed.length
                 ? "use the ASX code from this table with CompanyFilings " +
                   "(jurisdiction \"AU\") for the issuer's five most recent " +
                   "announcements — that feed is capped at five and is NOT a " +
                   "filing history — then CompanyDocument (jurisdiction \"AU\") " +
-                  "for an announcement's PDF or text. An LEI here also works " +
+                  "for an announcement's PDF or text. Both ASX tools require " +
+                  "DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1. An LEI here also works " +
                   "with OwnershipChain."
-                : "this company resolved from the ASIC register only, so it is " +
-                  "not ASX-listed and has no announcements feed. AU filings, " +
-                  "owners, insiders and financials are unsupported for " +
-                  "unlisted companies — the remaining free AU surface is " +
-                  "PersonAppointments mode \"disqualifications\" (ASIC's " +
-                  "banned-persons register) and OwnershipChain via GLEIF.",
+                : queryAsx
+                  ? "this company resolved from the ASIC register and did not " +
+                    "match the ASX directory. The remaining free AU surface is " +
+                    "PersonAppointments mode \"disqualifications\" and " +
+                    "OwnershipChain via GLEIF."
+                  : "only the CC-BY ASIC register was queried. Use " +
+                    "PersonAppointments mode \"disqualifications\" for ASIC's " +
+                    "banned-persons register; enable ASX explicitly only after " +
+                    "reviewing its terms.",
             ),
           ), entitiesStructured(combined));
         } catch (error) {
@@ -2837,6 +2860,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
 
       if (jurisdiction === "PH") {
+        if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+          return errorResult(restrictedSourceDisabledMessage("PSE"));
+        }
         try {
           const hits = await searchPseCompanies(company, options);
           if (!hits.length) {
@@ -2924,14 +2950,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyFilings = defineTool(
     "CompanyFilings",
-    "Search a company's regulatory filings in any supported jurisdiction " +
-      "(US SEC EDGAR default; GB Companies House, KR DART, JP EDINET, CN " +
-      "cninfo, IN BSE, TW TWSE, BR CVM, HK HKEXnews). Filter by form type and date range. " +
-      "Mode \"latest_annual\"/\"latest_quarterly\" returns the newest periodic " +
-      "report's metadata where the register supports it; mode \"insolvency\" " +
-      "(GB only) returns insolvency-case history. Returns filing metadata, " +
-      "ids, and public document links, never document text — pass a returned " +
-      "accession/transaction id to CompanyDocument for content.",
+    "Search a company's regulatory filings in the selected jurisdiction. " +
+      "Filter by form type and date range; supported modes and identifier chaining " +
+      "vary by route and are documented at disclosures://jurisdictions/{code}. " +
+      "Returns filing metadata, identifiers, and official links, never document " +
+      "text; pass a compatible transaction id to CompanyDocument where supported.",
     {
       ...companyInput,
       forms: z
@@ -3401,6 +3424,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "issuer is dual-listed and files a Form 20-F.",
             );
           }
+          if (!hasRestrictedSourceAcknowledgement("ASX", options)) {
+            return errorResult(restrictedSourceDisabledMessage("ASX"));
+          }
           const {
             entity,
             filings,
@@ -3542,6 +3568,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 "[\"Quarterly Report\"].",
               PH_SOURCE_NOTE,
             ));
+          }
+          if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+            return errorResult(restrictedSourceDisabledMessage("PSE"));
           }
           // PSE filters the disclosure index by a template-name substring
           // server-side, so the first `forms` entry becomes that filter.
@@ -3871,13 +3900,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyInsiders = defineTool(
     "CompanyInsiders",
-    "List a company's insiders/officers from the jurisdiction's register: US " +
-      "Section 16 filers (default), GB Companies House officers (KR, TW, DE, " +
-      "and BR variants: DART executive ownership, TWSE director/supervisor " +
-      "holdings, BaFin Art.19 MAR directors' dealings, CVM Formulário de " +
-      "Referência administrator register). Unsupported jurisdictions (e.g. JP " +
-      "— EDINET has no insider-dealing feed) explain why honestly. Recency and " +
-      "completeness caveats are stated in each response.",
+    "List the selected jurisdiction's available insider, officer, director, or " +
+      "manager disclosures. The underlying regime and meaning vary by route; each " +
+      "response states its recency and completeness caveats, and unsupported " +
+      "routes explain why. See disclosures://jurisdictions/{code} before use.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("CompanyInsiders");
@@ -4061,6 +4087,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ), insidersStructured(insiders, "MY"));
         }
         if (jurisdiction === "PH") {
+          if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+            return errorResult(restrictedSourceDisabledMessage("PSE"));
+          }
           const { entity, rows: insiders, recordsTotal, detailedCount, detailNote } =
             await getPseInsiders({ company }, options);
           if (!insiders.length) {
@@ -4267,19 +4296,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyOwners = defineTool(
     "CompanyOwners",
-    "List a company's major/beneficial-ownership filers from the " +
-      "jurisdiction's disclosure regime: US Schedule 13D/13G (default), GB PSC " +
-      "register (+ FCA TR-1 when an NSM fetchFn is injected), KR 5% rule, JP " +
-      "large-volume holding reports (start_date/end_date bound the JP scan " +
-      "window only), TW >10% holders, DE §§33 ff. WpHG voting-rights " +
-      "notifications, BR CVM Formulário de Referência posição acionária (item " +
-      "15: ON/PN/total percentages plus the issuer's controlling-bloc " +
-      "marking). Explicit HK returns a CCASS participant/custodian " +
-      "shareholding snapshot (custodian banks, brokers, HKSCC Nominees, CSDC) — " +
-      "NOT beneficial owners; the SFO Part XV disclosure-of-interests register " +
-      "is captcha-walled and linked for manual lookup. Every row states its " +
-      "threshold regime. This reports filed disclosures — not a cap table and " +
-      "not UBO tracing.",
+    "List the selected jurisdiction's available major-holder, control-register, " +
+      "threshold-crossing, or custodian disclosures. Every response names its " +
+      "threshold regime and limitations. These are filed disclosures, not a " +
+      "complete cap table or UBO tracing; see disclosures://jurisdictions/{code}.",
     {
       ...companyInput,
       start_date: z
@@ -4699,6 +4719,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           ), ownersStructured(owners, "MY"));
         }
         if (jurisdiction === "PH") {
+          if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+            return errorResult(restrictedSourceDisabledMessage("PSE"));
+          }
           // The POR-1 public-ownership roster is the default: a named,
           // point-in-time holder list, which is what "who owns it?" means. A
           // date window is a request for a dealings history instead, so it
@@ -4985,29 +5008,11 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyFinancials = defineTool(
     "CompanyFinancials",
-    "Annual as-filed financial figures from XBRL-tagged US SEC annual " +
-      `reports (10-K/20-F/40-F): ${SEC_FINANCIAL_CONCEPT_NAMES.join(", ")}. ` +
-      "Explicit KR returns Korean DART major-account figures (" +
-      `${Object.keys(OPEN_DART_ACCOUNT_CONCEPTS).join(", ")}), showing ` +
-      "consolidated and separate bases where both are filed. Explicit GB or EU " +
-      "returns normalized annual IFRS figures parsed from ESEF/UKSEF reports " +
-      "indexed by filings.xbrl.org (FY2020+, LEI-indexed; pass a legal name or " +
-      "LEI). Explicit JP returns headline totals parsed from the latest EDINET " +
-      "annual securities report's XBRL instance (in JPY, consolidated preferred). " +
-      "Explicit TW returns the latest-period headline totals (revenue, operating " +
-      "income, net income, total assets, total equity, in NT$) from TWSE's " +
-      "general-industry financial-statement open data; finance/insurance-sector " +
-      "issuers file a variant format and are explained honestly. Explicit HK " +
-      "extracts headline figures (" +
-      `${HKEXNEWS_FINANCIAL_CONCEPT_NAMES.join(", ")}) from the issuer's latest ` +
-      "HKEXnews results announcement PDF (Final/annual, else Interim), normalized " +
-      "to whole currency units (HK$, RMB, or US$ as the filing states); it is the " +
-      "latest announcement only (no history) and degrades to the PDF link when " +
-      "figures cannot be reliably extracted. Explicit CN extracts headline figures " +
-      `(${CNINFO_FINANCIAL_CONCEPT_NAMES.join(", ")}, in RMB) from the issuer's ` +
-      "latest cninfo periodic report (年度报告, else 半年度/季度报告), anchored on the " +
-      "主要会计数据 key-data table; latest report only (no history), degrading to the " +
-      "PDF link when the report is mojibake, over the size cap, or has no matchable table.",
+    "Return as-filed headline financial facts from the selected jurisdiction's " +
+      "structured XBRL feed or bounded filing parser. Concepts, periods, currency, " +
+      "consolidation basis, and degradation behavior vary by route and are stated " +
+      "in each response. See disclosures://jurisdictions/{code} for the source and " +
+      "coverage contract; unsupported routes explain why rather than guessing.",
     {
       ...companyInput,
       concepts: z
@@ -5255,6 +5260,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         return textResult(MY_FINANCIALS_UNSUPPORTED);
       }
       if (jurisdiction === "PH") {
+        if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+          return errorResult(restrictedSourceDisabledMessage("PSE"));
+        }
         try {
           // PSE publishes annual (17-A) and quarterly (17-Q) reports in one
           // index; this tool has no period-kind input, so the annual report is
@@ -5672,13 +5680,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const privateRaises = defineTool(
     "PrivateRaises",
-    "US Form D (Regulation D) exempt-offering filings for a company: " +
-      "amounts offered and sold, investor counts, industry, date of first sale, " +
-      "and named related persons. This capability is US-only; explicit GB, KR, " +
-      "JP, CN, IN, TW, BR, DE, and FR return an unsupported-jurisdiction " +
-      "explanation because none of Companies House, DART, EDINET, cninfo, BSE, " +
-      "TWSE, CVM, BaFin, or the French OAM provides an equivalent private-raise " +
-      "filing dataset.",
+    "Return US SEC Form D exempt-offering filings: amounts offered and sold, " +
+      "investor counts, industry, first-sale date, and named related persons. " +
+      "This capability is US-only; every explicit non-US route returns a specific " +
+      "unsupported explanation rather than substituting ordinary company filings.",
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("PrivateRaises");
@@ -6700,25 +6705,22 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
   const companyDocument = defineTool(
     "CompanyDocument",
-    "Fetch a filed document's content by the transaction_id CompanyFilings " +
-      "returned (GB transaction id — default; US accession number; JP EDINET " +
-      "docID; KR DART rcept_no; FR info-financiere OAM record id; HK HKEXnews " +
-      "FILE_LINK path; AE DFM efsah r_path). Mode \"metadata\" (default) lists the " +
-      "filing's documents/renditions with sizes; \"xhtml\" returns the primary " +
-      "document's extracted plain text where available — from a machine-readable " +
-      "iXBRL/XHTML rendition (GB/US/KR) or best-effort text-layer extraction from " +
-      "the filed PDF (FR/HK/CN/AE, and JP where a PDF exists); paged via text_offset, " +
-      "with scanned/image PDFs and text-less filings reported honestly; \"pdf\" " +
-      "saves the PDF to a local file and returns the path, never inline bytes. " +
-      "For CN the extracted text is CJK-space-normalized and mojibake (zero-CJK) " +
-      "reports are reported honestly. Downloads capped at 25 MB.",
+    "Fetch one filed document by a jurisdiction-specific transaction id. Mode " +
+      "\"metadata\" lists available renditions; \"xhtml\" returns paged extracted " +
+      "text where available; \"pdf\" saves a bounded local file and returns its " +
+      "path. Identifier schemes and extraction guarantees vary by route—read " +
+      "disclosures://jurisdictions/{code}. Scanned, protected, or unreadable " +
+      "documents are reported honestly rather than fabricated.",
     {
       company: z
         .string()
         .min(1)
-        .describe("Company name/number (GB), ticker/CIK (US), or name (JP/KR/CN)"),
+        .describe(
+          "Company name or route-specific identifier. Some document ids are " +
+            "self-contained; the company value then labels the response context.",
+        ),
       jurisdiction: z
-        .enum(["US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE", "PH", "AU"])
+        .enum(DOCUMENT_JURISDICTIONS)
         .optional()
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
@@ -6733,15 +6735,10 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .min(1)
         .optional()
         .describe(
-          "GB Companies House filing-history transaction id, US SEC accession " +
-            "number, JP EDINET docID, KR OpenDART receipt number (rcept_no), " +
-            "FR info-financiere OAM record id, HK HKEXnews FILE_LINK path " +
-            "(e.g. /listedco/listconews/…/….pdf), or CN cninfo announcement PDF " +
-            "URL / adjunctUrl path (finalpage/YYYY-MM-DD/ID.PDF) — all from " +
-            "CompanyFilings; for TR, the numeric KAP disclosure id (e.g. 1446919), " +
-            "which comes from the issuer's KAP page rather than CompanyFilings; " +
-            "for AE, the DFM efsah r_path (/YYYY/Mon/D/<uuid>/<name>.pdf); " +
-            "for AU, the ASX announcement documentKey (e.g. 2924-03122554-3A699070)",
+          "Jurisdiction-specific document id, usually returned by CompanyFilings. " +
+            "TR uses a numeric KAP disclosure id; AE uses a DFM efsah r_path; PH " +
+            "uses a PSE edge_no; AU uses an ASX documentKey. Read the selected " +
+            "jurisdiction card for the exact identifier contract.",
         ),
       document_id: z
         .string()
@@ -6798,9 +6795,15 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         return companyDocumentAe(company, transaction_id, mode, text_offset, output_path);
       }
       if (jurisdiction === "PH") {
+        if (!hasRestrictedSourceAcknowledgement("PSE", options)) {
+          return errorResult(restrictedSourceDisabledMessage("PSE"));
+        }
         return companyDocumentPh(transaction_id, mode, text_offset, output_path);
       }
       if (jurisdiction === "AU") {
+        if (!hasRestrictedSourceAcknowledgement("ASX", options)) {
+          return errorResult(restrictedSourceDisabledMessage("ASX"));
+        }
         return companyDocumentAu(transaction_id, mode, text_offset, output_path);
       }
       try {
@@ -7427,7 +7430,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       "context, not a single id.",
     {
       jurisdiction: z
-        .enum(["US", "GB", "DE", "FR", "AU"])
+        .enum(PERSON_APPOINTMENT_JURISDICTIONS)
         .optional()
         .describe(
           '"GB" (Companies House, default), "US" (SEC EDGAR reporting owners), ' +

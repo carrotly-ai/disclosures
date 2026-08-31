@@ -1,138 +1,124 @@
 # Publishing `disclosures`
 
-npm does not offer a separate name-reservation operation: the name is reserved by the first successful publish. Use a prerelease under the `next` tag to claim the name without presenting an unstable build as `latest`.
+Stable releases use a release branch and PR. A lightweight `v<version>` tag on merged `main`
+then triggers npm trusted publishing and MCP Registry publication. Never publish from a dirty
+working tree or push a release commit directly to `main`.
 
-## 1. One-time npm account setup
+## 1. One-time npm trusted-publisher setup
 
-1. Sign in at <https://www.npmjs.com/> and enable two-factor authentication.
-2. Join or create the npm account that should own the unscoped `disclosures` package.
-3. Locally authenticate and verify the account:
+The npm package is owned by the `carrotly-ai` project and publishes through GitHub OIDC:
 
-   ```bash
-   npm login
-   npm whoami
-   npm view disclosures
-   ```
+1. Open the package on npmjs.com.
+2. Go to **Settings → Trusted Publishers**.
+3. Configure a GitHub Actions publisher:
+   - Organization: `carrotly-ai`
+   - Repository: `disclosures`
+   - Workflow filename: `release.yml`
+   - Environment: blank
+4. Do not add an `NPM_TOKEN`; [`.github/workflows/release.yml`](.github/workflows/release.yml)
+   uses `id-token: write` and publishes with provenance.
 
-   Before the first publish, `npm view disclosures` should return a 404. Re-check immediately before publishing because package-name availability can change.
+## 2. Prepare a stable release
 
-## 2. Reserve the package name with a release candidate
+Create `release-<version>` from current `main`. Update these four authoritative version
+surfaces together—do not use `npm version`, which updates only `package.json`:
 
-From a clean checkout:
+- `package.json` → `version`
+- `server.json` → root `version`
+- `server.json` → `packages[0].version`
+- `src/server.ts` → `SERVER_VERSION`
+
+Promote `CHANGELOG.md`'s `Unreleased` section to the same version and release date, then run:
 
 ```bash
 bun install --frozen-lockfile
 bunx tsc --noEmit
 bun test
 bun run build
-npm pack --dry-run
-npm version 0.1.0-rc.1 --no-git-tag-version
-npm publish --access public --tag next
+bun run test:stdio
+bun run pack:dry
+bun run test:live:all
 ```
 
-This creates `disclosures` and points only the `next` distribution tag at the release candidate. Confirm:
+Validate the MCP manifest when `server.json` changes:
 
 ```bash
-npm view disclosures versions --json
-npm view disclosures dist-tags --json
-npx -y disclosures@next
+uv run --with jsonschema python - <<'PY'
+import json
+import urllib.request
+
+schema = json.load(urllib.request.urlopen(
+    "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"
+))
+manifest = json.load(open("server.json"))
+import jsonschema
+jsonschema.validate(manifest, schema)
+print("server.json valid")
+PY
 ```
 
-Restore the repository version to `0.1.0` after this manual reservation if the RC version change was only local:
+`npm pack --dry-run --json` must contain only `dist/`, `README.md`, `LICENSE`, `NOTICE`, and
+`package.json`; the published package must have zero runtime dependencies.
+
+## 3. Merge the release PR
+
+Commit the release branch, push it, and open a PR titled `Release <version>`. Record:
+
+- typecheck and exact offline-test result;
+- build and stdio integration result;
+- package-content inspection;
+- strict live-suite result;
+- the runtime banner, including version and tool count.
+
+Wait for the Node 18/20/22 CI matrix and both CodeQL analyses to pass, then squash-merge.
+Sync local `main` with `git pull --ff-only` and rerun the deterministic release gate before
+tagging.
+
+## 4. Publish with the lightweight tag
+
+Recent releases use lightweight tags. Create and push only the intended tag:
 
 ```bash
-git restore package.json bun.lock
+git tag v<version>
+git push origin v<version>
 ```
 
-## 3. Configure npm trusted publishing
+Do not use `git push origin main --tags`; that can publish unrelated local tags.
 
-After the package exists:
+The tag starts two workflows:
 
-1. Open the package on npmjs.com.
-2. Go to **Settings → Trusted Publishers**.
-3. Add a GitHub Actions publisher with:
-   - Organization: `carrotly-ai`
-   - Repository: `disclosures`
-   - Workflow filename: `release.yml`
-   - Environment: leave blank unless the workflow is later changed to use one.
-4. Do not add an `NPM_TOKEN` secret to GitHub; the workflow uses OIDC and `id-token: write`.
+1. [`.github/workflows/release.yml`](.github/workflows/release.yml) verifies, builds, checks the
+   tag against `package.json`, and publishes to npm with OIDC provenance. Stable versions go
+   to `latest`; prereleases go to `next`.
+2. [`.github/workflows/publish-mcp.yml`](.github/workflows/publish-mcp.yml) verifies the
+   `package.json`/`server.json` versions, waits for npm, authenticates to the MCP Registry via
+   GitHub OIDC, and publishes the manifest.
 
-## 4. Test trusted publishing with another prerelease
+The repository uses tags plus registry publication; it does not create GitHub Release objects.
 
-Change the package version to a new prerelease, commit it, and push a matching tag:
-
-```bash
-npm version 0.1.0-rc.2 --no-git-tag-version
-git add package.json bun.lock
-git commit -m "Prepare 0.1.0-rc.2"
-git tag v0.1.0-rc.2
-git push origin main --tags
-```
-
-The release workflow publishes prerelease versions under `next`. Verify provenance and installation:
-
-```bash
-npm view disclosures@next version
-npm view disclosures@next dist.integrity
-npm view disclosures@next --json | jq '.dist.attestations'
-npx -y disclosures@next
-```
-
-## 5. Publish the stable release
-
-Set and commit the stable version, then push its matching tag. If `package.json` is already
-at the target version (the `0.1.0` GA cut already dropped the `-rc` suffix), skip
-`npm version` and just tag:
-
-```bash
-npm version 0.1.0 --no-git-tag-version   # skip if already 0.1.0
-git add package.json bun.lock CHANGELOG.md
-git commit -m "Release 0.1.0"
-git tag v0.1.0
-git push origin main --tags
-```
-
-Stable versions publish to npm's default `latest` tag. Verify:
+## 5. Verify publication
 
 ```bash
 npm view disclosures version
 npm view disclosures dist-tags --json
-npx -y disclosures
+npm view disclosures@<version> dist.integrity
+npm view disclosures@<version> --json | jq '.dist.attestations'
+npx -y disclosures@<version>
 ```
 
-Never reuse a published version. If an RC is bad, publish a higher RC; if a stable release is bad, deprecate it and publish a patch rather than unpublishing unless npm's narrow unpublish policy clearly applies.
+Also verify the MCP Registry reports the same version and that the runtime banner agrees with
+`package.json` and both `server.json` version fields.
 
-## 6. Publish / update the MCP registry listing
+If npm publishes but the MCP Registry workflow fails or times out, rerun
+`publish-mcp.yml` with `workflow_dispatch`; it is idempotent for an already-published npm
+version.
 
-The repo ships a [`server.json`](server.json) manifest and a matching `mcpName`
-(`io.github.carrotly-ai/disclosures`) in `package.json`. The registry verifies ownership by
-reading that `mcpName` from the **published** npm package, so the npm publish (steps 4–5)
-must land first.
-
-**This is automated.** [`.github/workflows/publish-mcp.yml`](.github/workflows/publish-mcp.yml)
-runs on every `v*` tag: it checks that `package.json`, `server.json`, and
-`server.json`'s `packages[0]` agree on the version, waits for that version to appear on
-npm (so it never races `release.yml`), authenticates to the registry via GitHub **OIDC**
-(no stored secret), and runs `mcp-publisher publish`. It can also be re-run manually via
-*workflow_dispatch* to refresh the listing for an already-released version.
-
-Manual fallback from a workstation:
+Manual MCP Registry fallback:
 
 ```bash
-# Install: brew install mcp-publisher (or download from modelcontextprotocol/registry releases)
-mcp-publisher login github     # OAuth as a carrotly-ai org member
-mcp-publisher publish          # reads ./server.json
+mcp-publisher login github
+mcp-publisher publish
 ```
 
-Keep `server.json`'s `version` and each `packages[].version` in lockstep with
-`package.json` on every release — bump all three together; the workflow enforces this.
-Validate the manifest before publishing:
-
-```bash
-python3 - <<'PY'
-import json, urllib.request, jsonschema
-s = json.load(urllib.request.urlopen("https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json"))
-jsonschema.validate(json.load(open("server.json")), s)
-print("server.json valid")
-PY
-```
+Never reuse a published version. If a stable release is defective, deprecate it if needed and
+publish a patch; deleting the Git tag does not undo npm publication.

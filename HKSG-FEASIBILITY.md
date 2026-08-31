@@ -1,5 +1,7 @@
 # HK (Hong Kong) + SG (Singapore) adapter — open-data feasibility finding
 
+> **Historical research record.** HK and SG resolution shipped, followed by deeper HK document, financials, and CCASS-owner coverage. See the current jurisdiction pages and changelog.
+
 > **Status:** finding only — no adapter or tool change ships with this document. Records
 > the research for future `HK` and `SG` jurisdiction adapters behind the existing intent
 > tools, using only free, keyless-or-trivial-free-key sources, reliably parseable, and

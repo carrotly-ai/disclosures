@@ -9,7 +9,7 @@ permissions:
 jobs:
   live-e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       DISCLOSURES_USER_AGENT: ${{ secrets.DISCLOSURES_USER_AGENT }}
       COMPANIES_HOUSE_API_KEY: ${{ secrets.COMPANIES_HOUSE_API_KEY }}

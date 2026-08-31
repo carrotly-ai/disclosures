@@ -1,5 +1,7 @@
 # AU (Australia) adapter — open-data feasibility finding
 
+> **Historical research record.** AU subsequently shipped with ASIC open data available by default and ASX behind explicit terms acknowledgement. See [`docs/jurisdictions/AU.md`](docs/jurisdictions/AU.md) and the v0.8.0 changelog for current behavior.
+
 > **Status:** finding only — no adapter or tool change ships with this document. Records
 > whether an `AU` jurisdiction adapter can sit behind the existing intent tools using only
 > **free, keyless-or-trivial-free-key, redistributable, reliably parseable** data with

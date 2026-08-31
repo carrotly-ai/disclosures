@@ -136,6 +136,11 @@ message naming the escape hatch:
 > `AdapterOptions.fetchFn` … **This adapter will not fabricate or silently return an empty
 > result.**
 
+`AdapterOptions.fetchFn` is available to TypeScript-library users and custom server wrappers;
+the stock `npx disclosures` stdio process has no way to receive a JavaScript function. In a
+plain stdio deployment, expect the actionable Cloudflare refusal unless the host itself is
+allowed through.
+
 Every MY intent takes that path. **A challenge is never degraded to an empty result** —
 including a challenge on the *document* host mid-way through an insiders/owners call,
 which surfaces rather than silently reverting the rows to link-only.

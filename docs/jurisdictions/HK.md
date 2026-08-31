@@ -130,14 +130,13 @@ are used as internal lookups only, never re-published.
 ## Caveats
 
 - Listed SEHK/GEM issuers only; private companies are in the paid Companies Registry.
-- `CompanyFilings` returns real disclosure PDF links; the deeper insider/financial intents
-  degrade honestly rather than scraping captcha- or session-walled sources.
+- `CompanyFilings` returns official disclosure PDF links.
 - `CompanyOwners` returns **CCASS participant/custodian** holdings — a partial owners view that
   is explicitly **not** beneficial ownership. The beneficial-owner (DI) register stays
   captcha-walled and is linked for manual lookup.
-- `CompanyFilings` returns real disclosure PDF links; `CompanyFinancials` extracts headline
-  figures from the results-announcement PDF (bounded — degrades to the link when unreliable);
-  the insider/owner intents degrade honestly rather than scraping captcha- or session-walled
-  sources.
+- `CompanyFinancials` performs bounded headline extraction from the latest results-announcement
+  PDF and degrades to the official link when the statement is not reliable to parse.
+- `CompanyInsiders` remains unsupported behind the DI wall rather than scraping a captcha- or
+  session-gated source.
 - Absence in a filings window is not proof a filing does not exist — adjust
   `start_date`/`end_date`.

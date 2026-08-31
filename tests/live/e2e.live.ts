@@ -124,10 +124,14 @@ interface LiveToolResult {
   structuredContent: unknown;
 }
 
-async function callLiveToolFull(
+interface LiveToolOutcome extends LiveToolResult {
+  isError: boolean;
+}
+
+async function callLiveToolOutcome(
   name: string,
   args: Record<string, unknown>,
-): Promise<LiveToolResult> {
+): Promise<LiveToolOutcome> {
   let lastFailure = "unknown failure";
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
@@ -139,15 +143,21 @@ async function callLiveToolFull(
         ),
         name,
       );
-      const text = firstText(result);
-      if (!result.isError) {
-        if (!text.trim()) throw new Error(`${name} returned no text content`);
-        return {
-          text,
-          structuredContent: (result as { structuredContent?: unknown }).structuredContent,
-        };
+      const rawText = firstText(result);
+      if (!result.isError && !rawText.trim()) {
+        throw new Error(`${name} returned no text content`);
       }
-      lastFailure = redactSecrets(text || `${name} returned isError without text`);
+      const text = redactSecrets(
+        rawText || `${name} returned isError without text`,
+      );
+      const outcome = {
+        text,
+        structuredContent: (result as { structuredContent?: unknown }).structuredContent,
+        isError: Boolean(result.isError),
+      };
+      if (!outcome.isError) return outcome;
+      lastFailure = text;
+      if (attempt >= maxAttempts || !isTransientFailure(lastFailure)) return outcome;
     } catch (error) {
       lastFailure = redactSecrets(error instanceof Error ? error.message : String(error));
     }
@@ -160,6 +170,17 @@ async function callLiveToolFull(
     break;
   }
   throw new Error(`${name} live call failed: ${lastFailure}`);
+}
+
+async function callLiveToolFull(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<LiveToolResult> {
+  const outcome = await callLiveToolOutcome(name, args);
+  if (outcome.isError) {
+    throw new Error(`${name} live call failed: ${outcome.text}`);
+  }
+  return outcome;
 }
 
 async function callLiveTool(
@@ -598,6 +619,85 @@ describe("live end-to-end MCP suite", () => {
     expect(resolved).toContain("บริษัท ปตท. จำกัด (มหาชน)");
     // The register carries capital, which is what makes DBD richer than ACRA.
     expect(resolved).toMatch(/THB [\d,]+/);
+  }, testTimeoutMs);
+
+  test("returns live NL insider disclosures from the bounded AFM exports", async () => {
+    const insiders = await callLiveToolFull("CompanyInsiders", {
+      company: "ASML Holding N.V.",
+      jurisdiction: "NL",
+    });
+    expect(insiders.text).toMatch(/AFM/i);
+    expect(insiders.text).toMatch(/Art\. ?19 MAR|directors|commissioners/i);
+    const rows = (insiders.structuredContent as { insiders?: unknown })?.insiders;
+    expect(Array.isArray(rows) && rows.length > 0).toBe(true);
+  }, testTimeoutMs);
+
+  test("returns live IDX resolution or the exact typed anti-bot refusal", async () => {
+    const outcome = await callLiveToolOutcome("CompanyResolve", {
+      company: "BBCA",
+      jurisdiction: "ID",
+    });
+    if (outcome.isError) {
+      expect(outcome.text).toMatch(/IDX|Indonesia Stock Exchange/i);
+      expect(outcome.text).toMatch(/blocked|anti-bot|challenge/i);
+      expect(outcome.text).toContain("NOT an empty result");
+      expect(outcome.text).toMatch(/browser-backed fetchFn/i);
+      return;
+    }
+    expect(outcome.text).toMatch(/BANK CENTRAL ASIA/i);
+    expect(outcome.text).toMatch(/\bBBCA\b/);
+    expect(outcome.text).toMatch(/IDX|Indonesia Stock Exchange/i);
+  }, testTimeoutMs);
+
+  test("returns live Bursa resolution or the exact Cloudflare refusal", async () => {
+    const outcome = await callLiveToolOutcome("CompanyResolve", {
+      company: "1155",
+      jurisdiction: "MY",
+    });
+    if (outcome.isError) {
+      expect(outcome.text).toMatch(/Cloudflare/i);
+      expect(outcome.text).toContain("Just a moment...");
+      expect(outcome.text).toContain("AdapterOptions.fetchFn");
+      expect(outcome.text).toMatch(/not fabricate|silently return an empty result/i);
+      return;
+    }
+    expect(outcome.text).toMatch(/MALAYAN BANKING BERHAD/i);
+    expect(outcome.text).toMatch(/\b1155\b/);
+    expect(outcome.text).toMatch(/Bursa Malaysia/i);
+  }, testTimeoutMs);
+
+  test("resolves a live KAP issuer and opens a known disclosure by id", async () => {
+    const resolved = await callLiveTool("CompanyResolve", {
+      company: "THYAO",
+      jurisdiction: "TR",
+    });
+    expect(resolved).toMatch(/TÜRK HAVA YOLLARI/i);
+    expect(resolved).toMatch(/\bTHYAO\b/);
+    expect(resolved).toMatch(/KAP|kap\.org\.tr/i);
+
+    const document = await callLiveTool("CompanyDocument", {
+      company: "THYAO",
+      jurisdiction: "TR",
+      transaction_id: "1446919",
+      mode: "metadata",
+    });
+    expect(document).toContain("1446919");
+    expect(document).toMatch(/KAP document|kap\.org\.tr/i);
+    expect(document).toMatch(/TÜRK HAVA YOLLARI|Articles of Association/i);
+  }, testTimeoutMs);
+
+  test("queries ASIC disqualifications without contacting restricted ASX", async () => {
+    const result = await callLiveTool("PersonAppointments", {
+      jurisdiction: "AU",
+      mode: "disqualifications",
+      query: "SMITH",
+      limit: 10,
+    });
+    expect(result).toMatch(/ASIC|Australian Securities and Investments Commission/i);
+    expect(result).toMatch(/Banned and Disqualified Persons|bans and disqualifications/i);
+    expect(result).toContain("Creative Commons Attribution 3.0 Australia");
+    expect(result).not.toContain("personal, non-commercial use");
+    expect(result).not.toMatch(/asx\.com\.au|markitdigital/i);
   }, testTimeoutMs);
 
   test("resolves a live AE issuer and chains a DFM disclosure to its PDF", async () => {

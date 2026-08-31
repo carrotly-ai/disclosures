@@ -63,7 +63,9 @@ const tools = createTools({
 
 Everything downstream — resolution, the announcement feed, and the `instance.zip`
 download — flows through that one function, so a single injection unblocks all three
-intents.
+intents. This is a TypeScript-library/custom-server capability: the stock `npx disclosures`
+stdio process cannot receive a JavaScript function and therefore returns the typed refusal
+when its own host is blocked.
 
 ## Accepted `company` inputs
 
@@ -167,12 +169,11 @@ exercised the banking revenue variant.
 ## Licence and ToS posture
 
 IDX site content is **exchange copyright with no open-data licence**, which is the *same*
-posture as the already-shipped `bseIndia`, `cninfo`, `twseOpenApi` and HKEXnews adapters —
-and materially different from the personal-use redistribution bans in the ASX terms (on
-which AU was declined) and in the PSE EDGE terms. PH ships despite those terms as an
-explicit maintainer decision, with the conflict recorded in [PH.md](PH.md); ID needs no such
-warning, because IDX asserts copyright without restricting use to personal, non-commercial
-purposes.
+posture as the already-shipped `bseIndia`, `cninfo`, `twseOpenApi` and HKEXnews adapters.
+It differs from the explicit personal-use/no-redistribution restrictions on ASX and PSE
+EDGE, whose routes are disabled before network access unless the operator sets a separate
+terms-acknowledgement flag. ID needs no such gate because IDX does not impose that same
+personal, non-commercial restriction in the terms reviewed for this adapter.
 
 Under this package's **link-first, fetch-on-demand** model — return the official source
 link, fetch content on the end user's behalf at the moment they ask, and cite the source —

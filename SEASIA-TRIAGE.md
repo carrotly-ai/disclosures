@@ -1,5 +1,7 @@
 # Southeast Asia (TH · ID · MY · VN · PH) — open-data feasibility **triage**
 
+> **Historical research record.** TH, ID, MY, and PH subsequently shipped; PH/PSE now requires explicit terms acknowledgement. VN remains a deliberate skip. See the current jurisdiction pages and v0.8.0 changelog.
+
 > **Status:** triage finding — faster and shallower than a full finding.
 > No adapter ships with this document. For each of five client-priority SE Asian markets it
 > establishes: (a) what free/keyless/redistributable sources exist, (b) which of the repo's

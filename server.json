@@ -1,26 +1,25 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.carrotly-ai/disclosures",
-  "description": "Corporate-disclosure research across 12 official sources behind ten intent-based tools.",
+  "description": "Corporate disclosures from 26 official sources across 21 jurisdiction routes via ten tools.",
   "repository": {
     "url": "https://github.com/carrotly-ai/disclosures",
     "source": "github"
   },
-  "version": "0.7.0",
+  "version": "0.8.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "disclosures",
-      "version": "0.7.0",
+      "version": "0.8.0",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
           "name": "DISCLOSURES_USER_AGENT",
-          "description": "Descriptive User-Agent with contact info, required by SEC EDGAR (e.g. 'Your Org you@example.com'). SEC_EDGAR_USER_AGENT is also accepted.",
-          "isRequired": true
+          "description": "Descriptive User-Agent with contact info, required only for SEC-backed US operations (e.g. 'Your Org you@example.com'). SEC_EDGAR_USER_AGENT is also accepted."
         },
         {
           "name": "COMPANIES_HOUSE_API_KEY",
@@ -36,6 +35,19 @@
           "name": "EDINET_API_KEY",
           "description": "Japan EDINET API key. Required only for JP document search; JP resolution is keyless.",
           "isSecret": true
+        },
+        {
+          "name": "DBD_API_KEY",
+          "description": "Thailand DBD API key. Required only for company-name search; exact 13-digit juristic-person lookups are keyless.",
+          "isSecret": true
+        },
+        {
+          "name": "DISCLOSURES_ACKNOWLEDGE_ASX_TERMS",
+          "description": "Set to 1 only after reviewing ASX's restrictive terms and confirming you have the rights to use ASX data. ASIC open-data routes remain available without it."
+        },
+        {
+          "name": "DISCLOSURES_ACKNOWLEDGE_PSE_TERMS",
+          "description": "Set to 1 only after reviewing PSE EDGE's restrictive terms and confirming you have the rights to use PSE data."
         }
       ]
     }

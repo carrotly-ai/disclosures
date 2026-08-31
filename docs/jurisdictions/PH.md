@@ -2,11 +2,12 @@
 
 **Data source:** [PSE EDGE](https://edge.pse.com.ph) — the Philippine Stock Exchange's
 statutory disclosure portal.
-**Credentials:** none. PSE EDGE is fully keyless server-rendered HTML/JSON with no bot wall
-— verified live from a plain server request, no browser and no injected `fetchFn` required.
+**Configuration:** `DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1` after reviewing PSE's terms and
+confirming you have the necessary rights. No API key or browser is required, but without this
+acknowledgement every PSE route refuses before making a network request.
 **Licence:** ⚠️ **PSE restricts its contents to "personal, non-commercial use" and forbids
 redistribution to third parties.** This conflicts with serving PSE content through this
-package. Read [Terms of use — an unresolved conflict](#terms-of-use--an-unresolved-conflict)
+package. Read [Terms of use — restricted, explicit opt-in](#terms-of-use--restricted-explicit-opt-in)
 **before** relying on this jurisdiction.
 
 PSE EDGE is the most turnkey source in this package's Southeast Asia coverage: one keyless
@@ -18,12 +19,12 @@ portals cannot serve at all.
 | Change in Shareholdings of Directors and Principal Officers | 13-1 | `CompanyInsiders` |
 | Public Ownership Report | POR-1 | `CompanyOwners` (default) |
 | Statement of Changes in Beneficial Ownership of Securities | 17-7 | `CompanyOwners` (dealings mode) |
-| Annual Report / Quarterly Report | 17-1 / 17-2 | `CompanyFinancials` |
+| Annual Report / Quarterly Report | 17-A / 17-Q | `CompanyFinancials` |
 | (all templates) | — | `CompanyFilings`, `CompanyDocument` |
 
 ---
 
-## Terms of use — an unresolved conflict
+## Terms of use — restricted, explicit opt-in
 
 **This section is the most important part of this page. It is not boilerplate.**
 
@@ -63,29 +64,18 @@ volume of what is transmitted. It does **not** resolve the conflict, because PSE
 restriction is on the *act of transmitting to a third person* and on the *purpose* being
 non-commercial — not merely on bulk redistribution.
 
-### The precedent asymmetry — this project rejected ASX for the same wording
+### The ASX comparison and current policy
 
-This repository's own Australia feasibility finding treated the ASX Terms of Use as
-**disqualifying**, on wording that is near-identical to PSE's: the same "personal,
-non-commercial use" limitation and the same explicit prohibition on transmitting or
-distributing to a third party. **AU was not built on that basis.**
+The original Australia feasibility finding and the Southeast Asia triage both treated this
+class of personal-use/no-redistribution wording as disqualifying. AU/ASX and PH/PSE were
+subsequently implemented, so the old "PH present while AU absent" comparison is historical,
+not current.
 
-The Southeast Asia triage that assessed PSE reached the same conclusion independently. Its
-verdict, verbatim:
-
-> **Verdict: technically a standout BUILD (keyless, no browser, 5+ intents from one source),
-> but its Terms disqualify redistribution on the same basis the repo used to reject ASX.**
-> … An honest reading defaults to **do not ship PSE under the current ToU**, exactly as with
-> ASX.
-
-**PH was nevertheless built and shipped.** That was an explicit, eyes-open decision by the
-repository owner, made with the above in front of them. It is recorded here rather than
-resolved, because the underlying tension is real and is not cured by anything in the
-implementation.
-
-The asymmetry is therefore live and acknowledged: **AU is absent from this package on
-grounds that PH is present despite.** That is a maintainer's judgement call, not a legal
-conclusion, and this page does not argue that PSE's terms permit what the package does.
+The package now applies one policy to both restricted sources: **no network access by
+default**. PSE requests are made only when the operator sets
+`DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1`; ASX uses its own separate acknowledgement. This does
+not make either licence permissive. It makes the decision explicit and prevents a caller
+from contacting the source merely by selecting a jurisdiction.
 
 ### What this means for you, the operator
 
@@ -93,7 +83,9 @@ conclusion, and this page does not argue that PSE's terms permit what the packag
   responsible for holding the rights to use PSE data in their context.** If your use is
   commercial, or serves anyone beyond yourself, you likely need PSE's prior written consent.
   Requests go to the address on PSE's disclaimer page.
-- Every PH tool response carries a short source-attribution and terms note pointing at the
+- Without `DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1`, every PSE-backed tool returns an actionable
+  error and makes zero requests. Set it only after completing that rights review.
+- Every enabled PH tool response carries a short source-attribution and terms note pointing at the
   disclaimer, so the restriction travels with the data rather than living only in this file.
 - The PH [jurisdiction reference card](../../src/core/jurisdictionReference.ts)
   (`disclosures://jurisdictions/PH`) opens its caveat with `TERMS-OF-USE CONFLICT`, so an

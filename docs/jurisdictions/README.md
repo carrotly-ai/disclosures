@@ -1,21 +1,17 @@
 # Jurisdiction coverage
 
-`disclosures` exposes **seven intent-based tools** that dispatch on a `jurisdiction`
-parameter (default `US`). The tool names never change between jurisdictions — only the
-underlying data source does. Where a jurisdiction has no normalized equivalent to an
-intent, the tool returns an explicit **unsupported-jurisdiction explanation** rather than
-an empty or fabricated result.
+`disclosures` exposes six core tools that dispatch on a `jurisdiction` parameter
+(default `US`), plus the jurisdiction-independent `OwnershipChain`. The tool names remain
+stable between routes; where a jurisdiction has no normalized equivalent, the tool returns
+an explicit **unsupported-jurisdiction explanation** rather than empty or fabricated data.
 
-Three further **filed-document / register tools** — `CompanyDocument`, `CompanyCharges`, and
-`PersonAppointments` — originated as Companies House features. `CompanyDocument` now also
-serves **US** (SEC EDGAR), **JP** (EDINET), **KR** (OpenDART), **FR** (info-financiere
-OAM), **HK** (HKEXnews), **CN** (cninfo), **TR** (KAP), **AE** (DFM), and **PH** (PSE EDGE);
-`PersonAppointments` also serves **US** (SEC EDGAR reporting
-owners), **DE** (BaFin DealingsInfo notifying persons), and **FR** (recherche-entreprises
-*dirigeants*), all via a `jurisdiction` parameter (default `GB`). `CompanyCharges` remains
-UK-only for now. See [GB.md](GB.md), [US.md](US.md), [JP.md](JP.md), [KR.md](KR.md),
-[FR.md](FR.md), [HK.md](HK.md), [AE.md](AE.md), and [PH.md](PH.md) for the per-jurisdiction
-document / person paths.
+Three specialized tools cover filed documents and register primitives. `CompanyDocument`
+serves **US**, **GB**, **JP**, **KR**, **FR**, **HK**, **CN**, **TR**, **AE**, **PH**, and
+**AU**. `PersonAppointments` serves **US**, **GB**, **DE**, **FR**, and **AU**; AU supports
+`disqualifications` only. `CompanyCharges` remains GB-only. ASX- and PSE-backed routes are
+disabled before network access unless their separate terms-acknowledgement variables are
+set; ASIC open-data AU routes remain available without ASX acknowledgement. Each page below
+documents its identifiers, configuration, coverage, and caveats.
 
 This directory documents each jurisdiction in depth. For the quickstart, client
 configuration, and library API, see the top-level [README](../../README.md).
@@ -37,9 +33,10 @@ configuration, and library API, see the top-level [README](../../README.md).
 
 ✅ supported · ⚠️ partial (see note) · — returns an honest unsupported-jurisdiction explanation · 🌐 global
 
-FR `CompanyOwners` is **partial**: it returns the *franchissement de seuil*
-threshold-crossing notifications as a linked-PDF list, but the crossing holder and the exact
-percentage live inside each PDF, not in a machine-readable field. See [FR.md](FR.md).
+FR `CompanyOwners` is **partial**: the five newest *franchissement de seuil*
+notifications get a best-effort PDF text-layer extraction for holder, direction/date,
+thresholds, and resulting capital/voting percentages. Scanned, non-standard, and older
+notifications remain official link-only rows. See [FR.md](FR.md).
 
 HK `CompanyOwners` is **partial**: it returns the keyless CCASS shareholding search —
 participant/**custodian**-level holdings (custodian banks, brokers, HKSCC Nominees, and China's
@@ -113,7 +110,7 @@ depository channel, not a clean IDX feed). Verified live through the built artif
 BBCA FY2025, consolidated, in IDR — including BBCA's banking revenue variant. See
 [ID.md](ID.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, `TR`, `AE`, and
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, `TR`, `AE`, `PH`, and
 `AU`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, `FR`, and `AU`
 (`disqualifications` mode only); `CompanyCharges` is UK-only and takes no `jurisdiction`
 parameter.
@@ -147,22 +144,15 @@ precedent**, every MY intent detects the interstitial and returns an honest mess
 documents, not a normalized feed — and SSM, the national registry, is paid, so
 private-company lookups are honest unsupported. See [MY.md](MY.md).
 
-**PH carries an unresolved terms-of-use conflict — read [PH.md](PH.md) before using it.**
-PSE EDGE is technically the most turnkey source in this package: one fully keyless host, no
-bot wall, serving six intents including per-transaction insiders (form 13-1) and a NAMED
-ownership roster (POR-1). Its terms are the problem. PSE restricts the site's contents to
-*"personal, non-commercial use"* and forbids transmitting or reproducing them *"to any third
-person, including others in your company or organization"* without prior written consent —
-wording near-identical to the ASX Terms of Use that **this project treated as disqualifying
-when it declined to build AU**, and which the Southeast Asia triage independently judged
-disqualifying for PSE too. PH was nevertheless built, as an explicit maintainer decision; the
-asymmetry with AU is acknowledged, not resolved. Every PH response carries a source/terms
-note, the PH jurisdiction card opens its caveat with `TERMS-OF-USE CONFLICT`, and **the
-operator deploying this package is responsible for holding the rights to use PSE data**.
-On coverage: `CompanyFinancials` is **partial** — it returns the headline statement PSE's own
-form carries (balance sheet + income statement, in PHP), not the full audited statements,
-which live in the report's PDF attachments. Unlisted Philippine companies are out of scope
-(the SEC's eFAST is login-walled and paid). See [PH.md](PH.md).
+**PH/PSE is a restricted opt-in source — read [PH.md](PH.md) before enabling it.**
+PSE EDGE technically serves six keyless intents, including per-transaction insiders and a
+named POR-1 ownership roster, but its terms restrict content to personal, non-commercial use
+and prohibit redistribution to third parties. The package therefore refuses every PSE
+network path unless `DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1` is set; enabled responses retain
+the source/terms notice, and the operator remains responsible for having the necessary
+rights. `CompanyFinancials` is partial—the PSE form's headline statement, not the full
+audited statements. Unlisted Philippine companies remain out of scope because SEC eFAST is
+login-walled and paid.
 
 `OwnershipChain` takes no `jurisdiction` parameter: it is GLEIF Level-2 relationship data
 for any entity worldwide. It reports accounting-consolidation parents and children, which
@@ -191,7 +181,8 @@ are **not** market-disclosure ownership and **not** UBO tracing.
 | MY | Bursa Malaysia company announcements | None (keyless), but Cloudflare-challenged — inject a browser-backed `fetchFn` | [MY.md](MY.md) |
 | TR | KAP (Kamuyu Aydınlatma Platformu) | None | [TR.md](TR.md) |
 | AE | Dubai Financial Market (`api2.dfm.ae` efsah + `feeds.dfm.ae`) | None | [AE.md](AE.md) |
-| PH | PSE EDGE (`edge.pse.com.ph`) | None (fully keyless, no browser needed) — but ⚠️ **PSE's terms restrict use to personal, non-commercial and forbid redistribution to third parties; see [PH.md](PH.md)** | [PH.md](PH.md) |
+| PH | PSE EDGE (`edge.pse.com.ph`) | `DISCLOSURES_ACKNOWLEDGE_PSE_TERMS=1` after rights review | [PH.md](PH.md) |
+| AU | ASIC registers on data.gov.au (CC BY 3.0 AU) + restricted ASX announcements | ASIC: none; ASX: `DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1` after rights review | [AU.md](AU.md) |
 
 ## Honesty invariants (all jurisdictions)
 

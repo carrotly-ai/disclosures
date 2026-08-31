@@ -1,5 +1,7 @@
 # NL + MEA/TR triage — Netherlands, Saudi Arabia, UAE, Turkey, Nigeria
 
+> **Historical research record.** NL, AE/DFM, and TR/KAP subsequently shipped; SA and NG remain deliberate skips. See the current jurisdiction pages and v0.8.0 changelog.
+
 > **Status:** research triage only — no adapter or tool change ships with this document.
 > Records whether `NL`, `SA`, `AE`, `TR`, `NG` jurisdiction adapters can sit behind the
 > existing ten intent tools using only **free, keyless-or-trivial-free-key, legally

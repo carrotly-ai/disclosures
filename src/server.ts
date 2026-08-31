@@ -12,7 +12,7 @@ import {
 import type { AdapterOptions } from "./core/types.js";
 
 export const SERVER_NAME = "disclosures";
-export const SERVER_VERSION = "0.7.0";
+export const SERVER_VERSION = "0.8.0";
 
 export function createDisclosuresServer(options: AdapterOptions = {}): McpServer {
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
@@ -89,6 +89,7 @@ export * from "./core/http.js";
 export * from "./core/markdown.js";
 export * from "./core/parsing.js";
 export * from "./core/rateLimiter.js";
+export * from "./core/restrictedSources.js";
 export * from "./core/zip.js";
 export * as secEdgar from "./adapters/secEdgar.js";
 export * as gleif from "./adapters/gleif.js";
