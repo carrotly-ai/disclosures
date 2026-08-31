@@ -90,9 +90,10 @@ supply the same variables directly. The suite currently covers:
   concepts, NT$ formatting, `structuredContent.concepts`;
 - credentialed **JP** annual financials (Toyota) parsed from EDINET XBRL — JPY
   formatting and consolidated basis; and
-- keyless **BR** (CVM), **CN** (cninfo) and **IN** (BSE India) resolution guarded by
-  a tolerant transport skip, while **DE** BaFin now asserts normally through the
-  allowlisted lenient HTTP path (see below).
+- keyless **BR** (CVM) and **CN** (cninfo) resolution plus **IN** (BSE India)
+  resolution and a direct known-attachment `CompanyDocument` metadata probe, guarded by a
+  tolerant transport skip; **DE** BaFin asserts normally through the allowlisted lenient HTTP
+  path (see below).
 
 Assertions intentionally target stable invariants (issuer identity, identifier formats,
 source hosts, headings, and response shape), never exact live counts, dates, or amounts.

@@ -842,4 +842,21 @@ describe("live end-to-end MCP suite", () => {
       expect(resolved).toMatch(/INE002A01018/);
     });
   }, testTimeoutMs);
+
+  test("reads live IN BSE document metadata directly (tolerant of Akamai blocks)", async () => {
+    await tolerateUpstreamBlock("IN CompanyDocument (BSE attachment)", async () => {
+      const filename = "54e1d5d1-b04a-46cc-96f6-28ed7b4bfc90.pdf";
+      const document = await callLiveTool("CompanyDocument", {
+        company: "500325",
+        jurisdiction: "IN",
+        transaction_id: filename,
+        mode: "metadata",
+      });
+      expect(document).toMatch(/BSE document/i);
+      expect(document).toContain(filename);
+      expect(document).toMatch(/application\/pdf/i);
+      expect(document).toMatch(/AttachHis/i);
+      expect(document).toMatch(/Size \(bytes\) \| [1-9][0-9,]*/i);
+    });
+  }, testTimeoutMs);
 });

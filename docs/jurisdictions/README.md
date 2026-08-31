@@ -6,7 +6,7 @@ stable between routes; where a jurisdiction has no normalized equivalent, the to
 an explicit **unsupported-jurisdiction explanation** rather than empty or fabricated data.
 
 Three specialized tools cover filed documents and register primitives. `CompanyDocument`
-serves **US**, **GB**, **JP**, **KR**, **FR**, **HK**, **CN**, **TR**, **AE**, **PH**, and
+serves **US**, **GB**, **JP**, **KR**, **FR**, **HK**, **CN**, **IN**, **TR**, **AE**, **PH**, and
 **AU**. `PersonAppointments` serves **US**, **GB**, **DE**, **FR**, and **AU**; AU supports
 `disqualifications` only. `CompanyCharges` remains GB-only. ASX- and PSE-backed routes are
 disabled before network access unless their separate terms-acknowledgement variables are
@@ -26,7 +26,7 @@ configuration, and library API, see the top-level [README](../../README.md).
 | `CompanyOwners` | ✅ | ✅ | — | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | ✅ | ⚠️ | ⚠️ | — | — | ✅ | — | ✅ | — | — | ✅ | — |
 | `CompanyFinancials` | ✅ | ✅ | ✅ | ✅ | ✅ | ⚠️ | — | ✅ | ✅ | — | — | ⚠️ | — | — | — | ✅ | — | — | — | ⚠️ | — |
 | `PrivateRaises` | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
-| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | ✅ | — | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ |
+| `CompanyDocument` | ✅ | ✅ | — | ✅ | ✅ | ✅ | ✅ | — | — | — | ✅ | ✅ | — | — | — | — | — | ✅ | ✅ | ✅ | ✅ |
 | `CompanyCharges` | — | ✅ | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — | — |
 | `PersonAppointments` | ✅ | ✅ | — | — | — | — | — | — | — | ✅ | ✅ | — | — | — | — | — | — | — | — | — | ⚠️ |
 | `OwnershipChain` | 🌐 Global via GLEIF — jurisdiction-independent (resolved from LEI or legal name) |
@@ -110,7 +110,7 @@ depository channel, not a clean IDX feed). Verified live through the built artif
 BBCA FY2025, consolidated, in IDR — including BBCA's banking revenue variant. See
 [ID.md](ID.md).
 
-`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, `TR`, `AE`, `PH`, and
+`CompanyDocument` accepts `GB` (default), `US`, `JP`, `KR`, `FR`, `HK`, `CN`, `IN`, `TR`, `AE`, `PH`, and
 `AU`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, `FR`, and `AU`
 (`disqualifications` mode only); `CompanyCharges` is UK-only and takes no `jurisdiction`
 parameter.

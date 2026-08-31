@@ -126,11 +126,11 @@ Restart the client after changing its configuration, then try:
 | `CompanyFinancials` | "What are its numbers?" — as-filed headline facts from structured XBRL or bounded filing parsers. | US, GB, EU, KR, JP, CN partial, TW, BR, HK partial, ID, PH partial |
 | `OwnershipChain` | "Who consolidates it?" — GLEIF direct/ultimate accounting-consolidation parents and children. | 🌐 Global (any LEI or legal name) |
 | `PrivateRaises` | "Has it raised privately?" — Form D exempt offerings, amounts, investor counts, and named related persons. | US only |
-| `CompanyDocument` | "What does the filing actually say?" — metadata, paged extracted text, or a bounded PDF saved to disk. | US, GB, JP, KR, FR, HK, CN, TR, AE, PH, AU |
+| `CompanyDocument` | "What does the filing actually say?" — metadata, paged extracted text, or a bounded PDF saved to disk. | US, GB, JP, KR, FR, HK, CN, IN, TR, AE, PH, AU |
 | `CompanyCharges` | "What's secured against it?" — registered charges/mortgages and their particulars. | GB |
 | `PersonAppointments` | "Where else does this person sit?" — person search, cross-company roles, and disqualification/enforcement lookups. | US, GB, DE, FR, AU partial (`disqualifications` only) |
 
-Six core tools dispatch across all jurisdiction routes via `jurisdiction`; `OwnershipChain` is global and jurisdiction-independent. `CompanyDocument` accepts `US`, `GB` (default), `JP`, `KR`, `FR`, `HK`, `CN`, `TR`, `AE`, `PH`, and `AU`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, `FR`, and `AU`; `CompanyCharges` is Companies House-specific and takes no `jurisdiction`.
+Six core tools dispatch across all jurisdiction routes via `jurisdiction`; `OwnershipChain` is global and jurisdiction-independent. `CompanyDocument` accepts `US`, `GB` (default), `JP`, `KR`, `FR`, `HK`, `CN`, `IN`, `TR`, `AE`, `PH`, and `AU`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, `FR`, and `AU`; `CompanyCharges` is Companies House-specific and takes no `jurisdiction`.
 
 Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB — incl. `SC`/`NI` prefixes for Scotland and Northern Ireland), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR), BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), 4/5-digit HKEX stock code (HK), Singapore UEN (SG), 13-digit juristic-person registration number (TH), AFM-register issuer name or LEI (NL), 4-letter IDX ticker / kode emiten (ID), 4-digit Bursa stock code or issuer name (MY), BIST stock code (TR), DFM issuer symbol (AE), PSE ticker symbol or numeric PSE company id (PH). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR" | "DE" | "FR" | "HK" | "SG" | "TH" | "NL" | "ID" | "MY" | "TR" | "AE" | "PH" | "AU"` (default `US`).
 
@@ -170,7 +170,7 @@ US and global lookups work with just the User-Agent. Non-US sources are keyless 
 | [EDINET](https://api.edinet-fsa.go.jp/) | `JP` | `EDINET_API_KEY` (free, search only) | Resolution is keyless; document search needs the key. |
 | [cninfo](http://www.cninfo.com.cn/) | `CN` | None | SSE/SZSE (+ HKEX mirror) resolution, announcement PDFs, `CompanyDocument`, `CompanyFinancials` (主要会计数据 key-data table), `CompanyOwners` (前十名股东 top-10), and the SSE `CompanyInsiders` 董监高 roster — all PDF-derived modes bounded/best-effort. |
 | [SZSE disclosure API](https://www.szse.cn/disclosure/supervision/change/index.html) | `CN` | None | Keyless structured 董监高及相关人员股份变动 feed backing `CompanyInsiders` for Shenzhen-listed issuers (0/3xxxxx). |
-| [BSE India](https://www.bseindia.com/) | `IN` | None | Resolution and announcement PDFs; anti-bot host — inject a `fetchFn` if throttled. |
+| [BSE India](https://www.bseindia.com/) | `IN` | None | Resolution, paginated corporate announcements, and `CompanyDocument` PDF metadata/text/download. `NEWSID` and attachment transaction ids remain distinct; documents prefer AttachHis and are processed up to 30 MiB. Anti-bot API host — inject a `fetchFn` if throttled. |
 | [TWSE OpenAPI](https://openapi.twse.com.tw/) | `TW` | None | Resolution, material information, directors/supervisors, >10% shareholders. |
 | [CVM open data](https://dados.cvm.gov.br/) | `BR` | None | Resolution, IPE disclosure index, DFP annual financials in BRL, FRE shareholder positions (item 15) and administrator register (item 12). |
 | [BaFin](https://www.bafin.de/) AnteileInfo + DealingsInfo | `DE` | None | Resolution, §§33 ff. WpHG major holdings, Art. 19 MAR directors' dealings. |
@@ -327,7 +327,7 @@ Live assertions are drift-tolerant (identity, identifier shape, source host, and
 
 ### Current gaps
 
-Coverage grows additively behind the existing tool set. The clearest next deepening target is India: BSE filings already expose report PDFs, but `CompanyDocument` and confidently parsed ownership remain pending. Other intentional gaps are documented per jurisdiction rather than represented as empty data. Suggestions and issues are welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
+Coverage grows additively behind the existing tool set. India's remaining deepening target is `CompanyOwners` from the latest-quarter BSE shareholding iXBRL/XML; annual-report PDF ownership tables are intentionally not parsed because the corpus was too irregular. Other gaps are documented per jurisdiction rather than represented as empty data. Suggestions and issues are welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
 
 ## License
 

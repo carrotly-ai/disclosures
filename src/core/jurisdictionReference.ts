@@ -135,11 +135,19 @@ export const JURISDICTION_REFERENCE: readonly JurisdictionReference[] = [
     name: "India",
     source: "BSE India",
     credential: "None, but the host is anti-bot protected.",
-    identifiers: "6-digit BSE scrip code or company name",
-    intents: "CompanyResolve, CompanyFilings (announcement PDFs)",
+    identifiers:
+      "6-digit BSE scrip code or company name; CompanyDocument accepts the BSE " +
+      "attachment filename or its exact official AttachHis/AttachLive HTTPS URL",
+    intents:
+      "CompanyResolve, CompanyFilings (paginated corporate announcements), " +
+      "CompanyDocument (PDF metadata, paged best-effort text, or bounded download)",
     caveat:
-      "api.bseindia.com throttles unattended clients; inject a " +
-      "browser-backed fetchFn if calls fail.",
+      "api.bseindia.com throttles unattended clients; inject a browser-backed " +
+      "fetchFn if calls fail. NEWSID identifies the announcement while the " +
+      "independent attachment filename is the document transaction id. Documents " +
+      "prefer AttachHis, validate every redirect, and are processed up to 30 MiB; " +
+      "larger files remain link-only. CompanyOwners is deferred to BSE's latest-" +
+      "quarter shareholding iXBRL/XML rather than irregular annual-report PDFs.",
   },
   {
     code: "TW",

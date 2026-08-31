@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Added
+
+- **India (`IN`) `CompanyDocument`** — BSE attachment PDFs now support lightweight metadata, 50,000-character paged text-layer extraction with untrusted-content fencing, and exact-byte local download. The route accepts the attachment filename or exact official AttachHis/AttachLive URL, validates every redirect, prefers durable AttachHis storage, verifies PDF magic, and enforces a declared-and-streamed 30 MiB processing cap with link-only degradation above it.
+- A reusable bounded, redirect-aware binary HTTP primitive with per-hop validation, declared-length prechecks, incremental reads, cancellation at the cap, and timeout coverage through body consumption.
+
+### Fixed
+
+- Replaced BSE's stale `AnnGetData` announcement endpoint with the current paginated `AnnSubCategoryGetData` feed, including strict `ROWCNT` validation, deduplication, and honest scan-ceiling reporting.
+- Separated BSE announcement `NEWSID` from the independent attachment filename: structured filing output now exposes `announcementId` and a correctly chainable document `transactionId` instead of conflating the two.
+
+### Documentation
+
+- Recorded the corpus result that India ownership should use BSE's latest-quarter shareholding iXBRL/XML; annual-report 1%+ PDF tables remain deliberately unparsed because their layouts were not regular enough.
+
 ## 0.8.0 - 2026-08-31
 
 The coverage-expansion release: eight new jurisdiction routes across APAC, Europe, and the Middle East; deeper ownership, insider, and document coverage for Brazil and China; and cross-jurisdiction PDF correctness fixes. All tool additions remain behind the existing ten intent-based names.
