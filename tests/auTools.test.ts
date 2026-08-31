@@ -134,7 +134,7 @@ describe("AU CompanyResolve", () => {
     expect(text).toContain("ASIC company register (CC-BY open data)");
     expect(text).toContain("ASX access is disabled by default");
     expect(text).toContain("DISCLOSURES_ACKNOWLEDGE_ASX_TERMS=1");
-    expect(fetchFn.requests.some(({ url }) => url.includes("asx.api.markitdigital.com"))).toBe(false);
+    expect(fetchFn.requests.some(({ url }) => new URL(url).hostname === "asx.api.markitdigital.com")).toBe(false);
     expect(result.isError).toBeUndefined();
   });
 
@@ -200,7 +200,7 @@ describe("AU CompanyResolve", () => {
     expect(
       fetchFn.requests.some(({ url }) => url.includes("filters=") && url.includes("ACN")),
     ).toBe(true);
-    expect(fetchFn.requests.some(({ url }) => url.includes("asx.api.markitdigital.com"))).toBe(false);
+    expect(fetchFn.requests.some(({ url }) => new URL(url).hostname === "asx.api.markitdigital.com")).toBe(false);
     expect(text).toContain("Exact ACN/ABN lookups intentionally query only");
   });
 
