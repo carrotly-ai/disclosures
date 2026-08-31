@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
-  BSE_ATTACHMENT_BASE_URL,
+  BSE_ATTACHMENT_HIS_BASE_URL,
   BSE_SITE_URL,
+  BseApiError,
   BseRateLimitError,
+  getBseFilings,
   isBseScripCode,
   parseBsePeerSearch,
   resolveBseCompany,
@@ -17,8 +19,6 @@ function options(fetchFn: ReturnType<typeof routedFetch>): AdapterOptions {
   return { fetchFn };
 }
 
-// PeerSmartSearch answers with an HTML fragment: one <li> per hit whose onclick
-// carries liclick('<scripCode>','<name>'), with the ISIN in the row text.
 const SEARCH_HTML = `
 <ul>
   <li onclick="liclick('500325','Reliance Industries Ltd')">
@@ -31,30 +31,49 @@ const SEARCH_HTML = `
 
 const searchRoute: Route = { pattern: "PeerSmartSearch", body: SEARCH_HTML };
 
-const ANNOUNCEMENTS = {
-  Table: [
-    {
-      NEWSID: "abc123",
-      SCRIP_CD: "500325",
-      HEADLINE: "Board Meeting Outcome &amp; Results",
-      NEWSSUB: "Reliance Industries Ltd",
-      CATEGORYNAME: "Result",
-      SUBCATNAME: "Financial Results",
-      NEWS_DT: "2026-04-21T18:30:00",
-      ATTACHMENTNAME: "abc123.pdf",
-    },
-    {
-      NEWSID: "def456",
-      SCRIP_CD: "500325",
-      HEADLINE: "Notice of AGM",
-      CATEGORYNAME: "AGM/EGM",
-      NEWS_DT: "2026-03-10T11:00:00",
-      ATTACHMENTNAME: "",
-    },
-  ],
-};
+function announcement(
+  newsId: string,
+  attachmentName: string,
+  headline: string,
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    NEWSID: newsId,
+    SCRIP_CD: "500325",
+    HEADLINE: headline,
+    NEWSSUB: "Reliance Industries Ltd",
+    CATEGORYNAME: "Result",
+    SUBCATNAME: "Financial Results",
+    NEWS_DT: "2026-04-21T18:30:00",
+    ATTACHMENTNAME: attachmentName,
+    ...overrides,
+  };
+}
 
-const announcementRoute: Route = { pattern: "AnnGetData", body: ANNOUNCEMENTS };
+function page(
+  rows: Array<Record<string, unknown>>,
+  total: number | string = rows.length,
+): Record<string, unknown> {
+  return { Table: rows, Table1: [{ ROWCNT: total }] };
+}
+
+const RESULT_NEWS_ID = "news-abc123";
+const RESULT_ATTACHMENT = "attachment-def456.pdf";
+const AGM_NEWS_ID = "news-no-attachment";
+
+const ANNOUNCEMENTS = page([
+  announcement(RESULT_NEWS_ID, RESULT_ATTACHMENT, "Board Meeting Outcome &amp; Results"),
+  announcement(AGM_NEWS_ID, "", "Notice of AGM", {
+    CATEGORYNAME: "AGM/EGM",
+    SUBCATNAME: null,
+    NEWS_DT: "2026-03-10T11:00:00",
+  }),
+]);
+
+const announcementRoute: Route = {
+  pattern: "AnnSubCategoryGetData",
+  body: ANNOUNCEMENTS,
+};
 
 beforeEach(() => {
   resetRateLimiters();
@@ -118,41 +137,129 @@ describe("searchBseCompanies", () => {
   });
 });
 
-describe("searchBseFilings", () => {
-  test("resolves a company then builds attachment PDF links", async () => {
+describe("BSE announcement discovery", () => {
+  test("uses the current endpoint and exposes attachment filenames as transaction ids", async () => {
     const fetchFn = routedFetch([searchRoute, announcementRoute]);
     const filings = await searchBseFilings(
       { company: "500325", startDate: "2026-01-01", endDate: "2026-05-01" },
       options(fetchFn),
     );
     expect(filings).toHaveLength(2);
-    const result = filings.find((filing) => filing.accession === "abc123");
+    const result = filings.find((filing) => filing.accession === RESULT_ATTACHMENT);
     expect(result?.description).toBe("Board Meeting Outcome & Results");
     expect(result?.form).toBe("Result");
     expect(result?.category).toBe("Financial Results");
     expect(result?.filedDate).toBe("2026-04-21");
     expect(result?.source).toBe("BSE India");
-    expect(result?.sourceUrl).toBe(`${BSE_ATTACHMENT_BASE_URL}/abc123.pdf`);
-    // A row with no attachment falls back to the corporate-announcements page.
-    const agm = filings.find((filing) => filing.accession === "def456");
-    expect(agm?.sourceUrl).toBe(`${BSE_SITE_URL}/corporates/ann.html`);
-    // The feed URL carried the resolved scrip code and the date window.
-    const annReq = fetchFn.requests.find((request) =>
-      request.url.includes("AnnGetData"),
+    expect(result?.sourceIdentifiers?.bseNewsId).toBe(RESULT_NEWS_ID);
+    expect(result?.sourceUrl).toBe(
+      `${BSE_ATTACHMENT_HIS_BASE_URL}/${RESULT_ATTACHMENT}`,
     );
-    expect(annReq?.url).toContain("strScrip=500325");
-    expect(annReq?.url).toContain("strPrevDate=20260101");
-    expect(annReq?.url).toContain("strToDate=20260501");
+
+    const agm = filings.find(
+      (filing) => filing.sourceIdentifiers?.bseNewsId === AGM_NEWS_ID,
+    );
+    expect(agm?.accession).toBeUndefined();
+    expect(agm?.sourceUrl).toBe(`${BSE_SITE_URL}/corporates/ann.html`);
+
+    const request = fetchFn.requests.find(({ url }) =>
+      url.includes("AnnSubCategoryGetData")
+    );
+    expect(request?.url).toContain("pageno=1");
+    expect(request?.url).toContain("subcategory=-1");
+    expect(request?.url).toContain("strScrip=500325");
+    expect(request?.url).toContain("strPrevDate=20260101");
+    expect(request?.url).toContain("strToDate=20260501");
   });
 
-  test("degrades to an empty list when the feed returns 'No Record Found!'", async () => {
+  test("paginates until a selective match appears and deduplicates NEWSID", async () => {
+    const firstRows = Array.from({ length: 50 }, (_, index) =>
+      announcement(
+        index === 49 ? "duplicate-news" : `page1-${index}`,
+        `page1-${index}.pdf`,
+        `Routine announcement ${index}`,
+      )
+    );
+    const secondRows = [
+      announcement("duplicate-news", "duplicate.pdf", "Duplicate row"),
+      announcement("annual-news", "annual-report.pdf", "Integrated Annual Report", {
+        CATEGORYNAME: "Annual Report",
+      }),
+    ];
     const fetchFn = routedFetch([
       searchRoute,
-      { pattern: "AnnGetData", body: "No Record Found!" },
+      { pattern: /pageno=1(?:&|$)/, body: page(firstRows, "52") },
+      { pattern: /pageno=2(?:&|$)/, body: page(secondRows, 52) },
     ]);
-    const filings = await searchBseFilings("500325", options(fetchFn));
-    expect(filings).toHaveLength(0);
+    const result = await getBseFilings(
+      { company: "500325", forms: ["annual report"], limit: 5 },
+      options(fetchFn),
+    );
+    expect(result.filings).toHaveLength(1);
+    expect(result.filings[0]?.accession).toBe("annual-report.pdf");
+    expect(result.totalRows).toBe(52);
+    expect(result.pagesScanned).toBe(2);
+    expect(result.scanTruncated).toBe(false);
   });
+
+  test("reports scan truncation when the 1,000-row ceiling is reached", async () => {
+    const routes: Route[] = [searchRoute];
+    for (let pageNumber = 1; pageNumber <= 20; pageNumber += 1) {
+      routes.push({
+        pattern: new RegExp(`pageno=${pageNumber}(?:&|$)`),
+        body: page(
+          Array.from({ length: 50 }, (_, index) =>
+            announcement(
+              `p${pageNumber}-${index}`,
+              `p${pageNumber}-${index}.pdf`,
+              `Routine ${pageNumber}-${index}`,
+            )
+          ),
+          1_100,
+        ),
+      });
+    }
+    const result = await getBseFilings(
+      { company: "500325", forms: ["never matches"], limit: 5 },
+      options(routedFetch(routes)),
+    );
+    expect(result.filings).toHaveLength(0);
+    expect(result.pagesScanned).toBe(20);
+    expect(result.scanTruncated).toBe(true);
+  });
+
+  test("accepts the exact no-record envelope as an honest empty result", async () => {
+    const fetchFn = routedFetch([
+      searchRoute,
+      { pattern: "AnnSubCategoryGetData", body: "No Record Found!" },
+    ]);
+    const result = await getBseFilings("500325", options(fetchFn));
+    expect(result).toEqual({
+      filings: [],
+      totalRows: 0,
+      pagesScanned: 1,
+      scanTruncated: false,
+    });
+  });
+
+  for (const [label, body] of [
+    ["HTML anti-bot shell", "<!doctype html><title>Access Denied</title>"],
+    ["JSON false", "false"],
+    ["missing Table1", { Table: [] }],
+    ["negative ROWCNT", { Table: [], Table1: [{ ROWCNT: -1 }] }],
+    ["fractional ROWCNT", { Table: [], Table1: [{ ROWCNT: 1.5 }] }],
+    ["nonnumeric ROWCNT", { Table: [], Table1: [{ ROWCNT: "many" }] }],
+  ] as const) {
+    test(`rejects ${label} instead of returning a false empty result`, async () => {
+      const fetchFn = routedFetch([
+        searchRoute,
+        { pattern: "AnnSubCategoryGetData", body },
+      ]);
+      await expect(getBseFilings("500325", options(fetchFn))).rejects.toBeInstanceOf(
+        BseApiError,
+      );
+    });
+  }
 
   test("applies a case-insensitive form filter", async () => {
     const fetchFn = routedFetch([searchRoute, announcementRoute]);
@@ -161,17 +268,27 @@ describe("searchBseFilings", () => {
       options(fetchFn),
     );
     expect(filings).toHaveLength(1);
-    expect(filings[0]?.accession).toBe("def456");
+    expect(filings[0]?.sourceIdentifiers?.bseNewsId).toBe(AGM_NEWS_ID);
   });
 });
 
-describe("rate limiting", () => {
+describe("BSE HTTP errors", () => {
   test("maps an HTTP 429 on search to BseRateLimitError", async () => {
     const fetchFn = routedFetch([
       { pattern: "PeerSmartSearch", body: "blocked", status: 429 },
     ]);
     await expect(searchBseCompanies("500325", options(fetchFn))).rejects.toBeInstanceOf(
       BseRateLimitError,
+    );
+  });
+
+  test("maps an HTTP 403 announcement block to BseApiError", async () => {
+    const fetchFn = routedFetch([
+      searchRoute,
+      { pattern: "AnnSubCategoryGetData", body: "blocked", status: 403 },
+    ]);
+    await expect(getBseFilings("500325", options(fetchFn))).rejects.toBeInstanceOf(
+      BseApiError,
     );
   });
 });

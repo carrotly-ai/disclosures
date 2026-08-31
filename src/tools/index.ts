@@ -143,8 +143,8 @@ import {
 import type { SzseInsiderChange } from "../adapters/szse.js";
 import {
   BSE_ANTIBOT_NOTE,
+  getBseFilings,
   searchBseCompanies,
-  searchBseFilings,
 } from "../adapters/bseIndia.js";
 import {
   FCA_NSM_INJECT_NOTE,
@@ -575,9 +575,10 @@ function filingsStructured(filings: Filing[]): Record<string, unknown> {
       form: filing.form,
       category: filing.category,
       description: filing.description,
-      // The id CompanyDocument accepts as transaction_id (accession number,
-      // GB transaction id, EDINET docID, or DART rcept_no).
+      // The id CompanyDocument accepts as transaction_id. Source-specific
+      // announcement identity remains separate where the upstream distinguishes it.
       transactionId: filing.accession,
+      announcementId: filing.sourceIdentifiers?.bseNewsId,
       sourceUrl: filing.sourceUrl,
     })),
   };
@@ -3151,34 +3152,48 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 '["Result"] or ["Annual Report"]) instead.',
             );
           }
-          const filings = await searchBseFilings({
+          const result = await getBseFilings({
             company,
             ...(forms ? { forms } : {}),
             ...(start_date ? { startDate: start_date } : {}),
             ...(end_date ? { endDate: end_date } : {}),
             limit: limit ?? 20,
           }, options);
-          if (!filings.length) {
+          if (!result.filings.length) {
             return textResult(joinSections(
               `No BSE announcements found for "${company}" in the scanned window.`,
+              result.scanTruncated
+                ? `_The search reached the ${result.pagesScanned}-page scan ceiling ` +
+                  `before exhausting ${result.totalRows.toLocaleString("en-IN")} upstream rows; ` +
+                  "narrow the date window or forms filter._"
+                : undefined,
               `_${BSE_ANTIBOT_NOTE}_`,
             ));
           }
           return textResult(joinSections(
             `# BSE announcements: ${company}`,
             markdownTable(
-              ["Filed", "Category", "Sub-category", "Headline", "Attachment"],
-              filings.map((filing) => [
+              ["Filed", "Category", "Sub-category", "Headline", "Announcement id", "Transaction id", "Attachment"],
+              result.filings.map((filing) => [
                 filing.filedDate,
                 filing.form,
                 filing.category,
                 filing.description,
+                filing.sourceIdentifiers?.bseNewsId,
+                filing.accession,
                 link("open", filing.sourceUrl),
               ]),
             ),
-            "_Attachment links open the public BSE corporate-filing PDF; this tool never returns document text._",
+            result.scanTruncated
+              ? `_The search reached the ${result.pagesScanned}-page scan ceiling ` +
+                `before exhausting ${result.totalRows.toLocaleString("en-IN")} upstream rows; ` +
+                "narrow the date window or forms filter._"
+              : undefined,
+            "_Rows with a transaction id can be opened with CompanyDocument " +
+              "(jurisdiction \"IN\"); the transaction id is the attachment filename, " +
+              "not BSE's separate announcement NEWSID._",
             `_${BSE_ANTIBOT_NOTE}_`,
-          ), filingsStructured(filings));
+          ), filingsStructured(result.filings));
         }
         if (jurisdiction === "TW") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {

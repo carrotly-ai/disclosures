@@ -87,6 +87,8 @@ export interface IdentifierSet {
   orgId?: string;
   /** BSE (India) numeric scrip code, e.g. 500325. */
   scripCode?: string;
+  /** BSE corporate-announcement NEWSID; distinct from its attachment filename. */
+  bseNewsId?: string;
   /** ISIN, e.g. INE002A01018 (used by the India/BSE adapter). */
   isin?: string;
   /** Brazil CVM registration code (código CVM), e.g. 4170 (Vale). */
