@@ -5707,15 +5707,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("PrivateRaises");
-      if (
-        jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
-        jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
-        jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
-        jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
-        jurisdiction === "ID" || jurisdiction === "MY" ||
-        jurisdiction === "TR" || jurisdiction === "AE" || jurisdiction === "PH" ||
-        jurisdiction === "AU"
-      ) {
+      if (jurisdiction !== undefined && jurisdiction !== "US") {
         if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
         if (jurisdiction === "PH") return textResult(PH_PRIVATE_RAISES_UNSUPPORTED);
         if (jurisdiction === "AU") return textResult(AU_PRIVATE_RAISES_UNSUPPORTED);
@@ -5741,7 +5733,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                             ? "HKEXnews (Hong Kong)"
                             : jurisdiction === "SG"
                               ? "ACRA (Singapore)"
-                              : jurisdiction === "TH"
+                              : jurisdiction === "NL"
+                                ? "AFM (Netherlands)"
+                                : jurisdiction === "TH"
                                 ? "DBD (Thailand)"
                                 : jurisdiction === "ID"
                                   ? "IDX (Indonesia)"

@@ -2,7 +2,7 @@ import {
   AdapterConfigurationError,
   AdapterRateLimitError,
 } from "../core/errors.js";
-import { getFollowingRedirects, getJson, getText, HttpError } from "../core/http.js";
+import { getBoundedBinaryFollowingRedirects, getJson, getText, HttpError } from "../core/http.js";
 import {
   asArray,
   asIndexedStringArray,
@@ -686,12 +686,7 @@ export async function getSecInsiders(
     const rawDocument = row.primaryDocument ? stripSecXslPrefix(row.primaryDocument) : undefined;
     if (!rawDocument?.toLowerCase().endsWith(".xml")) continue;
     const sourceUrl = secArchiveDocumentUrl(cik, row.accession, rawDocument);
-    let xml: string;
-    try {
-      xml = await secGetText(sourceUrl, options);
-    } catch {
-      continue;
-    }
+    const xml = await secGetText(sourceUrl, options);
     for (const insider of parseInsiderDocument(xml, row.form, row.filedDate, sourceUrl)) {
       const key = insider.ownerCik ?? insider.name.toLowerCase();
       const existing = merged.get(key);
@@ -967,12 +962,7 @@ export async function getSecPrivateRaises(
       ? stripSecXslPrefix(row.primaryDocument)
       : "primary_doc.xml";
     const sourceUrl = secArchiveDocumentUrl(cik, row.accession, document);
-    let xml: string;
-    try {
-      xml = await secGetText(sourceUrl, options);
-    } catch {
-      continue;
-    }
+    const xml = await secGetText(sourceUrl, options);
     raises.push(parsePrivateRaiseDocument(xml, row.form, row.filedDate, sourceUrl));
   }
   return raises.sort((a, b) => b.filedDate.localeCompare(a.filedDate));
@@ -1180,27 +1170,11 @@ async function fetchSecArchive(
   options: AdapterOptions,
 ): Promise<{ contentType: string; bytes: Uint8Array }> {
   acquireSecRequest();
-  const { response } = await getFollowingRedirects(
-    url,
-    secHeaders(options, accept),
-    SEC_REQUEST_TIMEOUT_MS,
-    options.fetchFn ?? fetch,
-  );
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > SEC_DOCUMENT_MAX_BYTES) {
-    throw new Error(
-      `Filed document is ${declared} bytes, above the ${SEC_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
-  }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > SEC_DOCUMENT_MAX_BYTES) {
-    throw new Error(
-      `Filed document is ${bytes.byteLength} bytes, above the ${SEC_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
-  }
-  const contentType = response.headers.get("content-type")?.split(";")[0]?.trim()
-    || accept;
-  return { contentType, bytes };
+  const result = await getBoundedBinaryFollowingRedirects(url, SEC_DOCUMENT_MAX_BYTES, {
+    headers: secHeaders(options, accept), timeoutMs: SEC_REQUEST_TIMEOUT_MS,
+    fetchFn: options.fetchFn ?? fetch,
+  });
+  return { bytes: result.bytes, contentType: result.headers.get("content-type")?.split(";")[0]?.trim() || accept };
 }
 
 /** Strip SEC HTML/iXBRL markup (including style/script blocks) to plain text. */

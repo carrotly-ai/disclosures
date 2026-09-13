@@ -78,6 +78,7 @@ export interface EsefFiling {
   packageUrl?: string;
   reportUrl?: string;
   dateAdded?: string;
+  dateAddedAt?: string;
 }
 
 export interface EsefIssuer {
@@ -285,10 +286,17 @@ function parseFilings(payload: unknown): EsefFiling[] {
       ...pathAttr(attrs.viewer_url, "viewerUrl"),
       ...pathAttr(attrs.package_url, "packageUrl"),
       ...pathAttr(attrs.report_url, "reportUrl"),
-      ...(asString(attrs.date_added) ? { dateAdded: dateOnly(asString(attrs.date_added)) } : {}),
+      ...(asString(attrs.date_added) ? {
+        dateAdded: dateOnly(asString(attrs.date_added)),
+        dateAddedAt: asString(attrs.date_added)!,
+      } : {}),
     });
   }
-  return filings.sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
+  return filings.sort((a, b) =>
+    b.periodEnd.localeCompare(a.periodEnd) ||
+    (Date.parse(b.dateAddedAt ?? "") || 0) - (Date.parse(a.dateAddedAt ?? "") || 0) ||
+    b.fxoId.localeCompare(a.fxoId),
+  );
 }
 
 function leiFromEntityId(root: Record<string, unknown>, entityId: string): string | undefined {
@@ -361,11 +369,13 @@ function annualPeriodEnd(period: string | undefined): string | undefined {
   return inclusivePeriodEnd(end);
 }
 
-function unitCode(unit: string | undefined): string {
-  if (!unit) return "";
-  const colon = unit.indexOf(":");
-  const code = colon === -1 ? unit : unit.slice(colon + 1);
-  return /^[A-Z]{3}$/.test(code) ? code : "";
+function unitCode(unit: string | undefined): string | undefined {
+  if (!unit) return undefined;
+  const currency = unit.match(/^(?:iso4217:)?([A-Z]{3})(?:\/(?:xbrli:)?shares)?$/);
+  if (currency) return currency[1] + (unit.includes("/") ? "/shares" : "");
+  if (unit === "xbrli:shares" || unit === "shares") return "shares";
+  if (unit === "xbrli:pure" || unit === "pure") return "pure";
+  return undefined;
 }
 
 function extractCandidates(
@@ -388,8 +398,13 @@ function extractCandidates(
     const periodEnd = annualPeriodEnd(asString(dims.period));
     if (!periodEnd) continue;
 
+    if (typeof fact.value !== "number" &&
+      (typeof fact.value !== "string" || !/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(fact.value.trim()))) continue;
     const value = Number(fact.value);
     if (!Number.isFinite(value)) continue;
+
+    const unit = unitCode(asString(dims.unit));
+    if (!unit) continue;
 
     out.push({
       concept: spec.concept,
@@ -397,7 +412,7 @@ function extractCandidates(
       priority: spec.priority,
       periodEnd,
       value,
-      unit: unitCode(asString(dims.unit)),
+      unit,
     });
   }
   return out;
