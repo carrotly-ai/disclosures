@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [18, 20, 22, 24]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -24,25 +24,11 @@ jobs:
           node-version: ${{ matrix.node-version }}
           registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile
-      - run: bunx tsc --noEmit
+      - run: bun run typecheck
       - run: bun test
       - run: bun run build
       - run: bun run test:stdio
-      - name: Inspect package contents
-        run: |
-          npm pack --dry-run --json > pack.json
-          node --input-type=module <<'NODE'
-          import { readFileSync } from 'node:fs';
-          const [pack] = JSON.parse(readFileSync('pack.json', 'utf8'));
-          const allowed = /^(dist\/|README\.md$|LICENSE$|NOTICE$|package\.json$)/;
-          const unexpected = pack.files.map((file) => file.path).filter((path) => !allowed.test(path));
-          if (unexpected.length) throw new Error(`Unexpected package files: ${unexpected.join(', ')}`);
-          const paths = new Set(pack.files.map((file) => file.path));
-          for (const required of ['dist/server.mjs', 'README.md', 'LICENSE', 'package.json']) {
-            if (!paths.has(required)) throw new Error(`Missing package file: ${required}`);
-          }
-          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
-          if (pkg.dependencies && Object.keys(pkg.dependencies).length) {
-            throw new Error('Published package must have zero runtime dependencies');
-          }
-          NODE
+      - name: Verify fresh bundle on the selected Node runtime
+        run: node scripts/check-runtime.mjs
+      - name: Compile a clean packed-package consumer
+        run: node scripts/check-package.mjs

@@ -24,7 +24,7 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile
-      - run: bunx tsc --noEmit
+      - run: bun run typecheck
       - run: bun test
       - run: bun run build
       - run: bun run test:stdio
@@ -32,7 +32,8 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           test "${GITHUB_REF_NAME}" = "v${VERSION}"
-      - run: npm pack --dry-run
+      - run: node scripts/check-runtime.mjs
+      - run: node scripts/check-package.mjs
       - name: Upgrade npm for OIDC trusted publishing
         run: |
           npm install -g npm@latest

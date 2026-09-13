@@ -11,6 +11,13 @@ All notable changes to this project will be documented here.
 
 ### Fixed
 
+- Enforced HTTP Host/Origin allowlists and bearer authentication for non-loopback binds; confined hosted PDF paths and made all PDF writes exclusive with unique temporary defaults.
+- Extended HTTP deadlines through body consumption, cancelled stalled/rejected bodies, and applied incremental byte caps across document adapters.
+- Preserved missing ESEF values as missing, normalized per-share units, and selected same-period amendments by full timestamps; SEC document failures now surface instead of becoming false absence claims, and every non-US private-raise route is rejected explicitly.
+- Replaced stale fulfilled-promise caches with TTL-aware loaders across nine adapters; persistent cache writes are atomic and cache outages do not fail source lookups.
+- Declared SDK/Zod dependencies required by published types, pinned TypeScript and Node typings, and added isolated consumer compilation plus fresh-bundle Node 18/20/22/24 transport checks. HTTP supplies Node 18's missing Web Crypto global from `node:crypto`.
+- Added a bounded daily keyless source canary with explicit degraded results and retained JSON diagnostics.
+
 - Replaced BSE's stale `AnnGetData` announcement endpoint with the current paginated `AnnSubCategoryGetData` feed, including strict `ROWCNT` validation, deduplication, and honest scan-ceiling reporting.
 - Separated BSE announcement `NEWSID` from the independent attachment filename: structured filing output now exposes `announcementId` and a correctly chainable document `transactionId` instead of conflating the two.
 
