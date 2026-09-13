@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /**
@@ -13,11 +13,7 @@ import { join } from "node:path";
  */
 export interface DisclosuresCache {
   get(key: string): Promise<string | undefined> | string | undefined;
-  set(
-    key: string,
-    value: string,
-    ttlMs?: number,
-  ): Promise<void> | void;
+  set(key: string, value: string, ttlMs?: number): Promise<void> | void;
 }
 
 interface InMemoryEntry {
@@ -48,8 +44,7 @@ export class InMemoryCache implements DisclosuresCache {
   }
 
   set(key: string, value: string, ttlMs?: number): void {
-    const expiresAt =
-      ttlMs === undefined ? undefined : this.now() + ttlMs;
+    const expiresAt = ttlMs === undefined ? undefined : this.now() + ttlMs;
     this.store.set(key, { value, expiresAt });
   }
 
@@ -103,22 +98,38 @@ export class FileCache implements DisclosuresCache {
     } catch {
       return undefined;
     }
-    if (typeof parsed?.value !== "string") return undefined;
+    if (
+      parsed?.key !== key ||
+      typeof parsed.value !== "string" ||
+      (parsed.expiresAt !== null && !Number.isFinite(parsed.expiresAt))
+    )
+      return undefined;
     if (parsed.expiresAt !== null && this.now() >= parsed.expiresAt) {
-      await rm(path, { force: true }).catch(() => {});
       return undefined;
     }
     return parsed.value;
   }
 
   async set(key: string, value: string, ttlMs?: number): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
-    const envelope: FileEntryEnvelope = {
-      key,
-      value,
-      expiresAt: ttlMs === undefined ? null : this.now() + ttlMs,
-    };
-    await writeFile(this.pathFor(key), JSON.stringify(envelope), "utf8");
+    const temporary = join(this.dir, `.cache-${randomUUID()}.tmp`);
+    try {
+      await mkdir(this.dir, { recursive: true, mode: 0o700 });
+      const envelope: FileEntryEnvelope = {
+        key,
+        value,
+        expiresAt: ttlMs === undefined ? null : this.now() + ttlMs,
+      };
+      await writeFile(temporary, JSON.stringify(envelope), {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      await rename(temporary, this.pathFor(key));
+    } catch {
+      // Cache availability must not affect the source lookup.
+    } finally {
+      await rm(temporary, { force: true }).catch(() => {});
+    }
   }
 }
 
@@ -133,7 +144,12 @@ export async function readCachedJson<T>(
   key: string,
   validate: (value: unknown) => T | undefined,
 ): Promise<T | undefined> {
-  const raw = await cache.get(key);
+  let raw: string | undefined;
+  try {
+    raw = await cache.get(key);
+  } catch {
+    return undefined;
+  }
   if (raw === undefined) return undefined;
   let parsed: unknown;
   try {
@@ -155,5 +171,49 @@ export async function writeCachedJson(
   value: unknown,
   ttlMs?: number,
 ): Promise<void> {
-  await cache.set(key, JSON.stringify(value), ttlMs);
+  try {
+    await cache.set(key, JSON.stringify(value), ttlMs);
+  } catch {
+    /* best-effort cache */
+  }
+}
+
+/** A single TTL-bearing cache layer, with in-flight work shared per backend. */
+export class CachedLoader<T> {
+  private readonly memory = new InMemoryCache();
+  private pending = new WeakMap<DisclosuresCache, Map<string, Promise<T>>>();
+
+  clear(): void {
+    this.memory.clear();
+    this.pending = new WeakMap();
+  }
+
+  async load(
+    key: string,
+    ttlMs: number,
+    validate: (value: unknown) => T | undefined,
+    fetchValue: () => Promise<T>,
+    cache: DisclosuresCache = this.memory,
+  ): Promise<T> {
+    const cached = await readCachedJson(cache, key, validate);
+    if (cached !== undefined) return cached;
+    let pending = this.pending.get(cache);
+    if (!pending) {
+      pending = new Map();
+      this.pending.set(cache, pending);
+    }
+    const existing = pending.get(key);
+    if (existing) return existing;
+    const promise = (async () => {
+      const value = await fetchValue();
+      await writeCachedJson(cache, key, value, ttlMs);
+      return value;
+    })();
+    pending.set(key, promise);
+    try {
+      return await promise;
+    } finally {
+      if (pending.get(key) === promise) pending.delete(key);
+    }
+  }
 }

@@ -12,7 +12,7 @@ export const COMPANY_JURISDICTIONS = [
 ] as const;
 
 export const DOCUMENT_JURISDICTIONS = [
-  "US", "GB", "JP", "KR", "FR", "HK", "CN", "TR", "AE", "PH", "AU",
+  "US", "GB", "JP", "KR", "FR", "HK", "CN", "IN", "TR", "AE", "PH", "AU",
 ] as const;
 
 export const PERSON_APPOINTMENT_JURISDICTIONS = [

@@ -1,7 +1,13 @@
+import {
+  ResponseSizeLimitError,
+  headResponse,
+  getBinary,
+  getText,
+  HttpError,
+} from "../core/http.js";
 import { readCachedJson, writeCachedJson } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
-import { getBinary, getText, HttpError } from "../core/http.js";
 import { countPdfPages, decodeXmlEntities, plainXmlText } from "../core/parsing.js";
 import { kapRateLimiter } from "../core/rateLimiter.js";
 import type { AdapterOptions, Entity } from "../core/types.js";
@@ -701,10 +707,7 @@ export async function getKapDocumentMetadata(
   let pdfContentType: string | undefined;
   try {
     acquireRequest();
-    const response = await (options.fetchFn ?? fetch)(pdfUrl, {
-      method: "HEAD",
-      headers: BROWSER_HEADERS,
-    });
+    const response = await headResponse(pdfUrl, BROWSER_HEADERS, KAP_REQUEST_TIMEOUT_MS, options.fetchFn ?? fetch);
     if (response.ok) {
       pdfContentType = response.headers.get("content-type") ?? undefined;
       const length = response.headers.get("content-length");
@@ -763,8 +766,10 @@ export async function getKapDocumentPdf(
       { ...BROWSER_HEADERS, Accept: "application/pdf, application/octet-stream, */*" },
       KAP_REQUEST_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      KAP_DOCUMENT_MAX_BYTES,
     );
   } catch (error) {
+    if (error instanceof ResponseSizeLimitError) throw new KapApiError(error.message);
     if (error instanceof HttpError) {
       if (error.status === 429) throw new KapRateLimitError();
       if (error.status === 404) {
@@ -772,12 +777,6 @@ export async function getKapDocumentPdf(
       }
     }
     throw error;
-  }
-  if (bytes.byteLength > KAP_DOCUMENT_MAX_BYTES) {
-    throw new KapApiError(
-      `KAP document is ${bytes.byteLength} bytes, above the ` +
-        `${KAP_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
   }
   if (!isPdfBytes(bytes)) {
     throw new KapApiError(

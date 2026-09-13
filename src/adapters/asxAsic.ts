@@ -1,7 +1,7 @@
-import { readCachedJson, writeCachedJson } from "../core/cache.js";
+import { ResponseSizeLimitError, getBinary, getJson, HttpError } from "../core/http.js";
+import { CachedLoader, readCachedJson, writeCachedJson } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
-import { getBinary, getJson, HttpError } from "../core/http.js";
 import { asArray, asRecord, asString, countPdfPages } from "../core/parsing.js";
 import { asicRateLimiter, asxRateLimiter } from "../core/rateLimiter.js";
 import type { AdapterOptions, Entity, Filing, Insider } from "../core/types.js";
@@ -316,10 +316,10 @@ export interface AsxListedCompany {
   marketCap?: number;
 }
 
-let directoryPromise: Promise<AsxListedCompany[]> | undefined;
+const directoryPromise = new CachedLoader<AsxListedCompany[]>();
 
 export function resetAsxDirectoryCache(): void {
-  directoryPromise = undefined;
+  directoryPromise.clear();
 }
 
 export function asxDirectoryUrl(itemsPerPage = 2000): string {
@@ -415,31 +415,8 @@ async function fetchAsxDirectory(options: AdapterOptions): Promise<AsxListedComp
 export async function loadAsxDirectory(
   options: AdapterOptions = {},
 ): Promise<AsxListedCompany[]> {
-  if (options.cache) {
-    const cached = await readCachedJson(
-      options.cache,
-      ASX_DIRECTORY_CACHE_KEY,
-      parseDirectoryCache,
-    );
-    if (cached) return cached;
-  }
-  directoryPromise ??= fetchAsxDirectory(options);
-  let rows: AsxListedCompany[];
-  try {
-    rows = await directoryPromise;
-  } catch (error) {
-    directoryPromise = undefined;
-    throw error;
-  }
-  if (options.cache) {
-    await writeCachedJson(
-      options.cache,
-      ASX_DIRECTORY_CACHE_KEY,
-      rows,
-      ASX_DIRECTORY_CACHE_TTL_MS,
-    );
-  }
-  return rows;
+  return directoryPromise.load(ASX_DIRECTORY_CACHE_KEY, ASX_DIRECTORY_CACHE_TTL_MS, parseDirectoryCache,
+    () => fetchAsxDirectory(options), options.cache);
 }
 
 /** ASX listing codes are 3 letters, occasionally 3 letters + a class digit. */
@@ -1078,8 +1055,10 @@ export async function getAsxDocumentPdf(
       ASX_DOCUMENT_HEADERS,
       ASX_DOWNLOAD_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      ASX_DOCUMENT_MAX_BYTES,
     );
   } catch (error) {
+    if (error instanceof ResponseSizeLimitError) throw new AsxApiError(error.message);
     if (error instanceof HttpError) {
       if (error.status === 429) throw new AsxRateLimitError();
       if (error.status === 404) {
@@ -1091,13 +1070,6 @@ export async function getAsxDocumentPdf(
       }
     }
     throw error;
-  }
-  if (bytes.byteLength > ASX_DOCUMENT_MAX_BYTES) {
-    throw new AsxApiError(
-      `ASX announcement document is ${bytes.byteLength} bytes, above the ` +
-        `${ASX_DOCUMENT_MAX_BYTES}-byte download cap. Open it in a browser at ` +
-        `${url} instead.`,
-    );
   }
   if (!isPdfBytes(bytes)) {
     throw new AsxApiError(

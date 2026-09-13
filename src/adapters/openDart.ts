@@ -1,11 +1,11 @@
-import { readCachedJson, writeCachedJson } from "../core/cache.js";
+import { ResponseSizeLimitError, getBinary, getJson } from "../core/http.js";
+import { CachedLoader } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import {
   AdapterConfigurationError,
   AdapterError,
   AdapterRateLimitError,
 } from "../core/errors.js";
-import { getBinary, getJson } from "../core/http.js";
 import {
   asArray,
   asRecord,
@@ -245,14 +245,14 @@ async function requestJson(
 
 // --- Corp-code resolution ---------------------------------------------------
 
-let corpCodeListPromise: Promise<OpenDartCorpCode[]> | undefined;
+const corpCodeListPromise = new CachedLoader<OpenDartCorpCode[]>();
 
 /** Cross-call cache key + TTL for the corp-code archive (regenerated daily). */
 export const OPEN_DART_CORP_CODE_CACHE_KEY = "opendart:corp-code:v1";
 export const OPEN_DART_CORP_CODE_CACHE_TTL_MS = 24 * 60 * 60_000;
 
 export function resetOpenDartCorpCodeCache(): void {
-  corpCodeListPromise = undefined;
+  corpCodeListPromise.clear();
 }
 
 /** Validate a cached corp-code payload; a bad shape returns undefined (miss). */
@@ -320,6 +320,7 @@ async function fetchCorpCodes(options: AdapterOptions): Promise<OpenDartCorpCode
     { Accept: "application/zip, application/octet-stream, */*" },
     OPEN_DART_REQUEST_TIMEOUT_MS,
     options.fetchFn ?? fetch,
+    64 * 1024 * 1024,
   );
   const entry = readSingleZipEntry(archive, { maxEntrySize: 256 * 1024 * 1024 });
   const xml = new TextDecoder("utf-8").decode(entry.data);
@@ -331,36 +332,8 @@ async function fetchCorpCodes(options: AdapterOptions): Promise<OpenDartCorpCode
 }
 
 async function loadCorpCodes(options: AdapterOptions): Promise<OpenDartCorpCode[]> {
-  // Prefer an injected cross-call cache (survives process restarts) so the
-  // multi-MB archive is not re-downloaded on every cold start.
-  if (options.cache) {
-    const cached = await readCachedJson(
-      options.cache,
-      OPEN_DART_CORP_CODE_CACHE_KEY,
-      parseCorpCodeCache,
-    );
-    if (cached) return cached;
-  }
-  // The corp-code archive lists every filer; also memoize it per process. A
-  // fresh AdapterOptions.fetchFn (e.g. per test) still shares this in-memory
-  // cache, so tests reset it explicitly via resetOpenDartCorpCodeCache().
-  corpCodeListPromise ??= fetchCorpCodes(options);
-  let entries: OpenDartCorpCode[];
-  try {
-    entries = await corpCodeListPromise;
-  } catch (error) {
-    corpCodeListPromise = undefined;
-    throw error;
-  }
-  if (options.cache) {
-    await writeCachedJson(
-      options.cache,
-      OPEN_DART_CORP_CODE_CACHE_KEY,
-      entries,
-      OPEN_DART_CORP_CODE_CACHE_TTL_MS,
-    );
-  }
-  return entries;
+  return corpCodeListPromise.load(OPEN_DART_CORP_CODE_CACHE_KEY, OPEN_DART_CORP_CODE_CACHE_TTL_MS, parseCorpCodeCache,
+    () => fetchCorpCodes(options), options.cache);
 }
 
 function companyViewerUrl(corpCode: string): string {
@@ -911,7 +884,11 @@ export async function getOpenDartDocument(
     { Accept: "application/zip, application/xml, application/octet-stream, */*" },
     OPEN_DART_REQUEST_TIMEOUT_MS,
     options.fetchFn ?? fetch,
-  );
+    OPEN_DART_DOCUMENT_MAX_BYTES,
+  ).catch(error => {
+    if (error instanceof ResponseSizeLimitError) throw new OpenDartApiError("", error.message);
+    throw error;
+  });
   if (!isZipArchive(bytes)) {
     // A non-ZIP body is a <result><status>…</status><message>…</message> envelope.
     const envelope = new TextDecoder("utf-8").decode(bytes.slice(0, 4096));
@@ -919,13 +896,6 @@ export async function getOpenDartDocument(
     const message = /<message>\s*([^<]+?)\s*<\/message>/i.exec(envelope)?.[1]?.trim();
     interpretStatus(status, message ?? OPEN_DART_STATUS_MESSAGES[status]);
     throw new OpenDartApiError(status, message ?? `OpenDART returned status ${status}.`);
-  }
-  if (bytes.byteLength > OPEN_DART_DOCUMENT_MAX_BYTES) {
-    throw new OpenDartApiError(
-      "",
-      `OpenDART archive is ${bytes.byteLength} bytes, above the ` +
-        `${OPEN_DART_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
   }
   const entries = readZipEntries(bytes, {
     maxEntries: 4096,

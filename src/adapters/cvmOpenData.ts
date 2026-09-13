@@ -1,4 +1,4 @@
-import { readCachedJson, writeCachedJson } from "../core/cache.js";
+import { CachedLoader } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
 import { getBinary, HttpError } from "../core/http.js";
@@ -166,7 +166,7 @@ function isoDate(value: string | undefined): string | undefined {
 
 // --- Dataset loading -------------------------------------------------------
 
-const csvPromises = new Map<string, Promise<CvmRow[]>>();
+const csvPromises = new CachedLoader<CvmRow[]>();
 
 /** Reset the process-local dataset memo (used by tests for isolation). */
 export function resetCvmDatasetCache(): void {
@@ -211,29 +211,8 @@ async function loadRows(
   options: AdapterOptions,
   timeoutMs: number,
 ): Promise<CvmRow[]> {
-  if (options.cache) {
-    const cached = await readCachedJson(options.cache, cacheKey, validateRows);
-    if (cached) return cached;
-  }
-  let promise = csvPromises.get(cacheKey);
-  if (!promise) {
-    promise = fetchCsvBytes(url, options, timeoutMs).then(parse);
-    csvPromises.set(cacheKey, promise);
-  }
-  let rows: CvmRow[];
-  try {
-    rows = await promise;
-  } catch (error) {
-    csvPromises.delete(cacheKey);
-    throw error;
-  }
-  if (options.cache) {
-    const ttl = cacheKey.startsWith("cvm:cad")
-      ? CVM_REGISTRATION_CACHE_TTL_MS
-      : CVM_YEARLY_CACHE_TTL_MS;
-    await writeCachedJson(options.cache, cacheKey, rows, ttl);
-  }
-  return rows;
+  return csvPromises.load(cacheKey, cacheKey.startsWith("cvm:cad") ? CVM_REGISTRATION_CACHE_TTL_MS : CVM_YEARLY_CACHE_TTL_MS, validateRows,
+    () => fetchCsvBytes(url, options, timeoutMs).then(parse), options.cache);
 }
 
 async function loadRegistration(options: AdapterOptions): Promise<CvmRow[]> {

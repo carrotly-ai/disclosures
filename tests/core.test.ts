@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import {
   HttpError,
+  ResponseSizeLimitError,
+  getBoundedBinaryFollowingRedirects,
   getFollowingRedirects,
   getJson,
   getOptionalJson,
@@ -86,6 +88,88 @@ describe("HTTP helpers", () => {
     await expect(
       getFollowingRedirects("https://example.test/loop", {}, 1000, fetchFn),
     ).rejects.toBeInstanceOf(HttpError);
+  });
+
+  test("bounded binary reads exact bytes through an allowed redirect", async () => {
+    const bytes = new TextEncoder().encode("12345");
+    const fetchFn = routedFetch([
+      { pattern: "/final", body: bytes, headers: { "Content-Length": "5" } },
+      { pattern: "/start", body: "", status: 302, headers: { location: "/final" } },
+    ]);
+    const seen: string[] = [];
+    const result = await getBoundedBinaryFollowingRedirects(
+      "https://example.test/start",
+      5,
+      {
+        fetchFn,
+        timeoutMs: 1000,
+        validateUrl: (url) => {
+          expect(new URL(url).hostname).toBe("example.test");
+          seen.push(url);
+        },
+      },
+    );
+    expect(result.bytes).toEqual(bytes);
+    expect(result.finalUrl).toBe("https://example.test/final");
+    expect(result.declaredBytes).toBe(5);
+    expect(seen).toContain("https://example.test/start");
+    expect(seen).toContain("https://example.test/final");
+  });
+
+  test("bounded binary rejects a declared over-limit response", async () => {
+    const fetchFn = routedFetch([{
+      pattern: "/large",
+      body: "small body",
+      headers: { "Content-Length": "101" },
+    }]);
+    const error = await getBoundedBinaryFollowingRedirects(
+      "https://example.test/large",
+      100,
+      { fetchFn, timeoutMs: 1000 },
+    ).catch((caught) => caught);
+    expect(error).toBeInstanceOf(ResponseSizeLimitError);
+    expect((error as ResponseSizeLimitError).declaredBytes).toBe(101);
+    expect((error as ResponseSizeLimitError).observedBytes).toBeUndefined();
+  });
+
+  test("bounded binary cancels a streamed response when observed bytes cross the limit", async () => {
+    const fetchFn = routedFetch([{
+      pattern: "/chunked",
+      body: new Uint8Array(101),
+    }]);
+    const error = await getBoundedBinaryFollowingRedirects(
+      "https://example.test/chunked",
+      100,
+      { fetchFn, timeoutMs: 1000 },
+    ).catch((caught) => caught);
+    expect(error).toBeInstanceOf(ResponseSizeLimitError);
+    expect((error as ResponseSizeLimitError).observedBytes).toBe(101);
+  });
+
+  test("bounded binary validates redirect targets before requesting them", async () => {
+    const fetchFn = routedFetch([
+      { pattern: "evil.test", body: "must not be requested" },
+      {
+        pattern: "/start",
+        body: "",
+        status: 302,
+        headers: { location: "https://evil.test/file.pdf" },
+      },
+    ]);
+    await expect(
+      getBoundedBinaryFollowingRedirects(
+        "https://example.test/start",
+        100,
+        {
+          fetchFn,
+          timeoutMs: 1000,
+          validateUrl: (url) => {
+            if (new URL(url).hostname !== "example.test") throw new Error("disallowed host");
+          },
+        },
+      ),
+    ).rejects.toThrow("disallowed host");
+    expect(fetchFn.requests).toHaveLength(1);
   });
 
   test("returns null only for optional 404 responses", async () => {

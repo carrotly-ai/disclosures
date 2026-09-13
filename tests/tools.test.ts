@@ -320,7 +320,7 @@ const cnAnnouncementRoute: Route = {
   },
 };
 
-// IN (BSE) fixtures: PeerSmartSearch HTML + one AnnGetData row.
+// IN (BSE) fixtures: PeerSmartSearch HTML + one paginated announcement row.
 const inSearchRoute: Route = {
   pattern: "PeerSmartSearch",
   body:
@@ -328,18 +328,19 @@ const inSearchRoute: Route = {
     `Reliance Industries Ltd <span>INE002A01018</span></li>`,
 };
 const inAnnouncementRoute: Route = {
-  pattern: "AnnGetData",
+  pattern: "AnnSubCategoryGetData",
   body: {
     Table: [
       {
-        NEWSID: "abc123",
+        NEWSID: "news-abc123",
         SCRIP_CD: "500325",
         HEADLINE: "Board Meeting Outcome",
         CATEGORYNAME: "Result",
         NEWS_DT: "2026-04-21T18:30:00",
-        ATTACHMENTNAME: "abc123.pdf",
+        ATTACHMENTNAME: "attachment-def456.pdf",
       },
     ],
+    Table1: [{ ROWCNT: 1 }],
   },
 };
 
@@ -2472,8 +2473,16 @@ describe("explicit IN routing", () => {
     const text = resultText(result);
     expect(text).toContain("BSE announcements");
     expect(text).toContain("Board Meeting Outcome");
-    expect(text).toContain("AttachLive/abc123.pdf");
+    expect(text).toContain("news-abc123");
+    expect(text).toContain("attachment-def456.pdf");
+    expect(text).toContain("AttachHis/attachment-def456.pdf");
+    expect(text).toContain("CompanyDocument");
     expect(text).toContain("anti-bot");
+    const filings = (result.structuredContent as {
+      filings?: Array<{ transactionId?: string; announcementId?: string }>;
+    }).filings;
+    expect(filings?.[0]?.transactionId).toBe("attachment-def456.pdf");
+    expect(filings?.[0]?.announcementId).toBe("news-abc123");
   });
 
   test("CompanyFilings latest_annual is unsupported and points to search mode", async () => {

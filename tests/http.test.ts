@@ -138,3 +138,59 @@ describe("HTTP MCP server", () => {
     }
   }, 20_000);
 });
+
+test("untrusted Host and Origin fail before tool dispatch", async () => {
+  const fetchFn = routedFetch([]);
+  running = await runHttpServer({ port: 0, env: {}, fetchFn });
+  for (const headers of [{ Host: "attacker.example" }, { Origin: "http://attacker.example" }, { Origin: "null" }]) {
+    const response = await fetch(`http://127.0.0.1:${running.port}/mcp`, {
+      method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: "{}",
+    });
+    expect(response.status).toBe(403);
+    await response.text();
+  }
+  expect(fetchFn.requests).toHaveLength(0);
+});
+
+test("non-loopback binds require authentication and explicit authorities", async () => {
+  await expect(runHttpServer({ host: "0.0.0.0", port: 0, env: {} })).rejects.toThrow("requires");
+  await expect(runHttpServer({ host: "0.0.0.0", port: 0, env: {}, bearerToken: "test" })).rejects.toThrow("requires");
+});
+
+test("hosted requests require the configured bearer token", async () => {
+  running = await runHttpServer({ host: "0.0.0.0", port: 0, env: {}, bearerToken: "test-token", allowedHosts: ["disclosures.example"], allowedOrigins: ["https://disclosures.example"] });
+  for (const [authorization, expected] of [["", 401], ["Bearer wrong", 401], ["Bearer test-token", 200]] as const) {
+    const response = await fetch(`http://127.0.0.1:${running.port}/mcp`, { method: "POST", headers: {
+      Host: "disclosures.example", Origin: "https://disclosures.example", Authorization: authorization,
+      Accept: "application/json, text/event-stream", "Content-Type": "application/json",
+    }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {
+      protocolVersion: "2025-03-26", capabilities: {}, clientInfo: { name: "test", version: "1" },
+    } }) });
+    expect(response.status).toBe(expected);
+    await response.text();
+  }
+});
+
+test("HTTP PDF paths remain confined and existing files survive", async () => {
+  const { mkdtemp, readFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "disclosures-http-files-"));
+  const client = new Client({ name: "http-files-test", version: "1" });
+  running = await runHttpServer({ port: 0, downloadDirectory: dir, env: { COMPANIES_HOUSE_API_KEY: "fake" },
+    fetchFn: async url => url.endsWith("/content")
+      ? new Response("%PDF-1.4\n%%EOF", { headers: { "Content-Type": "application/pdf" } })
+      : Response.json({ filename: "document.pdf", resources: { "application/pdf": { content_length: 15 } } }),
+  });
+  try {
+    await client.connect(new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${running.port}/mcp`)));
+    const call = (output_path: string) => client.callTool({ name: "CompanyDocument", arguments: { company: "1", jurisdiction: "GB", document_id: "fake", mode: "pdf", output_path } });
+    expect((await call("../outside.pdf")).isError).toBe(true);
+    expect((await call("result.pdf")).isError).toBeFalsy();
+    expect((await call("result.pdf")).isError).toBe(true);
+    expect(await readFile(join(dir, "result.pdf"), "utf8")).toBe("%PDF-1.4\n%%EOF");
+  } finally {
+    await client.close();
+    await rm(dir, { recursive: true, force: true });
+  }
+});

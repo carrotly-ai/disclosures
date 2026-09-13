@@ -351,7 +351,7 @@ describe("getSecInsiders", () => {
     expect(documentRequests).toHaveLength(12);
   });
 
-  test("skips unfetchable documents instead of failing", async () => {
+  test("reports a partial document retrieval failure", async () => {
     const fetchFn = routedFetch([
       {
         pattern: "data.sec.gov/submissions",
@@ -373,9 +373,7 @@ describe("getSecInsiders", () => {
       { pattern: "wk-form4_1.xml", body: FORM4_XML },
       { pattern: "broken.xml", body: "gone", status: 404 },
     ]);
-    const insiders = await getSecInsiders("320193", options(fetchFn));
-    expect(insiders).toHaveLength(1);
-    expect(insiders[0]?.name).toBe("COOK TIMOTHY D");
+    await expect(getSecInsiders("320193", options(fetchFn))).rejects.toThrow("HTTP 404");
   });
 });
 

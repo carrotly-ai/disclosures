@@ -1,6 +1,6 @@
 # Testing discipline
 
-Every test in this project runs **fully offline**. No test may reach a live service — the
+The default `bun test` suite runs **fully offline**. No test may reach a live service — the
 suite is deterministic and safe to run in CI, on a plane, or against a rate-limited API.
 
 ## The fetch-stub contract
@@ -90,9 +90,10 @@ supply the same variables directly. The suite currently covers:
   concepts, NT$ formatting, `structuredContent.concepts`;
 - credentialed **JP** annual financials (Toyota) parsed from EDINET XBRL — JPY
   formatting and consolidated basis; and
-- keyless **BR** (CVM), **CN** (cninfo) and **IN** (BSE India) resolution guarded by
-  a tolerant transport skip, while **DE** BaFin now asserts normally through the
-  allowlisted lenient HTTP path (see below).
+- keyless **BR** (CVM) and **CN** (cninfo) resolution plus **IN** (BSE India)
+  resolution and a direct known-attachment `CompanyDocument` metadata probe, guarded by a
+  tolerant transport skip; **DE** BaFin asserts normally through the allowlisted lenient HTTP
+  path (see below).
 
 Assertions intentionally target stable invariants (issuer identity, identifier formats,
 source hosts, headings, and response shape), never exact live counts, dates, or amounts.
@@ -131,3 +132,20 @@ been consolidated into per-adapter recorded-fixtures directories under
 `tests/fixtures/<source>/`, loaded through `loadFixture(source, name)`. New large verbatim
 artefacts should follow the same pattern; small or interpolated payloads stay inline. None
 of this changes the offline guarantee, which holds for the entire suite.
+
+
+## Package and supported-runtime gates
+
+`bun run test:stdio` builds a temporary bundle directly from the current source. It never reuses an existing `dist/` artifact. `bun run test:runtime` builds the package and drives both stdio and HTTP under the active Node runtime, including a raw HTTP Host-rejection check. CI repeats this under Node 18, 20, 22, and 24. Node's fetch can rewrite a caller-supplied Host header, so the Host check uses `node:http`.
+
+`bun run test:package` packs the current build, installs that tarball into a fresh temporary npm project with scripts disabled, and compiles a strict TypeScript consumer with the pinned compiler. It verifies that dependencies referenced by published declarations arrive automatically, including a negative input-type assertion. This separate packaging gate accesses npm; the unit suite does not.
+
+## Scheduled source canaries
+
+`bun run test:canary` checks four small, keyless resolution contracts: GLEIF, filings.xbrl.org, HKEXnews, and TWSE. Each source has a six-request budget, an 8 MiB accepted-byte budget, a 20-second request deadline, and a 60-second source deadline. It validates the expected identifier and source in structured output. Missing data, operational errors (including enrichment errors), and contract drift report `degraded` and produce a nonzero exit; they are never converted into successful skips.
+
+The separate `Source canary` workflow runs daily and on demand. It writes a JSON artifact and a job summary. It uses no credentials and never acknowledges ASX/PSE restrictions. These four canaries complement the broader manually run credentialed E2E suite; they do not certify every jurisdiction's current availability.
+
+## Audit regressions
+
+`auditData.test.ts` checks missing amounts versus genuine zero, EPS units, same-day amendments, exhaustive non-US routing, and failed SEC downloads. `auditInfrastructure.test.ts` checks stalled bodies, streaming limits, exclusive/symlink-safe writes, cache expiry and failures, and concurrent cache publication. HTTP tests validate host/origin/token policy and PDF confinement through real MCP requests. Existing jurisdiction fixtures continue to validate adapter-specific behavior.

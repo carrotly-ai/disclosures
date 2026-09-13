@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -7,11 +8,13 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { TOOL_NAMES } from "../src/tools/index.js";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
-const serverPath = join(repoRoot, "dist", "server.mjs");
+const buildDir = mkdtempSync(join(tmpdir(), "disclosures-stdio-"));
+const serverPath = join(buildDir, "server.mjs");
+afterAll(() => rmSync(buildDir, { recursive: true, force: true }));
 
 function ensureBuild(): void {
   if (existsSync(serverPath)) return;
-  const build = Bun.spawnSync(["bun", "run", "build"], { cwd: repoRoot });
+  const build = Bun.spawnSync(["bun", "build", "src/server.ts", "--target=node", `--outfile=${serverPath}`], { cwd: repoRoot });
   if (build.exitCode !== 0) {
     throw new Error(`bun run build failed:\n${build.stderr.toString()}`);
   }

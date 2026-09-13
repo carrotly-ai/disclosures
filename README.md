@@ -6,7 +6,7 @@
 [![CI](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml/badge.svg)](https://github.com/carrotly-ai/disclosures/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node >= 18](https://img.shields.io/node/v/disclosures?logo=node.js&logoColor=white)](https://www.npmjs.com/package/disclosures)
-[![Zero runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](https://www.npmjs.com/package/disclosures?activeTab=dependencies)
+[![Bundled runtime](https://img.shields.io/badge/runtime-bundled-brightgreen)](https://www.npmjs.com/package/disclosures?activeTab=dependencies)
 [![MCP Registry](https://img.shields.io/badge/MCP%20Registry-io.github.carrotly--ai%2Fdisclosures-6b46c1)](https://registry.modelcontextprotocol.io/v0/servers?search=io.github.carrotly-ai/disclosures)
 
 `disclosures` is a free, open-source [Model Context Protocol](https://modelcontextprotocol.io/) server **and** a TypeScript library. It answers questions like *"who are NVIDIA's directors?"*, *"who owns 5% of Samsung Electronics?"*, or *"show me Vale's last three annual results"* — with every answer linked back to the official source document.
@@ -14,7 +14,7 @@
 - **10 stable tools, 21 jurisdiction routes** — six core tools dispatch via `jurisdiction`; `OwnershipChain` is global; three specialized tools cover filed documents, secured charges, and person-level lookups. Tool names stay stable as coverage grows.
 - **Official sources only** — SEC EDGAR, GLEIF, Companies House, FCA NSM, filings.xbrl.org, OpenDART, EDINET, cninfo, SZSE, BSE, TWSE, CVM, BaFin, info-financiere, recherche-entreprises, HKEXnews, ACRA, DBD, AFM, IDX, Bursa Malaysia, KAP, DFM, PSE EDGE, ASX, and ASIC.
 - **Honest by design** — real source links only, explicit "unsupported here" answers instead of empty or fabricated results, and clear caveats ("absence of a filing is not proof").
-- **Zero runtime dependencies** — one bundled file, runs anywhere Node 18+ runs.
+- **Bundled runtime** — one JavaScript file for Node 18+. MCP SDK and Zod are declared package dependencies so TypeScript consumers receive the types used by the public API.
 
 ## Quick start
 
@@ -101,12 +101,25 @@ The same server also speaks the MCP **streamable-HTTP** transport, for hosted or
 disclosures --http --port 8080          # or: node dist/server.mjs --http
 ```
 
-- Binds `127.0.0.1` by default; pass `--host 0.0.0.0` to expose it. Port comes from `--port`, else the `PORT` env var, else `8080`.
+- Binds `127.0.0.1` by default. Port comes from `--port`, else the `PORT` env var, else `8080`. Host and supplied Origin headers must match the server allowlists. Non-loopback binds require a bearer token and explicit allowed hosts.
 - MCP endpoint: `POST /mcp` (the transport also answers the streamable-HTTP `GET`/`DELETE` handshake). Runs **stateless** — no session id, a fresh server instance per request.
 - Health check: `GET /healthz` → `200 {"name","version","tools"}`.
 - Diagnostics go to stderr only, as in stdio mode.
 
 Connect any streamable-HTTP MCP client at `http://127.0.0.1:8080/mcp`.
+
+For a hosted service, supply `DISCLOSURES_HTTP_TOKEN` through your deployment's secret configuration, then set:
+
+```bash
+DISCLOSURES_HTTP_ALLOWED_HOSTS="disclosures.example.com" \
+DISCLOSURES_HTTP_ALLOWED_ORIGINS="https://disclosures.example.com" \
+DISCLOSURES_DOWNLOAD_DIR="/var/lib/disclosures/downloads" \
+  disclosures --http --host 0.0.0.0 --port 8080
+```
+
+Terminate TLS at your reverse proxy, preserve the configured Host header, and have clients send `Authorization: Bearer <token>`. Allowed hosts are exact authorities, including a port when clients send one; comma-separated values are supported. Origins default to `http://` origins for the allowed hosts; set HTTPS origins explicitly behind TLS termination. Requests without Origin are supported for non-browser clients. The health endpoint checks Host/Origin but does not require the token.
+
+Library deployments use `runHttpServer({ bearerToken, allowedHosts, allowedOrigins, downloadDirectory })` for the same policy. HTTP downloads always stay in a server-controlled directory (a private temporary directory by default); `output_path` accepts a filename only. Stdio/library downloads may use an explicit local path. All modes refuse to overwrite existing files or symlinks; omitted paths produce unique private temporary files.
 
 Restart the client after changing its configuration, then try:
 
@@ -126,11 +139,11 @@ Restart the client after changing its configuration, then try:
 | `CompanyFinancials` | "What are its numbers?" — as-filed headline facts from structured XBRL or bounded filing parsers. | US, GB, EU, KR, JP, CN partial, TW, BR, HK partial, ID, PH partial |
 | `OwnershipChain` | "Who consolidates it?" — GLEIF direct/ultimate accounting-consolidation parents and children. | 🌐 Global (any LEI or legal name) |
 | `PrivateRaises` | "Has it raised privately?" — Form D exempt offerings, amounts, investor counts, and named related persons. | US only |
-| `CompanyDocument` | "What does the filing actually say?" — metadata, paged extracted text, or a bounded PDF saved to disk. | US, GB, JP, KR, FR, HK, CN, TR, AE, PH, AU |
+| `CompanyDocument` | "What does the filing actually say?" — metadata, paged extracted text, or a bounded PDF saved to disk. | US, GB, JP, KR, FR, HK, CN, IN, TR, AE, PH, AU |
 | `CompanyCharges` | "What's secured against it?" — registered charges/mortgages and their particulars. | GB |
 | `PersonAppointments` | "Where else does this person sit?" — person search, cross-company roles, and disqualification/enforcement lookups. | US, GB, DE, FR, AU partial (`disqualifications` only) |
 
-Six core tools dispatch across all jurisdiction routes via `jurisdiction`; `OwnershipChain` is global and jurisdiction-independent. `CompanyDocument` accepts `US`, `GB` (default), `JP`, `KR`, `FR`, `HK`, `CN`, `TR`, `AE`, `PH`, and `AU`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, `FR`, and `AU`; `CompanyCharges` is Companies House-specific and takes no `jurisdiction`.
+Six core tools dispatch across all jurisdiction routes via `jurisdiction`; `OwnershipChain` is global and jurisdiction-independent. `CompanyDocument` accepts `US`, `GB` (default), `JP`, `KR`, `FR`, `HK`, `CN`, `IN`, `TR`, `AE`, `PH`, and `AU`; `PersonAppointments` accepts `US`, `GB` (default), `DE`, `FR`, and `AU`; `CompanyCharges` is Companies House-specific and takes no `jurisdiction`.
 
 Every `company` input accepts a **name or a local identifier** — ticker, CIK, LEI, or ISIN (US/global), Companies House number (GB — incl. `SC`/`NI` prefixes for Scotland and Northern Ireland), OpenDART corp/stock code (KR), EDINET/securities/corporate code (JP), A-share or HK code (CN), BSE scrip (IN), TWSE listing code (TW), CVM registration code (BR), BaFin-Id or ISIN (DE), SIREN/ISIN/LEI (FR), 4/5-digit HKEX stock code (HK), Singapore UEN (SG), 13-digit juristic-person registration number (TH), AFM-register issuer name or LEI (NL), 4-letter IDX ticker / kode emiten (ID), 4-digit Bursa stock code or issuer name (MY), BIST stock code (TR), DFM issuer symbol (AE), PSE ticker symbol or numeric PSE company id (PH). Pass `jurisdiction: "US" | "GB" | "EU" | "KR" | "JP" | "CN" | "IN" | "TW" | "BR" | "DE" | "FR" | "HK" | "SG" | "TH" | "NL" | "ID" | "MY" | "TR" | "AE" | "PH" | "AU"` (default `US`).
 
@@ -170,7 +183,7 @@ US and global lookups work with just the User-Agent. Non-US sources are keyless 
 | [EDINET](https://api.edinet-fsa.go.jp/) | `JP` | `EDINET_API_KEY` (free, search only) | Resolution is keyless; document search needs the key. |
 | [cninfo](http://www.cninfo.com.cn/) | `CN` | None | SSE/SZSE (+ HKEX mirror) resolution, announcement PDFs, `CompanyDocument`, `CompanyFinancials` (主要会计数据 key-data table), `CompanyOwners` (前十名股东 top-10), and the SSE `CompanyInsiders` 董监高 roster — all PDF-derived modes bounded/best-effort. |
 | [SZSE disclosure API](https://www.szse.cn/disclosure/supervision/change/index.html) | `CN` | None | Keyless structured 董监高及相关人员股份变动 feed backing `CompanyInsiders` for Shenzhen-listed issuers (0/3xxxxx). |
-| [BSE India](https://www.bseindia.com/) | `IN` | None | Resolution and announcement PDFs; anti-bot host — inject a `fetchFn` if throttled. |
+| [BSE India](https://www.bseindia.com/) | `IN` | None | Resolution, paginated corporate announcements, and `CompanyDocument` PDF metadata/text/download. `NEWSID` and attachment transaction ids remain distinct; documents prefer AttachHis and are processed up to 30 MiB. Anti-bot API host — inject a `fetchFn` if throttled. |
 | [TWSE OpenAPI](https://openapi.twse.com.tw/) | `TW` | None | Resolution, material information, directors/supervisors, >10% shareholders. |
 | [CVM open data](https://dados.cvm.gov.br/) | `BR` | None | Resolution, IPE disclosure index, DFP annual financials in BRL, FRE shareholder positions (item 15) and administrator register (item 12). |
 | [BaFin](https://www.bafin.de/) AnteileInfo + DealingsInfo | `DE` | None | Resolution, §§33 ff. WpHG major holdings, Art. 19 MAR directors' dealings. |
@@ -225,7 +238,7 @@ Handlers never throw — every failure comes back as a readable MCP-shaped resul
 <details>
 <summary><b>Persistent caching</b> — skip re-downloading the KR/JP reference archives on restart</summary>
 
-The OpenDART corp-code list (KR) and EDINET code list (JP) are multi-megabyte archives that regenerate about daily. Without a cache they are memoized per process; supply one to persist across restarts:
+The OpenDART corp-code list (KR) and EDINET code list (JP) are multi-megabyte archives that regenerate about daily. Without a supplied cache they use a TTL-aware process cache; supply one to persist across restarts:
 
 ```ts
 import { FileCache, createTools } from "disclosures";
@@ -236,7 +249,7 @@ const tools = createTools({
 });
 ```
 
-`cache` is any `DisclosuresCache` (`get`/`set`). `InMemoryCache` and `FileCache` ship in the box; a corrupt, expired, or missing entry degrades to a normal refetch — a broken cache never breaks a lookup.
+`cache` is any `DisclosuresCache` (`get`/`set`). `InMemoryCache` and `FileCache` ship in the box; a corrupt, expired, or missing entry degrades to a normal refetch — a broken cache never breaks a lookup. FileCache publishes complete entries by atomic rename. Completed process values expire normally, and concurrent fetches share only in-flight work.
 
 </details>
 
@@ -308,10 +321,12 @@ Requires [Bun](https://bun.sh/) for development; the published artifact runs on 
 
 ```bash
 bun install
-bunx tsc --noEmit     # strict typecheck
+bun run typecheck     # pinned TypeScript compiler
 bun test              # full offline suite — no live HTTP
-bun run build         # bundles dist/server.mjs (zero runtime deps)
-bun run test:stdio    # stdio integration against the built artifact
+bun run build         # bundles dist/server.mjs and emits declarations
+bun run test:stdio    # stdio integration against a freshly built temporary artifact
+bun run test:runtime  # fresh bundle: stdio and HTTP on the active Node runtime
+bun run test:package  # isolated npm install and strict consumer compilation
 ```
 
 The default suite never touches the network: routed fetch stubs throw on any unmatched request. A separate live end-to-end suite builds the real Node artifact, drives it over MCP stdio, and uses whichever credentials are present in `.env.local`:
@@ -327,7 +342,7 @@ Live assertions are drift-tolerant (identity, identifier shape, source host, and
 
 ### Current gaps
 
-Coverage grows additively behind the existing tool set. The clearest next deepening target is India: BSE filings already expose report PDFs, but `CompanyDocument` and confidently parsed ownership remain pending. Other intentional gaps are documented per jurisdiction rather than represented as empty data. Suggestions and issues are welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
+Coverage grows additively behind the existing tool set. India's remaining deepening target is `CompanyOwners` from the latest-quarter BSE shareholding iXBRL/XML; annual-report PDF ownership tables are intentionally not parsed because the corpus was too irregular. Other gaps are documented per jurisdiction rather than represented as empty data. Suggestions and issues are welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
 
 ## License
 

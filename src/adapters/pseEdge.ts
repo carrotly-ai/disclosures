@@ -1,6 +1,6 @@
+import { ResponseSizeLimitError, getBinary, getText, HttpError } from "../core/http.js";
 import { rankEntities } from "../core/entityMatching.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
-import { getBinary, getText, HttpError } from "../core/http.js";
 import { countPdfPages, decodeXmlEntities } from "../core/parsing.js";
 import { pseRateLimiter } from "../core/rateLimiter.js";
 import type {
@@ -272,6 +272,7 @@ async function psePostForm(
 }
 
 function translateHttpError(error: unknown, url: string): unknown {
+  if (error instanceof ResponseSizeLimitError) return new PseApiError(error.message);
   if (error instanceof PseApiError || error instanceof PseRateLimitError) {
     return error;
   }
@@ -1091,16 +1092,10 @@ export async function getPseDocumentPdf(
       BROWSER_HEADERS,
       PSE_DOWNLOAD_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      PSE_DOCUMENT_MAX_BYTES,
     );
   } catch (error) {
     throw translateHttpError(error, url);
-  }
-  if (bytes.byteLength > PSE_DOCUMENT_MAX_BYTES) {
-    throw new PseApiError(
-      `PSE attachment "${pdfAttachment.filename}" is ${bytes.byteLength} bytes, ` +
-        `above the ${PSE_DOCUMENT_MAX_BYTES}-byte download cap. Open it in the ` +
-        `browser instead: ${url}`,
-    );
   }
   if (!isPdfBytes(bytes)) {
     throw new PseApiError(

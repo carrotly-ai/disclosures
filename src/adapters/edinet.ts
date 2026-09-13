@@ -1,11 +1,11 @@
-import { readCachedJson, writeCachedJson } from "../core/cache.js";
+import { ResponseSizeLimitError, getBinary, getJson, HttpError } from "../core/http.js";
+import { CachedLoader } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import {
   AdapterConfigurationError,
   AdapterError,
   AdapterRateLimitError,
 } from "../core/errors.js";
-import { getBinary, getJson, HttpError } from "../core/http.js";
 import {
   asArray,
   asRecord,
@@ -241,14 +241,14 @@ export function parseEdinetCodeCsv(csv: string): EdinetCodeEntry[] {
   return entries;
 }
 
-let codeListPromise: Promise<EdinetCodeEntry[]> | undefined;
+const codeListPromise = new CachedLoader<EdinetCodeEntry[]>();
 
 /** Cross-call cache key + TTL for the EDINET code list (regenerated daily). */
 export const EDINET_CODE_LIST_CACHE_KEY = "edinet:code-list:v1";
 export const EDINET_CODE_LIST_CACHE_TTL_MS = 24 * 60 * 60_000;
 
 export function resetEdinetCodeCache(): void {
-  codeListPromise = undefined;
+  codeListPromise.clear();
 }
 
 /** Validate a cached code-list payload; a bad shape returns undefined (miss). */
@@ -285,6 +285,7 @@ async function fetchCodeList(options: AdapterOptions): Promise<EdinetCodeEntry[]
     { Accept: "application/zip, application/octet-stream, */*" },
     EDINET_REQUEST_TIMEOUT_MS,
     options.fetchFn ?? fetch,
+    64 * 1024 * 1024,
   );
   const entry = readSingleZipEntry(archive, { maxEntrySize: 256 * 1024 * 1024 });
   // EdinetcodeDlInfo.csv is Shift_JIS encoded; decode natively (zero-dependency).
@@ -297,33 +298,8 @@ async function fetchCodeList(options: AdapterOptions): Promise<EdinetCodeEntry[]
 }
 
 async function loadCodeList(options: AdapterOptions): Promise<EdinetCodeEntry[]> {
-  // Prefer an injected cross-call cache (survives process restarts) so the
-  // code-list archive is not re-downloaded on every cold start.
-  if (options.cache) {
-    const cached = await readCachedJson(
-      options.cache,
-      EDINET_CODE_LIST_CACHE_KEY,
-      parseCodeListCache,
-    );
-    if (cached) return cached;
-  }
-  codeListPromise ??= fetchCodeList(options);
-  let entries: EdinetCodeEntry[];
-  try {
-    entries = await codeListPromise;
-  } catch (error) {
-    codeListPromise = undefined;
-    throw error;
-  }
-  if (options.cache) {
-    await writeCachedJson(
-      options.cache,
-      EDINET_CODE_LIST_CACHE_KEY,
-      entries,
-      EDINET_CODE_LIST_CACHE_TTL_MS,
-    );
-  }
-  return entries;
+  return codeListPromise.load(EDINET_CODE_LIST_CACHE_KEY, EDINET_CODE_LIST_CACHE_TTL_MS, parseCodeListCache,
+    () => fetchCodeList(options), options.cache);
 }
 
 function viewerUrl(): string {
@@ -854,8 +830,10 @@ async function fetchEdinetRendition(
       { Accept: accept },
       EDINET_REQUEST_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      EDINET_DOCUMENT_MAX_BYTES,
     );
   } catch (error) {
+    if (error instanceof ResponseSizeLimitError) throw new EdinetApiError("", error.message);
     if (error instanceof HttpError) {
       if (error.status === 429) throw new EdinetRateLimitError();
       if (error.status === 404) {
@@ -863,13 +841,6 @@ async function fetchEdinetRendition(
       }
     }
     throw error;
-  }
-  if (bytes.byteLength > EDINET_DOCUMENT_MAX_BYTES) {
-    throw new EdinetApiError(
-      "",
-      `EDINET rendition is ${bytes.byteLength} bytes, above the ` +
-        `${EDINET_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
   }
   return bytes;
 }

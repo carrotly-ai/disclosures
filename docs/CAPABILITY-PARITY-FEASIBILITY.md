@@ -179,7 +179,7 @@ unfinished.
 | 2 | **US `PersonAppointments` support** (person Atom search, own-disp role table, submissions JSON, SALI safe link) | Live-verified end-to-end; reuses existing Atom parsing; SpaceX-style private-issuer visibility is unique value | ✅ Delivered |
 | 3 | **JP + KR `CompanyDocument` support** (EDINET type=1/2, DART document.xml) | Both live-verified, both key-gated paths already wired, both reuse the ZIP/PDF machinery | ✅ Delivered |
 | 4 | **DE `PersonAppointments` (dealings-by-person)** | Verified, small, rides existing displaytag parser | ✅ Delivered |
-| — | CN/IN document modes | Thin (CN) or fragile (IN); fold in opportunistically | Pending |
+| 5 | CN + IN document modes | CN PDF pipeline plus BSE attachment metadata/text/download with repaired pagination and secure redirects | ✅ Delivered |
 | ✋ | `CompanyCharges` beyond GB | Not feasible on free open data anywhere; document as permanently GB-only | By design |
 
 If the extensions ship, the three tools stop being purely Companies-House-specific: the

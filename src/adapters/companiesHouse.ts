@@ -4,7 +4,7 @@ import {
   AdapterRateLimitError,
 } from "../core/errors.js";
 import {
-  getFollowingRedirects,
+  getBoundedBinaryFollowingRedirects,
   getJson,
   getOptionalJson,
   HttpError,
@@ -993,34 +993,16 @@ async function fetchDocumentContent(
   accept: string,
   options: AdapterOptions,
 ): Promise<{ contentType: string; bytes: Uint8Array }> {
-  const headers = { ...requestHeaders(options), Accept: accept };
   acquireRequest();
-  let response: Response;
   try {
-    ({ response } = await getFollowingRedirects(
-      documentContentApiUrl(documentId),
-      headers,
-      COMPANIES_HOUSE_REQUEST_TIMEOUT_MS,
-      options.fetchFn ?? fetch,
-    ));
+    const result = await getBoundedBinaryFollowingRedirects(documentContentApiUrl(documentId), COMPANIES_HOUSE_DOCUMENT_MAX_BYTES, {
+      headers: { ...requestHeaders(options), Accept: accept },
+      timeoutMs: COMPANIES_HOUSE_REQUEST_TIMEOUT_MS, fetchFn: options.fetchFn ?? fetch,
+    });
+    return { bytes: result.bytes, contentType: result.headers.get("content-type")?.split(";")[0]?.trim() || accept };
   } catch (error) {
     translateRateLimit(error);
   }
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > COMPANIES_HOUSE_DOCUMENT_MAX_BYTES) {
-    throw new Error(
-      `Filed document is ${declared} bytes, above the ${COMPANIES_HOUSE_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
-  }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > COMPANIES_HOUSE_DOCUMENT_MAX_BYTES) {
-    throw new Error(
-      `Filed document is ${bytes.byteLength} bytes, above the ${COMPANIES_HOUSE_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
-  }
-  const contentType = response.headers.get("content-type")?.split(";")[0]?.trim()
-    || accept;
-  return { contentType, bytes };
 }
 
 /**

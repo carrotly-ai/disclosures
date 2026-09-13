@@ -1,5 +1,10 @@
+import {
+  ResponseSizeLimitError,
+  getJson,
+  getBoundedBinaryFollowingRedirects,
+  HttpError,
+} from "../core/http.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
-import { getJson, getFollowingRedirects, HttpError } from "../core/http.js";
 import { asArray, asRecord, asString, countPdfPages } from "../core/parsing.js";
 import { extractPdfText } from "../core/pdfText.js";
 import { rankEntities } from "../core/entityMatching.js";
@@ -160,6 +165,7 @@ function acquireRequest(): void {
 }
 
 function mapHttpError(error: unknown): unknown {
+  if (error instanceof ResponseSizeLimitError) return new InfoFinanciereApiError(error.message);
   if (error instanceof HttpError && error.status === 429) {
     return new InfoFinanciereRateLimitError();
   }
@@ -697,6 +703,7 @@ export async function getInfoFinanciereDocumentSize(
       headers: { Accept: "application/pdf", Range: "bytes=0-0" },
       signal: controller.signal,
     });
+    void response.body?.cancel().catch(() => {});
     if (!response.ok) return undefined;
     const range = response.headers.get("content-range");
     const total = range?.match(/\/(\d+)\s*$/)?.[1];
@@ -727,28 +734,15 @@ export async function getInfoFinancierePdf(
   let bytes: Uint8Array;
   let contentType = "application/pdf";
   try {
-    const { response } = await getFollowingRedirects(
-      pdfUrl,
-      { Accept: "application/pdf" },
-      INFO_FINANCIERE_REQUEST_TIMEOUT_MS,
-      options.fetchFn ?? fetch,
-    );
-    const declared = Number(response.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > INFO_FINANCIERE_DOCUMENT_MAX_BYTES) {
-      throw new InfoFinanciereApiError(
-        `Filed document is ${declared} bytes, above the ${INFO_FINANCIERE_DOCUMENT_MAX_BYTES}-byte download cap.`,
-      );
-    }
-    contentType = response.headers.get("content-type")?.split(";")[0]?.trim()
-      || "application/pdf";
-    bytes = new Uint8Array(await response.arrayBuffer());
+    const result = await getBoundedBinaryFollowingRedirects(pdfUrl, INFO_FINANCIERE_DOCUMENT_MAX_BYTES, {
+      headers: { Accept: "application/pdf" }, timeoutMs: INFO_FINANCIERE_REQUEST_TIMEOUT_MS,
+      fetchFn: options.fetchFn ?? fetch,
+      validateUrl: (url) => { if (!isOamPdfUrl(url)) throw new InfoFinanciereApiError("Refusing a redirect outside the OAM document host."); },
+    });
+    contentType = result.headers.get("content-type")?.split(";")[0]?.trim() || "application/pdf";
+    bytes = result.bytes;
   } catch (error) {
     throw mapHttpError(error);
-  }
-  if (bytes.byteLength > INFO_FINANCIERE_DOCUMENT_MAX_BYTES) {
-    throw new InfoFinanciereApiError(
-      `Filed document is ${bytes.byteLength} bytes, above the ${INFO_FINANCIERE_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
   }
   const pageCount = countPdfPages(bytes);
   const filename = pdfUrl.split("/").pop() || "document.pdf";

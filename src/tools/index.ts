@@ -1,6 +1,4 @@
-import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { saveDocument } from "../core/documents.js";
 import { z } from "zod";
 import { defineTool, errorResult, textResult } from "../core/toolDefs.js";
 import type { ToolDefinition } from "../core/toolDefs.js";
@@ -143,8 +141,13 @@ import {
 import type { SzseInsiderChange } from "../adapters/szse.js";
 import {
   BSE_ANTIBOT_NOTE,
+  BSE_DOCUMENT_CONTENT_WARNING,
+  BSE_DOCUMENT_MAX_BYTES,
+  BseDocumentTooLargeError,
+  getBseDocumentMetadata,
+  getBseDocumentPdf,
+  getBseFilings,
   searchBseCompanies,
-  searchBseFilings,
 } from "../adapters/bseIndia.js";
 import {
   FCA_NSM_INJECT_NOTE,
@@ -575,9 +578,10 @@ function filingsStructured(filings: Filing[]): Record<string, unknown> {
       form: filing.form,
       category: filing.category,
       description: filing.description,
-      // The id CompanyDocument accepts as transaction_id (accession number,
-      // GB transaction id, EDINET docID, or DART rcept_no).
+      // The id CompanyDocument accepts as transaction_id. Source-specific
+      // announcement identity remains separate where the upstream distinguishes it.
       transactionId: filing.accession,
+      announcementId: filing.sourceIdentifiers?.bseNewsId,
       sourceUrl: filing.sourceUrl,
     })),
   };
@@ -3151,34 +3155,48 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                 '["Result"] or ["Annual Report"]) instead.',
             );
           }
-          const filings = await searchBseFilings({
+          const result = await getBseFilings({
             company,
             ...(forms ? { forms } : {}),
             ...(start_date ? { startDate: start_date } : {}),
             ...(end_date ? { endDate: end_date } : {}),
             limit: limit ?? 20,
           }, options);
-          if (!filings.length) {
+          if (!result.filings.length) {
             return textResult(joinSections(
               `No BSE announcements found for "${company}" in the scanned window.`,
+              result.scanTruncated
+                ? `_The search reached the ${result.pagesScanned}-page scan ceiling ` +
+                  `before exhausting ${result.totalRows.toLocaleString("en-IN")} upstream rows; ` +
+                  "narrow the date window or forms filter._"
+                : undefined,
               `_${BSE_ANTIBOT_NOTE}_`,
             ));
           }
           return textResult(joinSections(
             `# BSE announcements: ${company}`,
             markdownTable(
-              ["Filed", "Category", "Sub-category", "Headline", "Attachment"],
-              filings.map((filing) => [
+              ["Filed", "Category", "Sub-category", "Headline", "Announcement id", "Transaction id", "Attachment"],
+              result.filings.map((filing) => [
                 filing.filedDate,
                 filing.form,
                 filing.category,
                 filing.description,
+                filing.sourceIdentifiers?.bseNewsId,
+                filing.accession,
                 link("open", filing.sourceUrl),
               ]),
             ),
-            "_Attachment links open the public BSE corporate-filing PDF; this tool never returns document text._",
+            result.scanTruncated
+              ? `_The search reached the ${result.pagesScanned}-page scan ceiling ` +
+                `before exhausting ${result.totalRows.toLocaleString("en-IN")} upstream rows; ` +
+                "narrow the date window or forms filter._"
+              : undefined,
+            "_Rows with a transaction id can be opened with CompanyDocument " +
+              "(jurisdiction \"IN\"); the transaction id is the attachment filename, " +
+              "not BSE's separate announcement NEWSID._",
             `_${BSE_ANTIBOT_NOTE}_`,
-          ), filingsStructured(filings));
+          ), filingsStructured(result.filings));
         }
         if (jurisdiction === "TW") {
           if (mode === "latest_annual" || mode === "latest_quarterly") {
@@ -5687,15 +5705,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     companyInput,
     async ({ company, jurisdiction }) => {
       if (jurisdiction === "EU") return euUnsupportedResult("PrivateRaises");
-      if (
-        jurisdiction === "GB" || jurisdiction === "KR" || jurisdiction === "JP" ||
-        jurisdiction === "CN" || jurisdiction === "IN" || jurisdiction === "TW" ||
-        jurisdiction === "BR" || jurisdiction === "DE" || jurisdiction === "FR" ||
-        jurisdiction === "HK" || jurisdiction === "SG" || jurisdiction === "TH" ||
-        jurisdiction === "ID" || jurisdiction === "MY" ||
-        jurisdiction === "TR" || jurisdiction === "AE" || jurisdiction === "PH" ||
-        jurisdiction === "AU"
-      ) {
+      if (jurisdiction !== undefined && jurisdiction !== "US") {
         if (jurisdiction === "MY") return textResult(MY_PRIVATE_RAISES_UNSUPPORTED);
         if (jurisdiction === "PH") return textResult(PH_PRIVATE_RAISES_UNSUPPORTED);
         if (jurisdiction === "AU") return textResult(AU_PRIVATE_RAISES_UNSUPPORTED);
@@ -5721,7 +5731,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
                             ? "HKEXnews (Hong Kong)"
                             : jurisdiction === "SG"
                               ? "ACRA (Singapore)"
-                              : jurisdiction === "TH"
+                              : jurisdiction === "NL"
+                                ? "AFM (Netherlands)"
+                                : jurisdiction === "TH"
                                 ? "DBD (Thailand)"
                                 : jurisdiction === "ID"
                                   ? "IDX (Indonesia)"
@@ -5848,10 +5860,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               "HTML/XBRL — use mode=\"xhtml\" for the primary document's extracted text._",
           ));
         }
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           metaSection,
           "## Downloaded PDF",
@@ -5898,10 +5907,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     try {
       if (mode === "pdf") {
         const pdf = await getEdinetDocumentPdf(docId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# EDINET document: ${pdf.docId}`,
           "## Downloaded PDF",
@@ -6049,6 +6055,135 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     }
   }
 
+  async function companyDocumentIn(
+    transactionId: string | undefined,
+    mode: "metadata" | "xhtml" | "pdf" | undefined,
+    textOffset: number | undefined,
+    outputPath: string | undefined,
+  ): Promise<ReturnType<typeof textResult>> {
+    if (!transactionId) {
+      return textResult(
+        "Provide a transaction_id (the BSE attachment filename from " +
+          "CompanyFilings, or its official AttachHis/AttachLive HTTPS URL) to " +
+          "fetch an Indian filing's PDF.",
+      );
+    }
+    const overLimitResult = (
+      error: BseDocumentTooLargeError,
+      requestedMode: "xhtml" | "pdf",
+    ): ReturnType<typeof textResult> => {
+      const metadata = error.metadata;
+      return textResult(joinSections(
+        `# BSE document: ${metadata.filename}`,
+        markdownTable(
+          ["Field", "Value"],
+          [
+            ["Transaction id", metadata.transactionId],
+            ["Content type", metadata.contentType ?? "application/pdf"],
+            ["Size (bytes)", metadata.byteLength !== undefined ? String(metadata.byteLength) : "over limit"],
+            ["Filing", link("open", metadata.sourceUrl)],
+          ],
+        ),
+        requestedMode === "pdf"
+          ? `_No file was written: this document exceeds the ${BSE_DOCUMENT_MAX_BYTES}-byte ` +
+            "processing cap. Open the official BSE filing link instead._"
+          : `_Text extraction was skipped: this document exceeds the ${BSE_DOCUMENT_MAX_BYTES}-byte ` +
+            "processing cap. Open the official BSE filing link instead._",
+        `_${BSE_DOCUMENT_CONTENT_WARNING}_`,
+        `_${BSE_ANTIBOT_NOTE}_`,
+      ));
+    };
+
+    try {
+      if (mode === "xhtml") {
+        let pdf;
+        try {
+          pdf = await getBseDocumentPdf(transactionId, options);
+        } catch (error) {
+          if (error instanceof BseDocumentTooLargeError) {
+            return overLimitResult(error, "xhtml");
+          }
+          throw error;
+        }
+        const extracted = extractPdfText(pdf.bytes);
+        if (!extracted.text) {
+          return textResult(joinSections(
+            `# BSE document: ${pdf.suggestedFilename}`,
+            ...pdfNoTextSections(extracted),
+            `_${BSE_DOCUMENT_CONTENT_WARNING}_`,
+            `_Filing: ${link("open", pdf.sourceUrl)}._`,
+            `_${BSE_ANTIBOT_NOTE}_`,
+          ));
+        }
+        return textResult(joinSections(
+          `# BSE document: ${pdf.suggestedFilename}`,
+          ...pdfExtractionSections(
+            extracted,
+            BSE_DOCUMENT_CONTENT_WARNING,
+            textOffset ?? 0,
+          ),
+          `_Filing: ${link("open", pdf.sourceUrl)}._`,
+          `_${BSE_ANTIBOT_NOTE}_`,
+        ));
+      }
+
+      if (mode === "pdf") {
+        let pdf;
+        try {
+          pdf = await getBseDocumentPdf(transactionId, options);
+        } catch (error) {
+          if (error instanceof BseDocumentTooLargeError) {
+            return overLimitResult(error, "pdf");
+          }
+          throw error;
+        }
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
+        return textResult(joinSections(
+          `# BSE document: ${pdf.suggestedFilename}`,
+          "## Downloaded PDF",
+          markdownTable(
+            ["Field", "Value"],
+            [
+              ["Saved to", target],
+              ["Bytes", String(pdf.byteLength)],
+              ["Pages", pdf.pageCount !== undefined ? String(pdf.pageCount) : "unknown"],
+              ["Filing", link("open", pdf.sourceUrl)],
+            ],
+          ),
+          `_${BSE_DOCUMENT_CONTENT_WARNING} The file was written to disk; its ` +
+            "bytes are not inlined here._",
+          `_${BSE_ANTIBOT_NOTE}_`,
+        ));
+      }
+
+      const metadata = await getBseDocumentMetadata(transactionId, options);
+      return textResult(joinSections(
+        `# BSE document: ${metadata.filename}`,
+        markdownTable(
+          ["Field", "Value"],
+          [
+            ["Transaction id", metadata.transactionId],
+            ["Content type", metadata.contentType ?? "application/pdf"],
+            ["Size (bytes)", metadata.byteLength !== undefined ? String(metadata.byteLength) : "unknown"],
+            ["Last modified", metadata.lastModified ?? "—"],
+            ["Pages", metadata.pageCount !== undefined ? String(metadata.pageCount) : "unknown (metadata probe does not download the full PDF)"],
+            ["Filing", link("open", metadata.sourceUrl)],
+          ],
+        ),
+        metadata.overLimit
+          ? `_This document exceeds the ${BSE_DOCUMENT_MAX_BYTES}-byte processing ` +
+            "cap. Metadata and the official link remain available, but text " +
+            "extraction and local download are skipped._"
+          : "_Use mode=\"xhtml\" for the PDF's best-effort extracted text " +
+            "(paged via text_offset), or mode=\"pdf\" to download it._",
+        `_${BSE_DOCUMENT_CONTENT_WARNING}_`,
+        `_${BSE_ANTIBOT_NOTE}_`,
+      ));
+    } catch (error) {
+      return failureResult(transactionId, error);
+    }
+  }
+
   async function companyDocumentFr(
     company: string,
     transactionId: string | undefined,
@@ -6093,10 +6228,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getInfoFinancierePdf(pdfUrl, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# info-financiere document: ${record.id}`,
           "## Downloaded PDF",
@@ -6177,10 +6309,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getHkexDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# HKEXnews document: ${transactionId}`,
           "## Downloaded PDF",
@@ -6268,10 +6397,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getDfmDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# DFM document: ${pdf.suggestedFilename}`,
           "## Downloaded PDF",
@@ -6344,10 +6470,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     try {
       if (mode === "pdf") {
         const pdf = await getPseDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# PSE EDGE document: ${pdf.suggestedFilename}`,
           "## Downloaded PDF",
@@ -6481,10 +6604,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getAsxDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# ASX announcement: ${pdf.documentKey}`,
           "## Downloaded PDF",
@@ -6570,10 +6690,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         ));
       }
       if (mode === "pdf") {
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# cninfo document: ${pdf.suggestedFilename}`,
           "## Downloaded PDF",
@@ -6645,10 +6762,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getKapDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# KAP disclosure ${pdf.disclosureIndex}`,
           "## Downloaded PDF",
@@ -6725,7 +6839,8 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .describe(
           "\"GB\" (Companies House, default), \"US\" (SEC EDGAR), \"JP\" (EDINET), " +
             "\"KR\" (OpenDART), \"FR\" (info-financiere OAM), \"HK\" (HKEXnews), " +
-            "\"CN\" (cninfo SSE/SZSE), \"TR\" (KAP, by numeric disclosure id), " +
+            "\"CN\" (cninfo SSE/SZSE), \"IN\" (BSE attachment PDF filename or URL), " +
+            "\"TR\" (KAP, by numeric disclosure id), " +
             "\"AE\" (DFM Dubai — Dubai only), \"PH\" (PSE EDGE, by edge_no), " +
             "or \"AU\" (ASX announcement PDFs by documentKey — ASX content " +
             "under restrictive terms of use)",
@@ -6736,7 +6851,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .optional()
         .describe(
           "Jurisdiction-specific document id, usually returned by CompanyFilings. " +
-            "TR uses a numeric KAP disclosure id; AE uses a DFM efsah r_path; PH " +
+            "IN uses a BSE PDF attachment filename (or its official AttachHis/" +
+            "AttachLive HTTPS URL); TR uses a numeric KAP disclosure id; AE uses " +
+            "a DFM efsah r_path; PH " +
             "uses a PSE edge_no; AU uses an ASX documentKey. Read the selected " +
             "jurisdiction card for the exact identifier contract.",
         ),
@@ -6767,7 +6884,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .string()
         .min(1)
         .optional()
-        .describe("Where to save the PDF (mode=pdf); defaults to a temp file"),
+        .describe("Where to save the PDF (mode=pdf); never overwrites; hosted servers accept a filename only; defaults to a unique temp file"),
     },
     async ({ company, jurisdiction, transaction_id, document_id, mode, text_offset, output_path }) => {
       if (jurisdiction === "US") {
@@ -6787,6 +6904,9 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
       }
       if (jurisdiction === "CN") {
         return companyDocumentCn(company, transaction_id, mode, text_offset, output_path);
+      }
+      if (jurisdiction === "IN") {
+        return companyDocumentIn(transaction_id, mode, text_offset, output_path);
       }
       if (jurisdiction === "TR") {
         return companyDocumentTr(transaction_id, mode, text_offset, output_path);
@@ -6869,10 +6989,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
         if (mode === "pdf") {
           const pdf = await getCompaniesHouseDocumentPdf(metadata, options);
-          const target = output_path
-            ? (isAbsolute(output_path) ? output_path : join(process.cwd(), output_path))
-            : join(tmpdir(), pdf.suggestedFilename);
-          await writeFile(target, pdf.bytes);
+          const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, output_path, options.downloadDirectory);
           return textResult(joinSections(
             metaSection,
             "## Downloaded PDF",

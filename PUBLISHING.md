@@ -32,10 +32,12 @@ Promote `CHANGELOG.md`'s `Unreleased` section to the same version and release da
 
 ```bash
 bun install --frozen-lockfile
-bunx tsc --noEmit
+bun run typecheck
 bun test
 bun run build
 bun run test:stdio
+node scripts/check-runtime.mjs
+node scripts/check-package.mjs
 bun run pack:dry
 bun run test:live:all
 ```
@@ -58,7 +60,7 @@ PY
 ```
 
 `npm pack --dry-run --json` must contain only `dist/`, `README.md`, `LICENSE`, `NOTICE`, and
-`package.json`; the published package must have zero runtime dependencies.
+`package.json`. The standalone JavaScript bundle carries its runtime implementation; declared MCP SDK and Zod dependencies supply the public declaration graph. The isolated consumer check must compile without manually adding those dependencies or enabling `skipLibCheck`.
 
 ## 3. Merge the release PR
 
@@ -70,7 +72,7 @@ Commit the release branch, push it, and open a PR titled `Release <version>`. Re
 - strict live-suite result;
 - the runtime banner, including version and tool count.
 
-Wait for the Node 18/20/22 CI matrix and both CodeQL analyses to pass, then squash-merge.
+Wait for the Node 18/20/22/24 CI matrix and both CodeQL analyses to pass, then squash-merge.
 Sync local `main` with `git pull --ff-only` and rerun the deterministic release gate before
 tagging.
 

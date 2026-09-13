@@ -1,4 +1,4 @@
-import { readCachedJson, writeCachedJson } from "../core/cache.js";
+import { CachedLoader } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
 import { getJson, HttpError } from "../core/http.js";
@@ -135,7 +135,7 @@ function parseTwNumber(value: unknown): number | undefined {
 
 export const TWSE_DATASET_CACHE_TTL_MS = 6 * 60 * 60_000;
 
-const datasetPromises = new Map<string, Promise<JsonRecord[]>>();
+const datasetPromises = new CachedLoader<JsonRecord[]>();
 
 /** Reset the process-local dataset memo (used by tests for isolation). */
 export function resetTwseDatasetCache(): void {
@@ -188,27 +188,8 @@ async function loadDataset(
   options: AdapterOptions,
   timeoutMs: number = TWSE_REQUEST_TIMEOUT_MS,
 ): Promise<JsonRecord[]> {
-  const key = datasetCacheKey(endpoint);
-  if (options.cache) {
-    const cached = await readCachedJson(options.cache, key, validateDatasetCache);
-    if (cached) return cached;
-  }
-  let promise = datasetPromises.get(endpoint);
-  if (!promise) {
-    promise = fetchDataset(endpoint, options, timeoutMs);
-    datasetPromises.set(endpoint, promise);
-  }
-  let rows: JsonRecord[];
-  try {
-    rows = await promise;
-  } catch (error) {
-    datasetPromises.delete(endpoint);
-    throw error;
-  }
-  if (options.cache) {
-    await writeCachedJson(options.cache, key, rows, TWSE_DATASET_CACHE_TTL_MS);
-  }
-  return rows;
+  return datasetPromises.load(datasetCacheKey(endpoint), TWSE_DATASET_CACHE_TTL_MS, validateDatasetCache,
+    () => fetchDataset(endpoint, options, timeoutMs), options.cache);
 }
 
 // --- Resolution ------------------------------------------------------------
