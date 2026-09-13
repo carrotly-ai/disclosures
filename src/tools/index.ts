@@ -1,6 +1,4 @@
-import { writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { saveDocument } from "../core/documents.js";
 import { z } from "zod";
 import { defineTool, errorResult, textResult } from "../core/toolDefs.js";
 import type { ToolDefinition } from "../core/toolDefs.js";
@@ -5862,10 +5860,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
               "HTML/XBRL — use mode=\"xhtml\" for the primary document's extracted text._",
           ));
         }
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           metaSection,
           "## Downloaded PDF",
@@ -5912,10 +5907,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     try {
       if (mode === "pdf") {
         const pdf = await getEdinetDocumentPdf(docId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# EDINET document: ${pdf.docId}`,
           "## Downloaded PDF",
@@ -6145,10 +6137,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
           }
           throw error;
         }
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# BSE document: ${pdf.suggestedFilename}`,
           "## Downloaded PDF",
@@ -6239,10 +6228,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getInfoFinancierePdf(pdfUrl, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# info-financiere document: ${record.id}`,
           "## Downloaded PDF",
@@ -6323,10 +6309,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getHkexDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# HKEXnews document: ${transactionId}`,
           "## Downloaded PDF",
@@ -6414,10 +6397,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getDfmDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# DFM document: ${pdf.suggestedFilename}`,
           "## Downloaded PDF",
@@ -6490,10 +6470,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
     try {
       if (mode === "pdf") {
         const pdf = await getPseDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# PSE EDGE document: ${pdf.suggestedFilename}`,
           "## Downloaded PDF",
@@ -6627,10 +6604,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getAsxDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# ASX announcement: ${pdf.documentKey}`,
           "## Downloaded PDF",
@@ -6716,10 +6690,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         ));
       }
       if (mode === "pdf") {
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# cninfo document: ${pdf.suggestedFilename}`,
           "## Downloaded PDF",
@@ -6791,10 +6762,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
       if (mode === "pdf") {
         const pdf = await getKapDocumentPdf(transactionId, options);
-        const target = outputPath
-          ? (isAbsolute(outputPath) ? outputPath : join(process.cwd(), outputPath))
-          : join(tmpdir(), pdf.suggestedFilename);
-        await writeFile(target, pdf.bytes);
+        const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, outputPath, options.downloadDirectory);
         return textResult(joinSections(
           `# KAP disclosure ${pdf.disclosureIndex}`,
           "## Downloaded PDF",
@@ -6916,7 +6884,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
         .string()
         .min(1)
         .optional()
-        .describe("Where to save the PDF (mode=pdf); defaults to a temp file"),
+        .describe("Where to save the PDF (mode=pdf); never overwrites; hosted servers accept a filename only; defaults to a unique temp file"),
     },
     async ({ company, jurisdiction, transaction_id, document_id, mode, text_offset, output_path }) => {
       if (jurisdiction === "US") {
@@ -7021,10 +6989,7 @@ export function createTools(options: AdapterOptions = {}): ToolDefinition[] {
 
         if (mode === "pdf") {
           const pdf = await getCompaniesHouseDocumentPdf(metadata, options);
-          const target = output_path
-            ? (isAbsolute(output_path) ? output_path : join(process.cwd(), output_path))
-            : join(tmpdir(), pdf.suggestedFilename);
-          await writeFile(target, pdf.bytes);
+          const target = await saveDocument(pdf.bytes, pdf.suggestedFilename, output_path, options.downloadDirectory);
           return textResult(joinSections(
             metaSection,
             "## Downloaded PDF",

@@ -1,8 +1,14 @@
+import { CachedLoader } from "../core/cache.js";
 import {
   AdapterConfigurationError,
   AdapterRateLimitError,
 } from "../core/errors.js";
-import { getBoundedBinaryFollowingRedirects, getJson, getText, HttpError } from "../core/http.js";
+import {
+  getBoundedBinaryFollowingRedirects,
+  getJson,
+  getText,
+  HttpError,
+} from "../core/http.js";
 import {
   asArray,
   asIndexedStringArray,
@@ -144,7 +150,7 @@ export const SEC_FINANCIAL_CONCEPT_NAMES = Object.keys(SEC_FINANCIAL_CONCEPTS);
 export const SEC_FINANCIAL_CONCEPT_TAGS = Object.values(SEC_FINANCIAL_CONCEPTS)
   .flatMap((concept) => concept.tags);
 
-let tickerMapPromise: Promise<TickerCompany[]> | undefined;
+const tickerMapPromise = new CachedLoader<TickerCompany[]>();
 
 function unique(values: readonly string[]): string[] {
   return [...new Set(values.filter(Boolean))];
@@ -233,7 +239,7 @@ async function secGetText(url: string, options: AdapterOptions): Promise<string>
 }
 
 export function resetSecTickerCache(): void {
-  tickerMapPromise = undefined;
+  tickerMapPromise.clear();
 }
 
 export const resetTickerCache = resetSecTickerCache;
@@ -261,13 +267,11 @@ function parseTickerMap(payload: unknown): TickerCompany[] {
 }
 
 async function getTickerMap(options: AdapterOptions): Promise<TickerCompany[]> {
-  tickerMapPromise ??= secGetJson(SEC_COMPANY_TICKERS_URL, options).then(parseTickerMap);
-  try {
-    return await tickerMapPromise;
-  } catch (error) {
-    tickerMapPromise = undefined;
-    throw error;
-  }
+  return tickerMapPromise.load("sec:tickers:v1", 24 * 60 * 60_000,
+    value => Array.isArray(value) && value.every(row => isRecord(row) &&
+      typeof row.cik === "string" && typeof row.ticker === "string" && typeof row.title === "string")
+      ? value as TickerCompany[] : undefined,
+    () => secGetJson(SEC_COMPANY_TICKERS_URL, options).then(parseTickerMap), options.cache);
 }
 
 export function secSubmissionsUrl(cik: string | number): string {

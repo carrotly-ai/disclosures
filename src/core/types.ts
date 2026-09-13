@@ -63,6 +63,8 @@ export const DATA_SOURCES = {
 export type DataSource = (typeof DATA_SOURCES)[keyof typeof DATA_SOURCES];
 
 export interface AdapterOptions {
+  /** Confine PDF writes to this trusted directory; output_path must be a filename. */
+  downloadDirectory?: string;
   fetchFn?: FetchFn;
   env?: Env;
   /**

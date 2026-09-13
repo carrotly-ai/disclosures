@@ -1,7 +1,13 @@
-import { readCachedJson, writeCachedJson } from "../core/cache.js";
+import {
+  ResponseSizeLimitError,
+  headResponse,
+  getBinary,
+  getText,
+  HttpError,
+} from "../core/http.js";
+import { CachedLoader } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
-import { getBinary, getText, HttpError } from "../core/http.js";
 import { asArray, asRecord, asString, countPdfPages } from "../core/parsing.js";
 import { dfmRateLimiter } from "../core/rateLimiter.js";
 import type { AdapterOptions, Entity, Filing } from "../core/types.js";
@@ -231,10 +237,10 @@ export interface DfmSecurity {
 export const DFM_SECURITIES_CACHE_KEY = "dfm:securities:v1";
 export const DFM_SECURITIES_CACHE_TTL_MS = 24 * 60 * 60_000;
 
-let securitiesPromise: Promise<DfmSecurity[]> | undefined;
+const securitiesPromise = new CachedLoader<DfmSecurity[]>();
 
 export function resetDfmSecuritiesCache(): void {
-  securitiesPromise = undefined;
+  securitiesPromise.clear();
 }
 
 interface RosterRow {
@@ -336,31 +342,8 @@ async function fetchDfmSecurities(options: AdapterOptions): Promise<DfmSecurity[
 }
 
 async function loadDfmSecurities(options: AdapterOptions): Promise<DfmSecurity[]> {
-  if (options.cache) {
-    const cached = await readCachedJson(
-      options.cache,
-      DFM_SECURITIES_CACHE_KEY,
-      parseSecuritiesCache,
-    );
-    if (cached) return cached;
-  }
-  securitiesPromise ??= fetchDfmSecurities(options);
-  let entries: DfmSecurity[];
-  try {
-    entries = await securitiesPromise;
-  } catch (error) {
-    securitiesPromise = undefined;
-    throw error;
-  }
-  if (options.cache) {
-    await writeCachedJson(
-      options.cache,
-      DFM_SECURITIES_CACHE_KEY,
-      entries,
-      DFM_SECURITIES_CACHE_TTL_MS,
-    );
-  }
-  return entries;
+  return securitiesPromise.load(DFM_SECURITIES_CACHE_KEY, DFM_SECURITIES_CACHE_TTL_MS, parseSecuritiesCache,
+    () => fetchDfmSecurities(options), options.cache);
 }
 
 /**
@@ -803,7 +786,7 @@ export async function getDfmDocumentMetadata(
   const fetchFn = options.fetchFn ?? fetch;
   let response: Response;
   try {
-    response = await fetchFn(url, { method: "HEAD", headers: DOCUMENT_HEADERS });
+    response = await headResponse(url, DOCUMENT_HEADERS, DFM_REQUEST_TIMEOUT_MS, fetchFn);
   } catch (error) {
     throw new DfmApiError(
       `DFM document HEAD request failed: ${
@@ -874,8 +857,10 @@ export async function getDfmDocumentPdf(
       DOCUMENT_HEADERS,
       DFM_DOWNLOAD_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      DFM_DOCUMENT_MAX_BYTES,
     );
   } catch (error) {
+    if (error instanceof ResponseSizeLimitError) throw new DfmApiError(error.message);
     if (error instanceof HttpError) {
       if (error.status === 429) throw new DfmRateLimitError();
       if (error.status === 404) {
@@ -885,12 +870,6 @@ export async function getDfmDocumentPdf(
       }
     }
     throw error;
-  }
-  if (bytes.byteLength > DFM_DOCUMENT_MAX_BYTES) {
-    throw new DfmApiError(
-      `DFM document is ${bytes.byteLength} bytes, above the ` +
-        `${DFM_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
   }
   if (!isPdfBytes(bytes)) {
     // Pre-2012 archive disclosures are occasionally filed as a ZIP of the

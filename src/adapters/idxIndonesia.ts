@@ -807,6 +807,7 @@ export async function downloadIdxXbrlInstance(
       DOWNLOAD_HEADERS,
       IDX_DOWNLOAD_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      IDX_INSTANCE_MAX_BYTES,
     );
   } catch (error) {
     throw mapHttpError(error);

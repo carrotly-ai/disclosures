@@ -1,4 +1,4 @@
-import { readCachedJson, writeCachedJson } from "../core/cache.js";
+import { CachedLoader } from "../core/cache.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
 import { getBinary, HttpError } from "../core/http.js";
 import { decodeXmlEntities, plainXmlText } from "../core/parsing.js";
@@ -612,7 +612,7 @@ export function parseDirectorHoldingsXml(xml: string): AfmDirectorHoldingDigest[
 
 // --- Cached register loading -----------------------------------------------
 
-const registerPromises = new Map<AfmRegisterKey, Promise<unknown[]>>();
+const registerPromises = new CachedLoader<unknown[]>();
 
 /** Reset the process-local register memo (used by tests for isolation). */
 export function resetAfmRegisterCache(): void {
@@ -672,27 +672,8 @@ async function loadRegister<T>(
   register: AfmRegisterKey,
   options: AdapterOptions,
 ): Promise<T[]> {
-  const key = cacheKey(register);
-  if (options.cache) {
-    const cached = await readCachedJson(options.cache, key, validateDigestCache);
-    if (cached) return cached as T[];
-  }
-  let promise = registerPromises.get(register);
-  if (!promise) {
-    promise = buildDigest(register, options);
-    registerPromises.set(register, promise);
-  }
-  let rows: unknown[];
-  try {
-    rows = await promise;
-  } catch (error) {
-    registerPromises.delete(register);
-    throw error;
-  }
-  if (options.cache) {
-    await writeCachedJson(options.cache, key, rows, AFM_REGISTER_CACHE_TTL_MS);
-  }
-  return rows as T[];
+  return await registerPromises.load(cacheKey(register), AFM_REGISTER_CACHE_TTL_MS, validateDigestCache,
+    () => buildDigest(register, options), options.cache) as T[];
 }
 
 export async function loadAfmSubstantialHoldings(

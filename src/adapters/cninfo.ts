@@ -1,8 +1,14 @@
 import {
+  headResponse,
+  ResponseSizeLimitError,
+  getBinary,
+  HttpError,
+  postForm,
+} from "../core/http.js";
+import {
   AdapterError,
   AdapterRateLimitError,
 } from "../core/errors.js";
-import { getBinary, HttpError, postForm } from "../core/http.js";
 import { asArray, asRecord, asString, countPdfPages } from "../core/parsing.js";
 import { extractPdfText } from "../core/pdfText.js";
 import { cninfoRateLimiter } from "../core/rateLimiter.js";
@@ -851,7 +857,7 @@ async function headContentLength(
   acquireRequest();
   const fetchFn = options.fetchFn ?? fetch;
   try {
-    const response = await fetchFn(url, { method: "HEAD", headers: BROWSER_HEADERS });
+    const response = await headResponse(url, BROWSER_HEADERS, CNINFO_REQUEST_TIMEOUT_MS, fetchFn);
     const raw = response.headers.get("content-length");
     return raw && /^\d+$/.test(raw) ? Number.parseInt(raw, 10) : undefined;
   } catch {
@@ -913,15 +919,14 @@ export async function getCninfoFinancials(
       { ...BROWSER_HEADERS, Accept: "application/pdf, application/octet-stream, */*" },
       CNINFO_REQUEST_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      CNINFO_FINANCIALS_MAX_BYTES,
     );
   } catch (error) {
+    if (error instanceof ResponseSizeLimitError) return { ...base, facts: [], reason: "over-cap" };
     if (error instanceof HttpError && error.status === 429) {
       throw new CninfoRateLimitError();
     }
     throw error;
-  }
-  if (bytes.byteLength > CNINFO_FINANCIALS_MAX_BYTES) {
-    return { ...base, facts: [], reason: "over-cap" };
   }
   if (!isPdfBytes(bytes)) {
     throw new CninfoApiError(`cninfo returned no PDF at ${url}.`);
@@ -1277,14 +1282,15 @@ async function fetchReportText(
       { ...BROWSER_HEADERS, Accept: "application/pdf, application/octet-stream, */*" },
       CNINFO_REQUEST_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      CNINFO_FINANCIALS_MAX_BYTES,
     );
   } catch (error) {
+    if (error instanceof ResponseSizeLimitError) return { kind: "over-cap" };
     if (error instanceof HttpError && error.status === 429) {
       throw new CninfoRateLimitError();
     }
     throw error;
   }
-  if (bytes.byteLength > CNINFO_FINANCIALS_MAX_BYTES) return { kind: "over-cap" };
   if (!isPdfBytes(bytes)) throw new CninfoApiError(`cninfo returned no PDF at ${url}.`);
   const extracted = extractPdfText(bytes);
   const cjkChars = countCjkChars(extracted.text);
@@ -1616,17 +1622,14 @@ export async function getCninfoDocumentPdf(
       { ...BROWSER_HEADERS, Accept: "application/pdf, application/octet-stream, */*" },
       CNINFO_REQUEST_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      CNINFO_DOCUMENT_MAX_BYTES,
     );
   } catch (error) {
+    if (error instanceof ResponseSizeLimitError) throw new CninfoApiError(error.message);
     if (error instanceof HttpError && error.status === 429) {
       throw new CninfoRateLimitError();
     }
     throw error;
-  }
-  if (bytes.byteLength > CNINFO_DOCUMENT_MAX_BYTES) {
-    throw new CninfoApiError(
-      `cninfo document exceeds the ${CNINFO_DOCUMENT_MAX_BYTES / (1024 * 1024)} MB download cap.`,
-    );
   }
   if (!isPdfBytes(bytes)) throw new CninfoApiError(`cninfo returned no PDF at ${url}.`);
   const pageCount = countPdfPages(bytes);

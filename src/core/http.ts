@@ -14,17 +14,91 @@ export class HttpError extends Error {
   }
 }
 
+/** The deadline owns both the fetch and its body, including injected streams. */
+async function deadlineResponse(
+  url: string,
+  timeoutMs: number,
+  fetchResponse: (signal: AbortSignal) => Promise<Response>,
+): Promise<Response> {
+  const abort = new AbortController();
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
+  let rejectTimeout: (error: Error) => void = () => {};
+  const deadline = new Promise<never>((_resolve, reject) => {
+    rejectTimeout = reject;
+  });
+  const timer = setTimeout(() => {
+    const error = timeoutError(url, timeoutMs);
+    abort.abort();
+    rejectTimeout(error);
+    bodyController?.error(error);
+    void reader?.cancel(error).catch(() => {});
+  }, timeoutMs);
+  const cleanup = (): void => {
+    clearTimeout(timer);
+  };
+  try {
+    const pending = fetchResponse(abort.signal);
+    // A custom fetch may ignore cancellation and return after the deadline.
+    void pending.then(
+      (response) => {
+        if (abort.signal.aborted) void response.body?.cancel().catch(() => {});
+      },
+      () => {},
+    );
+    const response = await Promise.race([pending, deadline]);
+    if (!response.body) {
+      cleanup();
+      return response;
+    }
+    reader = response.body.getReader();
+    const body = new ReadableStream<Uint8Array>(
+      {
+        start(controller) {
+          bodyController = controller;
+        },
+        async pull(controller) {
+          try {
+            const chunk = await reader!.read();
+            if (abort.signal.aborted) return;
+            if (chunk.done) {
+              cleanup();
+              controller.close();
+            } else controller.enqueue(chunk.value);
+          } catch (error) {
+            cleanup();
+            if (!abort.signal.aborted) controller.error(error);
+          }
+        },
+        cancel(reason) {
+          cleanup();
+          abort.abort();
+          void reader!.cancel(reason).catch(() => {});
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    return new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  } catch (error) {
+    cleanup();
+    throw error;
+  }
+}
+
 async function request(
   url: string,
   init: RequestInit,
   timeoutMs: number,
   fetchFn: FetchFn,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetchFn(url, { ...init, signal: controller.signal });
+  return deadlineResponse(url, timeoutMs, async (signal) => {
+    const response = await fetchFn(url, { ...init, signal });
     if (!response.ok) {
+      void response.body?.cancel().catch(() => {});
       throw new HttpError(
         `HTTP ${response.status} ${response.statusText}`.trim(),
         response.status,
@@ -32,9 +106,21 @@ async function request(
       );
     }
     return response;
-  } finally {
-    clearTimeout(timer);
-  }
+  });
+}
+
+/** HEAD metadata retains status codes but never leaves a response body open. */
+export async function headResponse(
+  url: string,
+  headers: Record<string, string> = {},
+  timeoutMs = 15_000,
+  fetchFn: FetchFn = fetch,
+): Promise<Response> {
+  const response = await deadlineResponse(url, timeoutMs, (signal) =>
+    fetchFn(url, { method: "HEAD", headers, signal }),
+  );
+  void response.body?.cancel().catch(() => {});
+  return response;
 }
 
 export async function getJson(
@@ -64,10 +150,15 @@ export async function getBinary(
   headers: Record<string, string> = {},
   timeoutMs = 15_000,
   fetchFn: FetchFn = fetch,
+  maxBytes = Number.MAX_SAFE_INTEGER,
 ): Promise<Uint8Array> {
-  return request(url, { method: "GET", headers }, timeoutMs, fetchFn).then(
-    async (response) => new Uint8Array(await response.arrayBuffer()),
-  );
+  return (
+    await getBoundedBinaryFollowingRedirects(url, maxBytes, {
+      headers,
+      timeoutMs,
+      fetchFn,
+    })
+  ).bytes;
 }
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -159,7 +250,7 @@ async function fetchFollowingRedirects(
 
 function timeoutError(url: string, timeoutMs: number): HttpError {
   return new HttpError(
-    `Request to ${url} timed out after ${timeoutMs}ms`,
+    `Request timed out after ${timeoutMs}ms`,
     undefined,
     url,
   );
@@ -169,17 +260,18 @@ export async function requestFollowingRedirects(
   url: string,
   options: RedirectRequestOptions = {},
 ): Promise<RedirectResult> {
-  const timeoutMs = options.timeoutMs ?? 15_000;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetchFollowingRedirects(url, options, controller.signal);
-  } catch (error) {
-    if (controller.signal.aborted) throw timeoutError(url, timeoutMs);
-    throw error;
-  } finally {
-    clearTimeout(timer);
-  }
+  let finalUrl = url;
+  const response = await deadlineResponse(
+    url,
+    options.timeoutMs ?? 15_000,
+    async (signal) => {
+      const result = await fetchFollowingRedirects(url, options, signal);
+      finalUrl = result.finalUrl;
+      return result.response;
+    },
+  );
+  if (options.method === "HEAD") void response.body?.cancel().catch(() => {});
+  return { response, finalUrl };
 }
 
 /**
@@ -239,48 +331,33 @@ export async function getBoundedBinaryFollowingRedirects(
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
     throw new RangeError("maxBytes must be a non-negative safe integer");
   }
-  const timeoutMs = options.timeoutMs ?? 15_000;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const { response, finalUrl } = await fetchFollowingRedirects(
-      url,
-      { ...options, method: "GET" },
-      controller.signal,
+  const { response, finalUrl } = await requestFollowingRedirects(url, {
+    ...options,
+    method: "GET",
+  });
+  const headers = new Headers(response.headers);
+  const declaredBytes = contentLength(headers);
+  if (declaredBytes !== undefined && declaredBytes > maxBytes) {
+    void response.body?.cancel().catch(() => {});
+    throw new ResponseSizeLimitError(
+      `Response declared ${declaredBytes} bytes, above the ${maxBytes}-byte download cap`,
+      maxBytes,
+      finalUrl,
+      headers,
+      declaredBytes,
     );
-    const headers = new Headers(response.headers);
-    const declaredBytes = contentLength(headers);
-    if (declaredBytes !== undefined && declaredBytes > maxBytes) {
-      await response.body?.cancel();
-      throw new ResponseSizeLimitError(
-        `Response declared ${declaredBytes} bytes, above the ${maxBytes}-byte limit`,
-        maxBytes,
-        finalUrl,
-        headers,
-        declaredBytes,
-      );
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      return {
-        bytes: new Uint8Array(),
-        finalUrl,
-        headers,
-        ...(declaredBytes !== undefined ? { declaredBytes } : {}),
-      };
-    }
-    const chunks: Uint8Array[] = [];
-    let observedBytes = 0;
-    while (true) {
+  }
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let observedBytes = 0;
+  try {
+    while (reader) {
       const { done, value } = await reader.read();
       if (done) break;
       const nextBytes = observedBytes + value.byteLength;
       if (nextBytes > maxBytes) {
-        await reader.cancel();
-        controller.abort();
         throw new ResponseSizeLimitError(
-          `Response exceeded the ${maxBytes}-byte limit while streaming`,
+          `Response exceeded the ${maxBytes}-byte download cap while streaming`,
           maxBytes,
           finalUrl,
           headers,
@@ -291,25 +368,21 @@ export async function getBoundedBinaryFollowingRedirects(
       chunks.push(value);
       observedBytes = nextBytes;
     }
-    const bytes = new Uint8Array(observedBytes);
-    let offset = 0;
-    for (const chunk of chunks) {
-      bytes.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    return {
-      bytes,
-      finalUrl,
-      headers,
-      ...(declaredBytes !== undefined ? { declaredBytes } : {}),
-    };
-  } catch (error) {
-    if (error instanceof ResponseSizeLimitError) throw error;
-    if (controller.signal.aborted) throw timeoutError(url, timeoutMs);
-    throw error;
   } finally {
-    clearTimeout(timer);
+    void reader?.cancel().catch(() => {});
   }
+  const bytes = new Uint8Array(observedBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return {
+    bytes,
+    finalUrl,
+    headers,
+    ...(declaredBytes !== undefined ? { declaredBytes } : {}),
+  };
 }
 
 // --- Lenient node:https GET for hosts with malformed response headers -------
@@ -352,7 +425,8 @@ function lenientGetOnce(
   headers: Record<string, string>,
   timeoutMs: number,
 ): Promise<LenientResponse> {
-  const transport = new URL(url).protocol === "http:" ? httpRequest : httpsRequest;
+  const transport =
+    new URL(url).protocol === "http:" ? httpRequest : httpsRequest;
   return new Promise<LenientResponse>((resolve, reject) => {
     let settled = false;
     const settle = (fn: () => void): void => {
@@ -393,7 +467,13 @@ function lenientGetOnce(
     const timer = setTimeout(() => {
       settle(() => {
         req.destroy();
-        reject(new HttpError(`Request to ${url} timed out after ${timeoutMs}ms`, undefined, url));
+        reject(
+          new HttpError(
+            `Request to ${url} timed out after ${timeoutMs}ms`,
+            undefined,
+            url,
+          ),
+        );
       });
     }, timeoutMs);
     req.on("error", (error) => settle(() => reject(error)));
@@ -405,7 +485,10 @@ function lenientGetOnce(
  * Content-Type charset if present, otherwise default to UTF-8 (BaFin serves
  * UTF-8 with no charset parameter, so this matches the previous fetch path). */
 function decodeLenientBody(body: Buffer, contentType?: string): string {
-  const charset = contentType?.match(/charset\s*=\s*"?([^";]+)/i)?.[1]?.trim().toLowerCase();
+  const charset = contentType
+    ?.match(/charset\s*=\s*"?([^";]+)/i)?.[1]
+    ?.trim()
+    .toLowerCase();
   const label = charset && charset !== "utf8" ? charset : "utf-8";
   try {
     return new TextDecoder(label).decode(body);
@@ -465,7 +548,11 @@ export async function performLenientGet(
     }
     return decodeLenientBody(response.body, response.contentType);
   }
-  throw new HttpError(`Too many redirects (>${maxRedirects})`, undefined, currentUrl);
+  throw new HttpError(
+    `Too many redirects (>${maxRedirects})`,
+    undefined,
+    currentUrl,
+  );
 }
 
 /**

@@ -1,7 +1,13 @@
-import { readCachedJson, writeCachedJson } from "../core/cache.js";
+import {
+  headResponse,
+  getBinary,
+  getText,
+  HttpError,
+  ResponseSizeLimitError,
+} from "../core/http.js";
+import { CachedLoader } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
-import { getBinary, getText, HttpError } from "../core/http.js";
 import { asArray, asRecord, asString, countPdfPages } from "../core/parsing.js";
 import { extractPdfText } from "../core/pdfText.js";
 import { hkexNewsRateLimiter } from "../core/rateLimiter.js";
@@ -129,10 +135,10 @@ export interface HkexStock {
 export const HKEXNEWS_STOCK_LIST_CACHE_KEY = "hkexnews:stock-list:v1";
 export const HKEXNEWS_STOCK_LIST_CACHE_TTL_MS = 24 * 60 * 60_000;
 
-let stockListPromise: Promise<HkexStock[]> | undefined;
+const stockListPromise = new CachedLoader<HkexStock[]>();
 
 export function resetHkexStockListCache(): void {
-  stockListPromise = undefined;
+  stockListPromise.clear();
 }
 
 function parseStockList(value: unknown): HkexStock[] {
@@ -173,31 +179,8 @@ async function fetchStockList(options: AdapterOptions): Promise<HkexStock[]> {
 }
 
 async function loadStockList(options: AdapterOptions): Promise<HkexStock[]> {
-  if (options.cache) {
-    const cached = await readCachedJson(
-      options.cache,
-      HKEXNEWS_STOCK_LIST_CACHE_KEY,
-      parseStockListCache,
-    );
-    if (cached) return cached;
-  }
-  stockListPromise ??= fetchStockList(options);
-  let entries: HkexStock[];
-  try {
-    entries = await stockListPromise;
-  } catch (error) {
-    stockListPromise = undefined;
-    throw error;
-  }
-  if (options.cache) {
-    await writeCachedJson(
-      options.cache,
-      HKEXNEWS_STOCK_LIST_CACHE_KEY,
-      entries,
-      HKEXNEWS_STOCK_LIST_CACHE_TTL_MS,
-    );
-  }
-  return entries;
+  return stockListPromise.load(HKEXNEWS_STOCK_LIST_CACHE_KEY, HKEXNEWS_STOCK_LIST_CACHE_TTL_MS, parseStockListCache,
+    () => fetchStockList(options), options.cache);
 }
 
 export function isHkStockCode(value: string): boolean {
@@ -927,7 +910,7 @@ export async function getHkexDocumentMetadata(
   const fetchFn = options.fetchFn ?? fetch;
   let response: Response;
   try {
-    response = await fetchFn(url, { method: "HEAD", headers: BROWSER_HEADERS });
+    response = await headResponse(url, BROWSER_HEADERS, HKEXNEWS_REQUEST_TIMEOUT_MS, fetchFn);
   } catch (error) {
     throw new HkexNewsApiError(
       `HKEXnews document HEAD request failed: ${
@@ -990,8 +973,10 @@ export async function getHkexDocumentPdf(
       { ...BROWSER_HEADERS, Accept: "application/pdf, application/octet-stream, */*" },
       HKEXNEWS_REQUEST_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      HKEXNEWS_DOCUMENT_MAX_BYTES,
     );
   } catch (error) {
+    if (error instanceof ResponseSizeLimitError) throw new HkexNewsApiError(error.message);
     if (error instanceof HttpError) {
       if (error.status === 429) throw new HkexNewsRateLimitError();
       if (error.status === 404) {
@@ -999,12 +984,6 @@ export async function getHkexDocumentPdf(
       }
     }
     throw error;
-  }
-  if (bytes.byteLength > HKEXNEWS_DOCUMENT_MAX_BYTES) {
-    throw new HkexNewsApiError(
-      `HKEXnews document is ${bytes.byteLength} bytes, above the ` +
-        `${HKEXNEWS_DOCUMENT_MAX_BYTES}-byte download cap.`,
-    );
   }
   if (!isPdfBytes(bytes)) {
     throw new HkexNewsApiError(

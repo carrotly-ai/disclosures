@@ -43,17 +43,24 @@
     "NOTICE"
   ],
   "scripts": {
-    "typecheck": "bunx tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "bun test",
-    "build": "rm -rf dist && bun build src/server.ts --target=node --outfile=dist/server.mjs && chmod +x dist/server.mjs && bunx tsc --emitDeclarationOnly",
+    "build": "rm -rf dist && bun build src/server.ts --target=node --outfile=dist/server.mjs && chmod +x dist/server.mjs && tsc --emitDeclarationOnly",
     "test:stdio": "bun test tests/stdio.test.ts",
     "test:live": "bun run build && if [ -f .env.local ]; then bun --env-file=.env.local test ./tests/live/e2e.live.ts --timeout 300000; else bun test ./tests/live/e2e.live.ts --timeout 300000; fi",
     "test:live:all": "LIVE_E2E_REQUIRE_ALL=1 bun run test:live",
     "smoke:live": "bun run build && bun scripts/live-smoke.ts",
-    "pack:dry": "npm pack --dry-run --json"
+    "pack:dry": "npm pack --dry-run --json",
+    "test:package": "bun run build && node scripts/check-package.mjs",
+    "test:runtime": "bun run build && node scripts/check-runtime.mjs",
+    "test:canary": "bun run build && node scripts/source-canary.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.30.0",
-    "zod": "^3.25.76"
+    "typescript": "5.9.3",
+    "@types/node": "18.19.130"
   }
 }
