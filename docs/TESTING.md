@@ -142,10 +142,15 @@ of this changes the offline guarantee, which holds for the entire suite.
 project with scripts disabled, and compiles a strict TypeScript consumer with the pinned compiler.
 It verifies that dependencies referenced by published declarations arrive automatically,
 including a negative input-type assertion. From that isolated install, it then imports the
-library and drives the packaged executable through stdio initialization, tool discovery,
-malformed-input rejection, and clean client shutdown. An in-memory MCP client uses deterministic
-injected fixtures to verify upstream HTTP errors and the production 15-second request deadline
-without reaching a live source. CI runs the complete installed-artifact gate under Node 18, 20,
+library and drives npm's installed bin link through stdio initialization, tool discovery,
+malformed-input rejection, and recovery after malformed JSON. Shutdown must exit with code 0 and
+no signal after stdin EOF; the fixture observes the child directly because the SDK client's
+shutdown method ignores exit codes and can terminate a hung child. The installed HTTP server
+also checks malformed JSON rejection, subsequent tool/resource calls, and server shutdown.
+Deterministic injected fixtures exercise HTTP 503, rejected fetches, invalid upstream JSON,
+and the production 15-second deadlines for both fetch and a stalled response body through MCP
+HTTP. Each failure must issue exactly one upstream request and leave tool discovery working.
+CI runs the complete installed-artifact gate under Node 18, 20,
 22, and 24. This separate packaging gate accesses npm only to install declared dependencies; the
 unit suite does not.
 

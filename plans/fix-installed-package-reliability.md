@@ -33,3 +33,18 @@ Acceptance criteria:
 
 CI is watched once on the final pushed commit and reported in the session handoff; recording that
 result in another commit would invalidate the SHA that was observed.
+
+## Follow-up verification
+
+The initial fixture called SDK `client.close()`, which discards the child exit code and can
+terminate a child that does not exit on EOF. That does not prove the claimed clean shutdown.
+
+- [x] Observe exit code 0 and no signal after stdin EOF through npm's installed bin link.
+- [x] Assert malformed JSON recovery and HTTP lifecycle on the installed artifact.
+- [x] Exercise upstream failures through HTTP, including a stalled response body.
+- [x] Validate the expanded gate on Node 18.20.8, 20.20.2, 22.23.2, and 24.21.0.
+
+Negative control: a temporary generated bundle set its CLI exit code to 42 after EOF. The
+packed-package gate failed with `{ code: 42, signal: null }` versus the required code 0.
+Rebuilding from unchanged source removed the injection before all four successful runtime runs.
+PR #75 receives this follow-up; final CI status is reported in the session handoff.

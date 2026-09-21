@@ -63,9 +63,10 @@ PY
 `package.json`. The standalone JavaScript bundle carries its runtime implementation; declared
 MCP SDK and Zod dependencies supply the public declaration graph. The isolated consumer check
 must compile without manually adding those dependencies or enabling `skipLibCheck`. It also runs
-the installed package through stdio startup and shutdown, rejects malformed tool input, and
-verifies deterministic upstream error and 15-second timeout responses without live network
-access. CI repeats that installed-artifact check on Node 18, 20, 22, and 24.
+the installed bin through stdio startup, malformed JSON recovery, and exit-code-checked EOF
+shutdown. The installed HTTP server must reject malformed input and remain usable after
+deterministic upstream errors and 15-second fetch/body deadlines. These checks make no live
+source requests. CI repeats them on Node 18, 20, 22, and 24.
 
 ## 3. Merge the release PR
 
