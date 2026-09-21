@@ -146,33 +146,39 @@ async function checkHttpLifecycle() {
   });
 }
 
-async function callResolve(fetchFn) {
+async function callResolve(fetchFn, expectedRequests = 1) {
   let requests = 0;
   return withHttpClient((url, init) => {
     requests += 1;
     assert.equal(new URL(url).host, "api.gleif.org");
-    assert.equal(requests, 1, "Failure fixtures must not fan out or retry");
+    assert(
+      requests <= expectedRequests,
+      "Failure fixtures must not exceed the bounded retry budget",
+    );
     return fetchFn(url, init);
   }, async (client) => {
     const result = await client.callTool({
       name: "CompanyResolve",
       arguments: { company: LEI },
     });
-    assert.equal(requests, 1);
+    assert.equal(requests, expectedRequests);
     await client.listTools();
     return result;
   });
 }
 
 async function checkUpstreamError() {
-  for (const [fetchFn, message] of [
+  for (const [fetchFn, message, expectedRequests] of [
     [async () => new Response("fixture unavailable", {
       status: 503, statusText: "Service Unavailable",
-    }), /HTTP 503 Service Unavailable/],
-    [async () => { throw new TypeError("fixture connection failed"); }, /fixture connection failed/],
-    [async () => new Response("{invalid upstream JSON}"), /JSON|Unexpected token|Expected property/],
+    }), /HTTP 503 Service Unavailable/, 2],
+    [async () => new Response("slow down", {
+      status: 429, headers: { "Retry-After": "0" },
+    }), /HTTP 429/, 2],
+    [async () => { throw new TypeError("fixture connection failed"); }, /fixture connection failed/, 2],
+    [async () => new Response("{invalid upstream JSON}"), /JSON|Unexpected token|Expected property/, 1],
   ]) {
-    const result = await callResolve(fetchFn);
+    const result = await callResolve(fetchFn, expectedRequests);
     assert.equal(result.isError, true);
     assert.match(resultText(result), message);
   }

@@ -7,6 +7,8 @@ import {
   getBinary,
   getJson,
   getFollowingRedirects,
+  headResponse,
+  HttpError,
   postForm,
   postJson,
   ResponseSizeLimitError,
@@ -66,6 +68,128 @@ for (const [name, consume] of timeoutReaders)
     await expect(consume(fetchFn)).rejects.toThrow("timed out");
     expect(cancelled).toBe(true);
   });
+
+const retryReaders: Array<
+  [string, (fetchFn: FetchFn) => Promise<unknown>]
+> = [
+  ["text", (f) => getText("https://example.test/", {}, 1000, f)],
+  ["JSON", (f) => getJson("https://example.test/", {}, 1000, f)],
+  ["binary", (f) => getBinary("https://example.test/", {}, 1000, f)],
+  [
+    "redirect response",
+    async (f) =>
+      (
+        await getFollowingRedirects("https://example.test/", {}, 1000, f)
+      ).response.text(),
+  ],
+  ["HEAD", (f) => headResponse("https://example.test/", {}, 1000, f)],
+  ["form", (f) => postForm("https://example.test/", {}, {}, 1000, f)],
+  ["POST JSON", (f) => postJson("https://example.test/", {}, {}, 1000, f)],
+];
+for (const [name, consume] of retryReaders)
+  test(`${name} retries one transient 503 and cancels its body`, async () => {
+    let attempts = 0;
+    let cancelled = false;
+    const fetchFn: FetchFn = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response(
+          new ReadableStream({
+            cancel() {
+              cancelled = true;
+            },
+          }),
+          { status: 503, statusText: "Service Unavailable" },
+        );
+      }
+      return new Response(name.includes("JSON") || name === "form" ? "{}" : "ok");
+    };
+    await consume(fetchFn);
+    expect(attempts).toBe(2);
+    expect(cancelled).toBe(true);
+  });
+
+test("connection failures and Retry-After 429 responses retry once", async () => {
+  let connectionAttempts = 0;
+  expect(
+    await getText("https://example.test/connect", {}, 1000, async () => {
+      connectionAttempts += 1;
+      if (connectionAttempts === 1) throw new TypeError("fixture disconnected");
+      return new Response("connected");
+    }),
+  ).toBe("connected");
+  expect(connectionAttempts).toBe(2);
+
+  let rateLimitAttempts = 0;
+  expect(
+    await getText("https://example.test/rate", {}, 1000, async () => {
+      rateLimitAttempts += 1;
+      if (rateLimitAttempts === 1) {
+        return new Response("slow down", {
+          status: 429,
+          headers: { "Retry-After": "0" },
+        });
+      }
+      return new Response("ready");
+    }),
+  ).toBe("ready");
+  expect(rateLimitAttempts).toBe(2);
+});
+
+test("retries are bounded and preserve the final upstream error", async () => {
+  const statuses = [503, 502, 200];
+  const error = await getText(
+    "https://example.test/exhausted",
+    {},
+    1000,
+    async () => {
+      const status = statuses.shift()!;
+      return new Response("unavailable", {
+        status,
+        statusText: status === 503 ? "Service Unavailable" : "Bad Gateway",
+      });
+    },
+  ).catch((caught) => caught);
+  expect(error).toBeInstanceOf(HttpError);
+  expect(error.status).toBe(502);
+  expect(error.url).toBe("https://example.test/exhausted");
+  expect(statuses).toEqual([200]);
+});
+
+test("Retry-After never extends the existing request deadline", async () => {
+  let attempts = 0;
+  const error = await getText(
+    "https://example.test/rate",
+    {},
+    20,
+    async () => {
+      attempts += 1;
+      return new Response("slow down", {
+        status: 429,
+        headers: { "Retry-After": "120" },
+      });
+    },
+  ).catch((caught) => caught);
+  expect(error).toBeInstanceOf(HttpError);
+  expect(error.status).toBe(429);
+  expect(attempts).toBe(1);
+});
+
+test("non-retryable client errors are attempted once", async () => {
+  let attempts = 0;
+  const error = await getText(
+    "https://example.test/bad-request",
+    {},
+    1000,
+    async () => {
+      attempts += 1;
+      return new Response("bad request", { status: 400 });
+    },
+  ).catch((caught) => caught);
+  expect(error).toBeInstanceOf(HttpError);
+  expect(error.status).toBe(400);
+  expect(attempts).toBe(1);
+});
 
 test("an injected fetch that ignores AbortSignal still times out", async () => {
   await expect(
