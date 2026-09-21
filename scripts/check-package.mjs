@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -38,6 +38,10 @@ try {
     "--no-fund",
     join(dir, pack.filename),
   ]);
+  await copyFile(
+    join(root, "scripts/fixtures/installed-consumer.mjs"),
+    join(dir, "installed-consumer.mjs"),
+  );
   await writeFile(
     join(dir, "consumer.ts"),
     `
@@ -63,12 +67,14 @@ createTools({ fetchFn: 123 });
     "ES2022",
     "consumer.ts",
   ]);
-  const result = run(process.execPath, [
+  const importResult = run(process.execPath, [
     "--input-type=module",
     "-e",
     'import { createTools } from "disclosures"; console.log(createTools().length)',
   ]);
-  assert.equal(result.trim(), "10");
+  assert.equal(importResult.trim(), "10");
+  const runtimeResult = run(process.execPath, ["installed-consumer.mjs"]);
+  process.stdout.write(runtimeResult);
   console.log(
     "Packed package: clean strict TypeScript consumer and Node import passed.",
   );
