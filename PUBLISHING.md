@@ -60,7 +60,12 @@ PY
 ```
 
 `npm pack --dry-run --json` must contain only `dist/`, `README.md`, `LICENSE`, `NOTICE`, and
-`package.json`. The standalone JavaScript bundle carries its runtime implementation; declared MCP SDK and Zod dependencies supply the public declaration graph. The isolated consumer check must compile without manually adding those dependencies or enabling `skipLibCheck`.
+`package.json`. The standalone JavaScript bundle carries its runtime implementation; declared
+MCP SDK and Zod dependencies supply the public declaration graph. The isolated consumer check
+must compile without manually adding those dependencies or enabling `skipLibCheck`. It also runs
+the installed package through stdio startup and shutdown, rejects malformed tool input, and
+verifies deterministic upstream error and 15-second timeout responses without live network
+access. CI repeats that installed-artifact check on Node 18, 20, 22, and 24.
 
 ## 3. Merge the release PR
 

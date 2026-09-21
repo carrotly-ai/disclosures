@@ -33,7 +33,8 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           test "${GITHUB_REF_NAME}" = "v${VERSION}"
       - run: node scripts/check-runtime.mjs
-      - run: node scripts/check-package.mjs
+      - name: Verify an installed packed-package consumer
+        run: node scripts/check-package.mjs
       - name: Upgrade npm for OIDC trusted publishing
         run: |
           npm install -g npm@latest
