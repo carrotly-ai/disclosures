@@ -18,7 +18,7 @@ Acceptance criteria:
 - [x] [Medium] Repair only defects reproduced by the installed-consumer harness, with focused regression assertions. (completed: 2026-09-21 — no runtime defect reproduced; the missing release-gate coverage was the demonstrated gap)
 - [x] [Simple] Integrate the harness with the supported-Node CI/release gates and update publishing/testing documentation. (completed: 2026-09-21)
 - [x] [Medium] Run focused and full validation, inspect the packed file set, and verify Node 18/20/22/24 results. (completed: 2026-09-21)
-- [ ] [Simple] Commit, push, open and register a focused PR, then watch CI once with a bounded timeout.
+- [x] [Simple] Commit, push, open and register a focused PR. (completed: 2026-09-21 — [PR #75](https://github.com/carrotly-ai/disclosures/pull/75), registered with T3)
 
 ## Validation
 
@@ -30,3 +30,6 @@ Acceptance criteria:
 - `npm pack --dry-run --json` — only `dist/`, `README.md`, `LICENSE`, `NOTICE`, and `package.json`
 - `npx -y node@{18,20,22,24} scripts/check-package.mjs` — installed-artifact gate passed on Node 18.20.8, 20.20.2, 22.23.2, and 24.21.0
 - No live official-source calls were needed: the changed boundary uses deterministic injected failure fixtures.
+
+CI is watched once on the final pushed commit and reported in the session handoff; recording that
+result in another commit would invalidate the SHA that was observed.
