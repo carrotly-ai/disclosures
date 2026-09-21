@@ -17,6 +17,7 @@ import {
   TWSE_COMPREHENSIVE_INCOME_ENDPOINT,
   TWSE_DIRECTOR_HOLDINGS_ENDPOINT,
   TWSE_MAJOR_SHAREHOLDERS_ENDPOINT,
+  TwseApiError,
   TwseRateLimitError,
 } from "../src/adapters/twseOpenApi.js";
 import { InMemoryCache } from "../src/core/cache.js";
@@ -184,6 +185,61 @@ describe("searchTwseCompanies", () => {
     resetTwseDatasetCache();
     const empty = routedFetch([{ pattern: TWSE_BASIC_ENDPOINT, body: [{ 公司代號: "2317", 公司名稱: "鴻海" }] }]);
     expect(await resolveTwseCompany("nonexistent-name", options(empty))).toBeNull();
+  });
+
+  test("identifies malformed upstream JSON as a TWSE source error", async () => {
+    const fetchFn = routedFetch([
+      { pattern: TWSE_BASIC_ENDPOINT, body: "{not JSON" },
+    ]);
+    const error = await searchTwseCompanies("2330", options(fetchFn)).catch(
+      (caught) => caught,
+    );
+    expect(error).toBeInstanceOf(TwseApiError);
+    expect(error.message).toContain(TWSE_BASIC_ENDPOINT);
+    expect(error.message).toMatch(/malformed JSON/i);
+  });
+
+  test("rejects identifier schema drift instead of reporting no company match", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: TWSE_BASIC_ENDPOINT,
+        body: [{ companyCode: "2330", companyName: "TSMC" }],
+      },
+    ]);
+    await expect(
+      searchTwseCompanies("2330", options(fetchFn)),
+    ).rejects.toThrow(/required.*公司代號.*公司名稱/i);
+  });
+
+  test("rejects an exact-code row whose company name identifier is missing", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: TWSE_BASIC_ENDPOINT,
+        body: [
+          { 公司代號: "2330" },
+          { 公司代號: "2317", 公司名稱: "鴻海精密工業股份有限公司" },
+        ],
+      },
+    ]);
+    await expect(
+      searchTwseCompanies("2330", options(fetchFn)),
+    ).rejects.toThrow(/2330.*missing.*公司名稱/i);
+  });
+
+  test("rejects an oversized dataset before parsing it", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: TWSE_BASIC_ENDPOINT,
+        body: BASIC_ROWS,
+        headers: { "Content-Length": String(20 * 1024 * 1024 + 1) },
+      },
+    ]);
+    const error = await searchTwseCompanies("2330", options(fetchFn)).catch(
+      (caught) => caught,
+    );
+    expect(error).toBeInstanceOf(TwseApiError);
+    expect(error.message).toContain(TWSE_BASIC_ENDPOINT);
+    expect(error.message).toMatch(/20 MB.*cap/i);
   });
 });
 
