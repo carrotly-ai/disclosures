@@ -251,6 +251,196 @@ describe("Companies House filing history", () => {
     );
   });
 
+  test("crosses an empty intermediate page when metadata reports later results", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "start_index=1",
+        body: {
+          items_per_page: 1,
+          start_index: 1,
+          total_count: 2,
+          items: [
+            {
+              category: "accounts",
+              type: "AA",
+              description: "accounts-with-accounts-type-full",
+              date: "2024-06-01",
+              transaction_id: "later-filing",
+              links: { document_metadata: "/document/later" },
+            },
+          ],
+        },
+      },
+      {
+        pattern: "/filing-history",
+        body: {
+          items_per_page: 1,
+          start_index: 0,
+          total_count: 2,
+          items: [],
+        },
+      },
+    ]);
+    const filings = await searchCompaniesHouseFilings(
+      COMPANY_NUMBER,
+      options(fetchFn),
+    );
+    expect(filings.map((filing) => filing.accession)).toEqual(["later-filing"]);
+    expect(fetchFn.requests).toHaveLength(2);
+  });
+
+  test("deduplicates a filing repeated across adjacent pages", async () => {
+    const filing = {
+      category: "accounts",
+      type: "AA",
+      description: "accounts-with-accounts-type-full",
+      date: "2024-06-01",
+      transaction_id: "duplicate-filing",
+      links: { document_metadata: "/document/duplicate" },
+    };
+    const fetchFn = routedFetch([
+      {
+        pattern: "start_index=1",
+        body: {
+          items_per_page: 1,
+          start_index: 1,
+          total_count: 2,
+          items: [filing],
+        },
+      },
+      {
+        pattern: "/filing-history",
+        body: {
+          items_per_page: 1,
+          start_index: 0,
+          total_count: 2,
+          items: [filing],
+        },
+      },
+    ]);
+    const filings = await searchCompaniesHouseFilings(
+      COMPANY_NUMBER,
+      options(fetchFn),
+    );
+    expect(filings.map((item) => item.accession)).toEqual([
+      "duplicate-filing",
+    ]);
+  });
+
+  test("duplicates do not satisfy the requested unique-result limit", async () => {
+    const duplicate = {
+      category: "accounts",
+      type: "AA",
+      description: "accounts-with-accounts-type-full",
+      date: "2024-06-01",
+      transaction_id: "duplicate-filing",
+      links: { document_metadata: "/document/duplicate" },
+    };
+    const fetchFn = routedFetch([
+      {
+        pattern: "start_index=2",
+        body: {
+          items_per_page: 2,
+          start_index: 2,
+          total_count: 3,
+          items: [
+            {
+              ...duplicate,
+              date: "2024-05-01",
+              transaction_id: "unique-filing",
+              links: { document_metadata: "/document/unique" },
+            },
+          ],
+        },
+      },
+      {
+        pattern: "/filing-history",
+        body: {
+          items_per_page: 2,
+          start_index: 0,
+          total_count: 3,
+          items: [duplicate, duplicate],
+        },
+      },
+    ]);
+    const filings = await searchCompaniesHouseFilings(
+      { company: COMPANY_NUMBER, limit: 2 },
+      options(fetchFn),
+    );
+    expect(filings.map((item) => item.accession)).toEqual([
+      "duplicate-filing",
+      "unique-filing",
+    ]);
+    expect(fetchFn.requests).toHaveLength(2);
+  });
+
+  test("rejects non-progressing offsets instead of returning silent partial data", async () => {
+    const filing = {
+      category: "accounts",
+      type: "AA",
+      description: "accounts-with-accounts-type-full",
+      date: "2024-06-01",
+      transaction_id: "duplicate-filing",
+      links: { document_metadata: "/document/duplicate" },
+    };
+    const fetchFn = routedFetch([
+      {
+        pattern: "start_index=1",
+        body: {
+          items_per_page: 1,
+          start_index: 0,
+          total_count: 2,
+          items: [filing],
+        },
+      },
+      {
+        pattern: "/filing-history",
+        body: {
+          items_per_page: 1,
+          start_index: 0,
+          total_count: 2,
+          items: [filing],
+        },
+      },
+    ]);
+    await expect(
+      searchCompaniesHouseFilings(COMPANY_NUMBER, options(fetchFn)),
+    ).rejects.toThrow(/pagination did not advance/i);
+    expect(fetchFn.requests).toHaveLength(2);
+  });
+
+  test("a later-page failure is not returned as a complete partial result", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "start_index=1",
+        body: "unavailable",
+        status: 503,
+      },
+      {
+        pattern: "/filing-history",
+        body: {
+          items_per_page: 1,
+          start_index: 0,
+          total_count: 2,
+          items: [
+            {
+              category: "accounts",
+              type: "AA",
+              description: "accounts-with-accounts-type-full",
+              date: "2024-06-01",
+              transaction_id: "first-filing",
+              links: { document_metadata: "/document/first" },
+            },
+          ],
+        },
+      },
+    ]);
+    await expect(
+      searchCompaniesHouseFilings(COMPANY_NUMBER, options(fetchFn)),
+    ).rejects.toThrow(/HTTP 503/);
+    expect(fetchFn.requests).toHaveLength(2);
+  });
+
   test("date and category/type filters work together", async () => {
     const fetchFn = routedFetch([
       {

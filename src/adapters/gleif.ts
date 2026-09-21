@@ -351,6 +351,13 @@ export const resolveEntity = resolveGleifEntity;
 /** Default paging bounds for the (potentially large) LEI -> ISIN listing. */
 export const GLEIF_ISIN_PAGE_SIZE = 200;
 export const GLEIF_MAX_ISIN_PAGES = 5;
+const GLEIF_MAX_RELATIONSHIP_PAGES = 50;
+
+function repeatedPaginationLink(url: string): Error {
+  return new Error(
+    `GLEIF returned a repeated pagination link (${url}); refusing incomplete results.`,
+  );
+}
 
 /**
  * True only for a syntactically valid ISIN, check digit included: two letters,
@@ -416,13 +423,22 @@ export async function getIsinsForLei(
 ): Promise<string[]> {
   const trimmed = lei.trim().toUpperCase();
   if (!isLei(trimmed)) return [];
-  const maxPages = paging.maxPages ?? GLEIF_MAX_ISIN_PAGES;
+  const requestedMaxPages = paging.maxPages ?? GLEIF_MAX_ISIN_PAGES;
+  const maxPages = Number.isFinite(requestedMaxPages)
+    ? Math.min(
+        Math.max(0, Math.floor(requestedMaxPages)),
+        GLEIF_MAX_ISIN_PAGES,
+      )
+    : GLEIF_MAX_ISIN_PAGES;
   const first = new URL(`${GLEIF_BASE_URL}/lei-records/${encodeURIComponent(trimmed)}/isins`);
   first.searchParams.set("page[size]", String(GLEIF_ISIN_PAGE_SIZE));
   let url: string | undefined = first.toString();
+  const seenPages = new Set<string>();
   const seen = new Set<string>();
   const all: string[] = [];
   for (let page = 0; page < maxPages && url; page += 1) {
+    if (seenPages.has(url)) throw repeatedPaginationLink(url);
+    seenPages.add(url);
     const payload = await requestOptionalJson(url, options);
     if (payload === null) break;
     const { isins, nextUrl } = parseIsinList(payload);
@@ -547,9 +563,17 @@ async function loadLeiCollectionPages(
   const entities: Entity[] = [];
   const seenPages = new Set<string>();
   let nextUrl: string | undefined = firstUrl;
+  let page = 0;
 
-  while (nextUrl && !seenPages.has(nextUrl)) {
+  while (nextUrl) {
+    if (seenPages.has(nextUrl)) throw repeatedPaginationLink(nextUrl);
+    if (page >= GLEIF_MAX_RELATIONSHIP_PAGES) {
+      throw new Error(
+        `GLEIF relationship pagination exceeded ${GLEIF_MAX_RELATIONSHIP_PAGES} pages; refusing incomplete results.`,
+      );
+    }
     seenPages.add(nextUrl);
+    page += 1;
     const payload = await requestJson(nextUrl, options);
     const collection = parseLeiCollection(payload);
     entities.push(...collection.entities);
