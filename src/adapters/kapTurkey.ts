@@ -2,7 +2,6 @@ import {
   ResponseSizeLimitError,
   headResponse,
   getBinary,
-  getText,
   HttpError,
 } from "../core/http.js";
 import { readCachedJson, writeCachedJson } from "../core/cache.js";
@@ -76,6 +75,7 @@ export const KAP_DIRECTORY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export const KAP_MAX_RESULTS = 10;
 
 export const KAP_DOCUMENT_MAX_BYTES = 25 * 1024 * 1024;
+const KAP_HTML_MAX_BYTES = 8 * 1024 * 1024;
 
 export const KAP_RESOLVE_CAVEAT =
   "KAP's BIST company directory is the listed universe of Borsa İstanbul as " +
@@ -139,13 +139,20 @@ function mapHttpError(error: unknown): unknown {
 async function fetchHtml(url: string, options: AdapterOptions): Promise<string> {
   acquireRequest();
   try {
-    return await getText(
+    const bytes = await getBinary(
       url,
       BROWSER_HEADERS,
       KAP_REQUEST_TIMEOUT_MS,
       options.fetchFn ?? fetch,
+      KAP_HTML_MAX_BYTES,
     );
+    return new TextDecoder().decode(bytes);
   } catch (error) {
+    if (error instanceof ResponseSizeLimitError) {
+      throw new KapApiError(
+        `KAP HTML response from ${url} exceeded the 8 MB processing cap.`,
+      );
+    }
     throw mapHttpError(error);
   }
 }

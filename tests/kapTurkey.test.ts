@@ -170,6 +170,35 @@ describe("KAP company resolution", () => {
       KapApiError,
     );
   });
+
+  test("reports missing directory identifiers as source schema drift", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "bist-sirketler",
+        body:
+          '<table id="financialTable"><tr><td>THYAO</td><td>TÜRK HAVA YOLLARI A.O.</td><td>İSTANBUL</td><td>-</td></tr></table>',
+      },
+    ]);
+    await expect(searchKapCompanies("THYAO", { fetchFn })).rejects.toThrow(
+      /no parseable companies.*page layout may have changed/i,
+    );
+  });
+
+  test("rejects an oversized directory before parsing it", async () => {
+    const fetchFn = routedFetch([
+      {
+        pattern: "bist-sirketler",
+        body: DIRECTORY,
+        headers: { "Content-Length": String(8 * 1024 * 1024 + 1) },
+      },
+    ]);
+    const error = await searchKapCompanies("THYAO", { fetchFn }).catch(
+      (caught) => caught,
+    );
+    expect(error).toBeInstanceOf(KapApiError);
+    expect(error.message).toContain(KAP_BIST_COMPANIES_URL);
+    expect(error.message).toMatch(/8 MB.*cap/i);
+  });
 });
 
 describe("Turkish legal-form normalization", () => {

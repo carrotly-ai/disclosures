@@ -1,7 +1,11 @@
 import { CachedLoader } from "../core/cache.js";
 import { rankEntities } from "../core/entityMatching.js";
 import { AdapterError, AdapterRateLimitError } from "../core/errors.js";
-import { getJson, HttpError } from "../core/http.js";
+import {
+  getBinary,
+  HttpError,
+  ResponseSizeLimitError,
+} from "../core/http.js";
 import { asArray, asRecord, asString, type JsonRecord } from "../core/parsing.js";
 import { twseRateLimiter } from "../core/rateLimiter.js";
 import type {
@@ -28,6 +32,7 @@ export const TWSE_REQUEST_TIMEOUT_MS = 30_000;
 // t187ap11_L (every listed director/supervisor's holdings) is ~10 MB, so it
 // needs a longer ceiling than the small basic/announcement/major-holder feeds.
 export const TWSE_LARGE_REQUEST_TIMEOUT_MS = 60_000;
+const TWSE_DATASET_MAX_BYTES = 20 * 1024 * 1024;
 
 /** 上市公司基本資料 — listed-company basic data (used for resolution). */
 export const TWSE_BASIC_ENDPOINT = "t187ap03_L";
@@ -160,25 +165,53 @@ async function fetchDataset(
   timeoutMs: number,
 ): Promise<JsonRecord[]> {
   acquireRequest();
-  let payload: unknown;
+  const url = `${TWSE_OPENAPI_BASE_URL}/opendata/${endpoint}`;
+  let bytes: Uint8Array;
   try {
-    payload = await getJson(
-      `${TWSE_OPENAPI_BASE_URL}/opendata/${endpoint}`,
+    bytes = await getBinary(
+      url,
       BROWSER_HEADERS,
       timeoutMs,
       options.fetchFn ?? fetch,
+      TWSE_DATASET_MAX_BYTES,
     );
   } catch (error) {
     if (error instanceof HttpError && error.status === 429) {
       throw new TwseRateLimitError();
     }
+    if (error instanceof ResponseSizeLimitError) {
+      throw new TwseApiError(
+        `TWSE ${endpoint} response from ${url} exceeded the 20 MB processing cap.`,
+      );
+    }
     throw error;
+  }
+  let payload: unknown;
+  try {
+    payload = JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new TwseApiError(
+      `TWSE ${endpoint} returned malformed JSON from ${url}.`,
+    );
   }
   const rows = asArray(payload)
     .map(asRecord)
     .filter((row): row is JsonRecord => row !== undefined);
   if (!rows.length) {
     throw new TwseApiError(`TWSE ${endpoint} returned no rows.`);
+  }
+  const requiredFields = endpoint === TWSE_BASIC_ENDPOINT
+    ? ["公司代號", "公司名稱"]
+    : ["公司代號"];
+  if (
+    !rows.some((row) =>
+      requiredFields.every((field) => asString(row[field]) !== undefined)
+    )
+  ) {
+    throw new TwseApiError(
+      `TWSE ${endpoint} response lacks required ${requiredFields.join(" / ")} ` +
+        "fields; the upstream schema may have changed.",
+    );
   }
   return rows;
 }
@@ -237,11 +270,19 @@ export async function searchTwseCompanies(
   const rows = await loadDataset(TWSE_BASIC_ENDPOINT, options);
 
   if (isTwseStockCode(trimmed)) {
-    const matches = rows
-      .filter((row) => asString(row["公司代號"]) === trimmed)
+    const exactRows = rows.filter(
+      (row) => asString(row["公司代號"]) === trimmed,
+    );
+    const matches = exactRows
       .map((row) => basicRowToEntity(row, "Exact listing-code match"))
       .filter((entity): entity is Entity => entity !== undefined);
     if (matches.length) return matches;
+    if (exactRows.length) {
+      throw new TwseApiError(
+        `TWSE ${TWSE_BASIC_ENDPOINT} row for ${trimmed} is missing required ` +
+          "公司名稱; the upstream schema may have changed.",
+      );
+    }
     // Fall through to a name search if the numeric query is not a known code.
   }
 
