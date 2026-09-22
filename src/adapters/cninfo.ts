@@ -325,7 +325,7 @@ async function fetchAnnouncementPage(
   const total = typeof record.totalAnnouncement === "number"
     ? record.totalAnnouncement
     : 0;
-  const hasMore = params.pageNum * params.pageSize < total && filings.length > 0;
+  const hasMore = params.pageNum * params.pageSize < total;
   return { filings, hasMore };
 }
 
@@ -336,15 +336,23 @@ async function collectAnnouncements(
   endDate: string | undefined,
   limit: number,
   options: AdapterOptions,
+  include: (filing: Filing) => boolean = () => true,
 ): Promise<Filing[]> {
   const pageSize = Math.min(Math.max(limit, 1), CNINFO_MAX_PAGE_SIZE);
   const filings: Filing[] = [];
+  const seen = new Set<string>();
   for (let page = 1; page <= CNINFO_MAX_PAGES; page += 1) {
     const { filings: pageFilings, hasMore } = await fetchAnnouncementPage(
       { entity, ...(category ? { category } : {}), ...(startDate ? { startDate } : {}), ...(endDate ? { endDate } : {}), pageSize, pageNum: page },
       options,
     );
-    filings.push(...pageFilings);
+    for (const filing of pageFilings) {
+      if (!include(filing)) continue;
+      const key = filing.accession ?? filing.sourceUrl;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      filings.push(filing);
+    }
     if (filings.length >= limit || !hasMore) break;
   }
   return filings;
@@ -375,6 +383,7 @@ export async function searchCninfoFilings(
   const params = typeof input === "string" ? { company: input } : input;
   const entity = await resolveCninfoEntity(params.company, options);
   const limit = Math.max(1, params.limit ?? CNINFO_DEFAULT_SEARCH_LIMIT);
+  const forms = params.forms ?? [];
   const filings = await collectAnnouncements(
     entity,
     undefined,
@@ -382,9 +391,9 @@ export async function searchCninfoFilings(
     params.endDate,
     limit,
     options,
+    (filing) => filingMatchesForms(filing, forms),
   );
   return filings
-    .filter((filing) => filingMatchesForms(filing, params.forms ?? []))
     .sort((left, right) => right.filedDate.localeCompare(left.filedDate))
     .slice(0, limit);
 }
