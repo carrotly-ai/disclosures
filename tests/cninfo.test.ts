@@ -87,7 +87,7 @@ function pagedAnnouncementFetch(
     const page = Number(new URLSearchParams(String(init?.body ?? "")).get("pageNum"));
     requestedPages.push(page);
     const payload = pages[page];
-    if (payload instanceof Response) return payload;
+    if (payload instanceof Response) return payload.clone();
     return Response.json(payload);
   };
   return { fetchFn, requestedPages };
@@ -284,7 +284,7 @@ describe("searchCninfoFilings", () => {
         options(fetchFn),
       ),
     ).rejects.toThrow(/HTTP 503 Service Unavailable/);
-    expect(requestedPages).toEqual([1, 2]);
+    expect(requestedPages).toEqual([1, 2, 2]);
   });
 });
 

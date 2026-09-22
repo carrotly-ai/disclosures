@@ -40,7 +40,7 @@ const ENV: Env = { COMPANIES_HOUSE_API_KEY: "test-api-key" };
 const COMPANY_NUMBER = "01234567";
 
 function options(
-  fetchFn: ReturnType<typeof routedFetch>,
+  fetchFn: NonNullable<AdapterOptions["fetchFn"]>,
   env: Env = ENV,
 ): AdapterOptions {
   return { fetchFn, env };
@@ -107,6 +107,28 @@ describe("Companies House configuration and authentication", () => {
     await expect(
       resolveCompaniesHouseCompany(COMPANY_NUMBER, options(fetchFn)),
     ).rejects.toBeInstanceOf(CompaniesHouseRateLimitError);
+    expect(fetchFn.requests).toHaveLength(1);
+  });
+
+  test("recovers when Retry-After permits one bounded 429 retry", async () => {
+    let attempts = 0;
+    const fetchFn: NonNullable<AdapterOptions["fetchFn"]> = async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return new Response("slow down", {
+          status: 429,
+          headers: { "Retry-After": "0" },
+        });
+      }
+      return Response.json(profile());
+    };
+
+    const entity = await resolveCompaniesHouseCompany(
+      COMPANY_NUMBER,
+      options(fetchFn),
+    );
+    expect(entity?.companyNumber).toBe(COMPANY_NUMBER);
+    expect(attempts).toBe(2);
   });
 });
 
@@ -438,7 +460,9 @@ describe("Companies House filing history", () => {
     await expect(
       searchCompaniesHouseFilings(COMPANY_NUMBER, options(fetchFn)),
     ).rejects.toThrow(/HTTP 503/);
-    expect(fetchFn.requests).toHaveLength(2);
+    expect(fetchFn.requests.map(({ url }) =>
+      new URL(url).searchParams.get("start_index"),
+    )).toEqual(["0", "1", "1"]);
   });
 
   test("date and category/type filters work together", async () => {

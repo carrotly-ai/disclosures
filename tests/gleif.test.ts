@@ -187,7 +187,9 @@ describe("getIsinsForLei", () => {
     await expect(
       getIsinsForLei(APPLE_LEI, { fetchFn }),
     ).rejects.toThrow(/HTTP 503/);
-    expect(fetchFn.requests).toHaveLength(2);
+    expect(fetchFn.requests.map(({ url }) =>
+      new URL(url).searchParams.get("page[number]"),
+    )).toEqual([null, "2", "2"]);
   });
 
   test("respects the page cap", async () => {
