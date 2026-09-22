@@ -401,8 +401,10 @@ async function loadOffsetPages<T>(
   options: AdapterOptions,
   optional404 = false,
   stopAfter = COMPANIES_HOUSE_MAX_RESULTS,
+  itemKey?: (item: T) => string,
 ): Promise<T[]> {
   const results: T[] = [];
+  const seen = new Set<string>();
   let startIndex = 0;
 
   for (let page = 0; page < COMPANIES_HOUSE_MAX_PAGES; page += 1) {
@@ -416,11 +418,26 @@ async function loadOffsetPages<T>(
     if (payload === null) break;
     const document = asRecord(payload);
     if (!document) break;
-    const items = parseItems(payload);
-    results.push(...items);
     const rawItemCount = asArray(document.items).length;
-    if (rawItemCount === 0) break;
     const pagination = pageNumbers(document, rawItemCount);
+    if (
+      pagination.startIndex !== undefined &&
+      pagination.startIndex !== startIndex
+    ) {
+      throw new Error(
+        `Companies House pagination did not advance to requested offset ${startIndex} ` +
+          `(received ${pagination.startIndex}); refusing incomplete results.`,
+      );
+    }
+    const items = parseItems(payload);
+    for (const item of items) {
+      const key = itemKey?.(item);
+      if (key !== undefined) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      results.push(item);
+    }
     const pageStart = pagination.startIndex ?? startIndex;
     const pageSize = pagination.itemsPerPage && pagination.itemsPerPage > 0
       ? pagination.itemsPerPage
@@ -432,6 +449,7 @@ async function loadOffsetPages<T>(
     ) {
       break;
     }
+    if (rawItemCount === 0 && pagination.totalResults === undefined) break;
     startIndex = nextStart;
   }
   return results.slice(0, COMPANIES_HOUSE_MAX_RESULTS);
@@ -498,6 +516,11 @@ function filingMatches(filing: Filing, filters: readonly string[]): boolean {
   });
 }
 
+function filingIdentity(filing: Filing): string {
+  return filing.accession ??
+    `${filing.filedDate}\u0000${filing.form}\u0000${filing.description}\u0000${filing.sourceUrl}`;
+}
+
 export async function searchCompaniesHouseFilings(
   input: string | CompaniesHouseFilingSearchParams,
   options: AdapterOptions = {},
@@ -519,6 +542,7 @@ export async function searchCompaniesHouseFilings(
     options,
     false,
     unfiltered ? limit : COMPANIES_HOUSE_MAX_RESULTS,
+    filingIdentity,
   );
   return filings
     .filter((filing) => filingMatches(filing, filters))

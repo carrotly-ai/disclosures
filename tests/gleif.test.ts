@@ -130,12 +130,95 @@ describe("getIsinsForLei", () => {
     expect(isins).toEqual(["US0378331005", "US03785C7G70"]);
   });
 
+  test("follows an empty intermediate page and deduplicates later ISINs", async () => {
+    const page2 =
+      `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/isins?page%5Bnumber%5D=2`;
+    const page3 =
+      `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/isins?page%5Bnumber%5D=3`;
+    const fetchFn = routedFetch([
+      {
+        pattern: "page%5Bnumber%5D=3",
+        body: isinPage(["US0378331005", "US03785C7G70"]),
+      },
+      {
+        pattern: "page%5Bnumber%5D=2",
+        body: isinPage(["US0378331005"], page3),
+      },
+      { pattern: "/isins", body: isinPage([], page2) },
+    ]);
+    expect(await getIsinsForLei(APPLE_LEI, { fetchFn })).toEqual([
+      "US0378331005",
+      "US03785C7G70",
+    ]);
+    expect(fetchFn.requests).toHaveLength(3);
+  });
+
+  test("rejects a repeated cursor without refetching the same page", async () => {
+    const first = new URL(
+      `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/isins`,
+    );
+    first.searchParams.set("page[size]", "200");
+    const fetchFn = routedFetch([
+      {
+        pattern: "/isins",
+        body: isinPage(["US0378331005"], first.toString()),
+      },
+    ]);
+    await expect(
+      getIsinsForLei(APPLE_LEI, { fetchFn }),
+    ).rejects.toThrow(/repeated pagination link/i);
+    expect(fetchFn.requests).toHaveLength(1);
+  });
+
+  test("a later-page failure is not returned as a complete partial result", async () => {
+    const page2 =
+      `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/isins?page%5Bnumber%5D=2`;
+    const fetchFn = routedFetch([
+      {
+        pattern: "page%5Bnumber%5D=2",
+        body: "unavailable",
+        status: 503,
+      },
+      {
+        pattern: "/isins",
+        body: isinPage(["US0378331005"], page2),
+      },
+    ]);
+    await expect(
+      getIsinsForLei(APPLE_LEI, { fetchFn }),
+    ).rejects.toThrow(/HTTP 503/);
+    expect(fetchFn.requests.map(({ url }) =>
+      new URL(url).searchParams.get("page[number]"),
+    )).toEqual([null, "2", "2"]);
+  });
+
   test("respects the page cap", async () => {
     const loop = `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/isins?page%5Bnumber%5D=9`;
     const fetchFn = routedFetch([{ pattern: "/isins", body: isinPage(["US0378331005"], loop) }]);
     const isins = await getIsinsForLei(APPLE_LEI, { fetchFn }, { maxPages: 2 });
     expect(isins).toEqual(["US0378331005"]);
     expect(fetchFn.requests.length).toBe(2);
+  });
+
+  test("does not let a non-finite page override remove the hard cap", async () => {
+    let requests = 0;
+    const isins = await getIsinsForLei(
+      APPLE_LEI,
+      {
+        fetchFn: async () => {
+          requests += 1;
+          return Response.json(
+            isinPage(
+              ["US0378331005"],
+              `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/isins?page%5Bnumber%5D=${requests + 1}`,
+            ),
+          );
+        },
+      },
+      { maxPages: Number.POSITIVE_INFINITY },
+    );
+    expect(isins).toEqual(["US0378331005"]);
+    expect(requests).toBe(5);
   });
 
   test("returns an empty list on a 404 and never calls out for a non-LEI", async () => {
@@ -385,5 +468,32 @@ describe("getOwnershipChain", () => {
       "5493000MLC81QVSK1D46",
       APPLE_INDIA_LEI,
     ]);
+  });
+
+  test("rejects a repeated children cursor instead of returning silent partial data", async () => {
+    const childrenUrl =
+      `https://api.gleif.org/api/v1/lei-records/${APPLE_LEI}/direct-children`;
+    const record = leiRecord(APPLE_LEI, "APPLE INC.", {
+      relationships: {
+        "direct-children": { links: { related: childrenUrl } },
+      },
+    });
+    const fetchFn = routedFetch([
+      { pattern: "filter%5Blei%5D", body: collection([record]) },
+      {
+        pattern: "/direct-children",
+        body: collection(
+          [leiRecord(APPLE_INDIA_LEI, "APPLE INDIA PRIVATE LIMITED")],
+          { next: childrenUrl },
+        ),
+      },
+    ]);
+    await expect(
+      getOwnershipChain(APPLE_LEI, { fetchFn }),
+    ).rejects.toThrow(/repeated pagination link/i);
+    const childRequests = fetchFn.requests.filter(({ url }) =>
+      url.includes("direct-children"),
+    );
+    expect(childRequests).toHaveLength(1);
   });
 });

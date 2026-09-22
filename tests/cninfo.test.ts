@@ -15,7 +15,7 @@ import { resetRateLimiters } from "../src/core/rateLimiter.js";
 import type { AdapterOptions } from "../src/core/types.js";
 import { routedFetch, type Route } from "./helpers/routedFetch.js";
 
-function options(fetchFn: ReturnType<typeof routedFetch>): AdapterOptions {
+function options(fetchFn: NonNullable<AdapterOptions["fetchFn"]>): AdapterOptions {
   return { fetchFn };
 }
 
@@ -74,6 +74,24 @@ const announcementRoute: Route = {
   pattern: "hisAnnouncement/query",
   body: ANNOUNCEMENTS,
 };
+
+function pagedAnnouncementFetch(
+  pages: Record<number, unknown>,
+): {
+  fetchFn: NonNullable<AdapterOptions["fetchFn"]>;
+  requestedPages: number[];
+} {
+  const requestedPages: number[] = [];
+  const fetchFn: NonNullable<AdapterOptions["fetchFn"]> = async (url, init) => {
+    if (url.includes("topSearch/query")) return Response.json(SEARCH_ROWS);
+    const page = Number(new URLSearchParams(String(init?.body ?? "")).get("pageNum"));
+    requestedPages.push(page);
+    const payload = pages[page];
+    if (payload instanceof Response) return payload.clone();
+    return Response.json(payload);
+  };
+  return { fetchFn, requestedPages };
+}
 
 beforeEach(() => {
   resetRateLimiters();
@@ -182,6 +200,91 @@ describe("searchCninfoFilings", () => {
     );
     expect(filings).toHaveLength(1);
     expect(filings[0]?.accession).toBe("1220000001");
+  });
+
+  test("continues paging until the requested number of filtered filings exists", async () => {
+    const { fetchFn, requestedPages } = pagedAnnouncementFetch({
+      1: {
+        totalAnnouncement: 2,
+        announcements: [ANNOUNCEMENTS.announcements[1]],
+      },
+      2: {
+        totalAnnouncement: 2,
+        announcements: [ANNOUNCEMENTS.announcements[0]],
+      },
+    });
+    const filings = await searchCninfoFilings(
+      { company: "600519", forms: ["年度报告"], limit: 1 },
+      options(fetchFn),
+    );
+    expect(filings.map((filing) => filing.accession)).toEqual(["1220000001"]);
+    expect(requestedPages).toEqual([1, 2]);
+  });
+
+  test("crosses an empty intermediate page when the total reports later rows", async () => {
+    const { fetchFn, requestedPages } = pagedAnnouncementFetch({
+      1: { totalAnnouncement: 2, announcements: [] },
+      2: {
+        totalAnnouncement: 2,
+        announcements: [ANNOUNCEMENTS.announcements[0]],
+      },
+    });
+    const filings = await searchCninfoFilings(
+      { company: "600519", limit: 1 },
+      options(fetchFn),
+    );
+    expect(filings.map((filing) => filing.accession)).toEqual(["1220000001"]);
+    expect(requestedPages).toEqual([1, 2]);
+  });
+
+  test("deduplicates announcements repeated across pages", async () => {
+    const third = {
+      ...ANNOUNCEMENTS.announcements[1],
+      announcementId: "1220000003",
+      announcementTitle: "董事会决议公告",
+      announcementTime: Date.UTC(2026, 3, 1, 0, 0, 0),
+      adjunctUrl: "finalpage/2026-04-01/1220000003.PDF",
+    };
+    const { fetchFn, requestedPages } = pagedAnnouncementFetch({
+      1: {
+        totalAnnouncement: 6,
+        announcements: ANNOUNCEMENTS.announcements,
+      },
+      2: {
+        totalAnnouncement: 6,
+        announcements: [ANNOUNCEMENTS.announcements[0], third],
+      },
+    });
+    const filings = await searchCninfoFilings(
+      { company: "600519", limit: 3 },
+      options(fetchFn),
+    );
+    expect(filings.map((filing) => filing.accession)).toEqual([
+      "1220000001",
+      "1220000002",
+      "1220000003",
+    ]);
+    expect(requestedPages).toEqual([1, 2]);
+  });
+
+  test("a later-page failure is not returned as a complete partial result", async () => {
+    const { fetchFn, requestedPages } = pagedAnnouncementFetch({
+      1: {
+        totalAnnouncement: 4,
+        announcements: [ANNOUNCEMENTS.announcements[0]],
+      },
+      2: new Response("unavailable", {
+        status: 503,
+        statusText: "Service Unavailable",
+      }),
+    });
+    await expect(
+      searchCninfoFilings(
+        { company: "600519", limit: 3 },
+        options(fetchFn),
+      ),
+    ).rejects.toThrow(/HTTP 503 Service Unavailable/);
+    expect(requestedPages).toEqual([1, 2, 2]);
   });
 });
 
