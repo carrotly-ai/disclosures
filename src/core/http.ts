@@ -18,9 +18,13 @@ export class HttpError extends Error {
 async function deadlineResponse(
   url: string,
   timeoutMs: number,
-  fetchResponse: (signal: AbortSignal) => Promise<Response>,
+  fetchResponse: (
+    signal: AbortSignal,
+    deadlineAt: number,
+  ) => Promise<Response>,
 ): Promise<Response> {
   const abort = new AbortController();
+  const deadlineAt = Date.now() + timeoutMs;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined;
   let rejectTimeout: (error: Error) => void = () => {};
@@ -29,7 +33,7 @@ async function deadlineResponse(
   });
   const timer = setTimeout(() => {
     const error = timeoutError(url, timeoutMs);
-    abort.abort();
+    abort.abort(error);
     rejectTimeout(error);
     bodyController?.error(error);
     void reader?.cancel(error).catch(() => {});
@@ -38,7 +42,7 @@ async function deadlineResponse(
     clearTimeout(timer);
   };
   try {
-    const pending = fetchResponse(abort.signal);
+    const pending = fetchResponse(abort.signal, deadlineAt);
     // A custom fetch may ignore cancellation and return after the deadline.
     void pending.then(
       (response) => {
@@ -89,14 +93,100 @@ async function deadlineResponse(
   }
 }
 
+const MAX_ATTEMPTS = 2;
+const DEFAULT_RETRY_DELAY_MS = 100;
+
+function retryAfterDelayMs(response: Response): number | undefined {
+  const retryAfter = response.headers.get("retry-after")?.trim();
+  if (!retryAfter) return undefined;
+  if (/^\d+$/.test(retryAfter)) return Number(retryAfter) * 1000;
+  const retryAt = Date.parse(retryAfter);
+  return Number.isNaN(retryAt) ? undefined : Math.max(0, retryAt - Date.now());
+}
+
+function retryDelayMs(response: Response): number | undefined {
+  if (response.status === 429) return retryAfterDelayMs(response);
+  if (response.status < 500 || response.status > 599) return undefined;
+  return retryAfterDelayMs(response) ?? DEFAULT_RETRY_DELAY_MS;
+}
+
+function isConnectionFailure(error: unknown): boolean {
+  return error instanceof TypeError;
+}
+
+async function waitForRetry(
+  delayMs: number,
+  deadlineAt: number,
+  signal: AbortSignal,
+): Promise<boolean> {
+  if (delayMs >= deadlineAt - Date.now()) return false;
+  if (signal.aborted) throw signal.reason;
+  if (delayMs === 0) return true;
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  return true;
+}
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  fetchFn: FetchFn,
+  signal: AbortSignal,
+  deadlineAt: number,
+): Promise<Response> {
+  // Shared POST helpers are read-only source searches, so every caller here is
+  // safe to retry once when no successful response was received.
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetchFn(url, { ...init, signal });
+    } catch (error) {
+      if (
+        attempt === MAX_ATTEMPTS ||
+        !isConnectionFailure(error) ||
+        !(await waitForRetry(DEFAULT_RETRY_DELAY_MS, deadlineAt, signal))
+      ) {
+        throw error;
+      }
+      continue;
+    }
+    const delayMs = retryDelayMs(response);
+    if (
+      delayMs === undefined ||
+      attempt === MAX_ATTEMPTS ||
+      delayMs >= deadlineAt - Date.now()
+    ) {
+      return response;
+    }
+    await response.body?.cancel().catch(() => {});
+    if (!(await waitForRetry(delayMs, deadlineAt, signal))) return response;
+  }
+  throw new Error("Unreachable retry state");
+}
+
 async function request(
   url: string,
   init: RequestInit,
   timeoutMs: number,
   fetchFn: FetchFn,
 ): Promise<Response> {
-  return deadlineResponse(url, timeoutMs, async (signal) => {
-    const response = await fetchFn(url, { ...init, signal });
+  return deadlineResponse(url, timeoutMs, async (signal, deadlineAt) => {
+    const response = await fetchWithRetry(
+      url,
+      init,
+      fetchFn,
+      signal,
+      deadlineAt,
+    );
     if (!response.ok) {
       void response.body?.cancel().catch(() => {});
       throw new HttpError(
@@ -116,8 +206,17 @@ export async function headResponse(
   timeoutMs = 15_000,
   fetchFn: FetchFn = fetch,
 ): Promise<Response> {
-  const response = await deadlineResponse(url, timeoutMs, (signal) =>
-    fetchFn(url, { method: "HEAD", headers, signal }),
+  const response = await deadlineResponse(
+    url,
+    timeoutMs,
+    (signal, deadlineAt) =>
+      fetchWithRetry(
+        url,
+        { method: "HEAD", headers },
+        fetchFn,
+        signal,
+        deadlineAt,
+      ),
   );
   void response.body?.cancel().catch(() => {});
   return response;
@@ -199,6 +298,7 @@ async function fetchFollowingRedirects(
   url: string,
   options: RedirectRequestOptions,
   signal: AbortSignal,
+  deadlineAt: number,
 ): Promise<RedirectResult> {
   const method = options.method ?? "GET";
   const fetchFn = options.fetchFn ?? fetch;
@@ -207,12 +307,17 @@ async function fetchFollowingRedirects(
   let currentHeaders = options.headers ?? {};
   for (let hop = 0; hop <= maxRedirects; hop += 1) {
     options.validateUrl?.(currentUrl);
-    const response = await fetchFn(currentUrl, {
-      method,
-      headers: currentHeaders,
-      redirect: "manual",
+    const response = await fetchWithRetry(
+      currentUrl,
+      {
+        method,
+        headers: currentHeaders,
+        redirect: "manual",
+      },
+      fetchFn,
       signal,
-    });
+      deadlineAt,
+    );
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
       await response.body?.cancel();
@@ -264,8 +369,13 @@ export async function requestFollowingRedirects(
   const response = await deadlineResponse(
     url,
     options.timeoutMs ?? 15_000,
-    async (signal) => {
-      const result = await fetchFollowingRedirects(url, options, signal);
+    async (signal, deadlineAt) => {
+      const result = await fetchFollowingRedirects(
+        url,
+        options,
+        signal,
+        deadlineAt,
+      );
       finalUrl = result.finalUrl;
       return result.response;
     },
