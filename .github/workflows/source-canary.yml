@@ -1,8 +1,6 @@
 name: Source canary
 
 on:
-  schedule:
-    - cron: '23 2 * * *'
   workflow_dispatch:
 
 permissions:
