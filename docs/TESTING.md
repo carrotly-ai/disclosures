@@ -163,4 +163,21 @@ The separate `Source canary` workflow runs daily and on demand. It writes a JSON
 
 ## Audit regressions
 
+Interrupted error and redirect bodies are covered in `core.test.ts`: cleanup
+rejection must preserve HTTP status/URL or valid redirect headers. TWSE and KAP
+fixtures retain their typed rate-limit errors and source attribution. A later
+Companies House page returning an interrupted 429 withholds all partial filings,
+and a deadline during retry-body cleanup prevents a subsequent attempt.
+Late-redirect fixtures cover both resolving and rejecting cleanup after timeout,
+preserve the deadline error, and require that no further fetch is invoked. Existing
+streaming-cap fixtures continue to enforce the download bounds.
+
+The installed HTTP consumer also interrupts a TWSE 429 response body after
+headers arrive. The tool must retain the TWSE rate-limit explanation, stop after
+two attempts, and keep discovery available; a body cleanup error cannot replace
+the source error or become an empty company result. It also defers redirect-body
+cleanup until after TWSE's 30-second deadline, then rejects that cleanup: the
+installed adapter must start no redirect request and still permit subsequent
+MCP discovery.
+
 `auditData.test.ts` checks missing amounts versus genuine zero, EPS units, same-day amendments, exhaustive non-US routing, and failed SEC downloads. `auditInfrastructure.test.ts` checks stalled bodies, streaming limits, exclusive/symlink-safe writes, cache expiry and failures, and concurrent cache publication. Shared fetch helpers retry a connection failure, 5xx response, or 429 carrying a valid `Retry-After` once, honor that delay only inside the original end-to-end deadline, and cancel discarded bodies. Adapter fixtures verify cursor and offset pagination across empty intermediate pages, repeated/non-progressing links, cross-page duplicates, hard page bounds, filtered limits, and later-page failures after the bounded retry. HTTP tests validate host/origin/token policy and PDF confinement through real MCP requests. Existing jurisdiction fixtures continue to validate adapter-specific behavior.

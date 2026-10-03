@@ -331,6 +331,23 @@ describe("caching and rate limiting", () => {
     expect(after).toBe(1);
   });
 
+  test("preserves TWSE rate-limit attribution when a retried 429 body is interrupted", async () => {
+    let attempts = 0;
+    const error = await resolveTwseCompany("2330", {
+      fetchFn: async () => {
+        attempts += 1;
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError("fixture body interrupted"));
+          },
+        }), { status: 429, headers: { "Retry-After": "0" } });
+      },
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(TwseRateLimitError);
+    expect(error).toHaveProperty("source", "TWSE");
+    expect(attempts).toBe(2);
+  });
+
   test("maps an HTTP 429 to TwseRateLimitError", async () => {
     const fetchFn = routedFetch([
       { pattern: TWSE_BASIC_ENDPOINT, body: "rate limited", status: 429 },
