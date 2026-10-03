@@ -20,7 +20,7 @@ The ordinary JSON request path already catches discarded-body cancellation.
 - [x] Confirm later-page rate limits cannot return earlier rows as complete results, and deadline cancellation cannot start another retry.
 - [x] Preserve public APIs, Node >=18, existing size/time caps, and jurisdiction routing; leave CI and publishing untouched.
 - [x] Pass focused/full tests, typecheck/build, stdio/HTTP MCP and packed-consumer checks on supported Node 18/20/22/24 runtimes.
-- [ ] Commit/push this branch, open/link one PR, inspect CI once, and leave a clean synchronized checkout.
+- [x] Commit/push this branch, open/link one PR, inspect CI once, and leave a clean synchronized checkout.
 
 ## Work
 
@@ -28,7 +28,7 @@ The ordinary JSON request path already catches discarded-body cancellation.
 - [x] Add failing shared-helper and bounded-adapter cancellation regressions.
 - [x] Apply the smallest proven shared-helper fix and validate interruption attribution/bounds.
 - [x] Run required validation, document evidence and remaining limits.
-- [ ] Ship and register the PR without merging or publishing.
+- [x] Ship and register the PR without merging or publishing.
 
 ## Verification evidence
 
@@ -50,3 +50,13 @@ The ordinary JSON request path already catches discarded-body cancellation.
   with existing pagination caps; no caller-cancellation API is introduced.
 - Fixtures use no upstream traffic or real credentials. Packed checks access
   npm only for declared dependencies and temporary Node test runtimes.
+
+## Handoff
+
+- PR: https://github.com/carrotly-ai/disclosures/pull/80 (registered with T3).
+- Fix: https://github.com/carrotly-ai/disclosures/commit/0c54fc0
+- Packed regression: https://github.com/carrotly-ai/disclosures/commit/262408a
+- Phase 1 implementation and local validation are complete. Hosted CI is
+  inspected with one bounded `gh pr checks --watch --fail-fast`; its actual
+  final/pending result is recorded in the PR body and sprint response.
+- Phase 2, if assigned, must reuse this branch/PR. Nothing is merged or published.
