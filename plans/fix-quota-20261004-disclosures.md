@@ -60,3 +60,42 @@ The ordinary JSON request path already catches discarded-body cancellation.
   inspected with one bounded `gh pr checks --watch --fail-fast`; its actual
   final/pending result is recorded in the PR body and sprint response.
 - Phase 2, if assigned, must reuse this branch/PR. Nothing is merged or published.
+
+## Phase 2 — adversarial review
+
+Review scope: the actual #80 diff, response/reader ownership, cancellation and
+retry boundaries, authoritative status/source handling, rejected-cache behavior
+and supported Node runtimes. Default remains `833fa58`; #79 is CI-only. #80 has
+no reviews or comments at the start of this phase, and all four CI jobs passed
+phase-1 head `53e3f14`.
+
+Hypothesis: swallowing a redirect body's cancellation rejection allows the
+redirect loop to continue after the shared deadline has already aborted. The
+low-level fetch loop currently invokes injected fetches without checking that
+signal first, so late cleanup can start another request after the caller fails.
+
+- [x] Read the actual diff/evidence, current default/open PRs and review feedback; relink #80.
+- [x] Reproduce or rule out a redirect continuation after deadline during cleanup.
+- [x] Repair only a reproduced boundary defect and verify resource/error ownership.
+- [ ] Run checks warranted by changes, inspect final CI with one bounded watch, update #80 and leave the same branch clean/pushed.
+
+### Phase-2 findings and evidence
+
+- Demonstrated defect: both resolving and rejecting redirect cleanup after
+  deadline issued `/final` despite the caller already receiving a timeout and
+  the shared signal being aborted. Before repair:
+  `bun test tests/auditInfrastructure.test.ts -t 'late redirect cleanup'` —
+  0 pass / 2 fail; each observed `[start, final]` instead of `[start]`.
+- Root cause: `fetchWithRetry` lacked an abort guard at the actual fetch boundary.
+  Repair: throw the existing signal reason before invoking each fetch attempt.
+  This uses Node-18-supported signal properties and preserves existing error,
+  retry, size, redirect-auth and public API contracts.
+- Focused check across the same five phase-1 test files: 180 pass / 0 fail;
+  `bun run typecheck` passes. Unit fixtures also assert identity of the original
+  deadline error and shared abort reason.
+- Resource/persistence review: discarded-body rejection remains observed,
+  deadline races handle late pending work, and `CachedLoader.load` writes only
+  successful values and removes in-flight entries in `finally`. Existing cache,
+  streaming-cap, redirect-auth and partial-result regressions cover these paths.
+- No additional in-scope defect or review feedback identified. Add the late
+  cleanup challenge to the packed HTTP consumer, then validate the changed head.

@@ -146,6 +146,7 @@ async function fetchWithRetry(
   // Shared POST helpers are read-only source searches, so every caller here is
   // safe to retry once when no successful response was received.
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    if (signal.aborted) throw signal.reason;
     let response: Response;
     try {
       response = await fetchFn(url, { ...init, signal });
