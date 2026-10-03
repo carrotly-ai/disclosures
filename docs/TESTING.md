@@ -155,6 +155,11 @@ CI runs the complete installed-artifact gate under Node 18, 20,
 22, and 24. This separate packaging gate accesses npm only to install declared dependencies; the
 unit suite does not.
 
+The installed HTTP consumer also interrupts a TWSE 429 response body after
+headers arrive. The tool must retain the TWSE rate-limit explanation, stop after
+two attempts, and keep discovery available; a body cleanup error cannot replace
+the source error or become an empty company result.
+
 ## Scheduled source canaries
 
 `bun run test:canary` checks four small, keyless resolution contracts: GLEIF, filings.xbrl.org, HKEXnews, and TWSE. Each source has a six-request budget, an 8 MiB accepted-byte budget, a 20-second request deadline, and a 60-second source deadline. It validates the expected identifier and source in structured output. Missing data, operational errors (including enrichment errors), and contract drift report `degraded` and produce a nonzero exit; they are never converted into successful skips.
@@ -162,5 +167,12 @@ unit suite does not.
 The separate `Source canary` workflow runs daily and on demand. It writes a JSON artifact and a job summary. It uses no credentials and never acknowledges ASX/PSE restrictions. These four canaries complement the broader manually run credentialed E2E suite; they do not certify every jurisdiction's current availability.
 
 ## Audit regressions
+
+Interrupted error and redirect bodies are covered in `core.test.ts`: cleanup
+rejection must preserve HTTP status/URL or valid redirect headers. TWSE and KAP
+fixtures retain their typed rate-limit errors and source attribution. A later
+Companies House page returning an interrupted 429 withholds all partial filings,
+and a deadline during retry-body cleanup prevents a subsequent attempt. Existing
+streaming-cap fixtures continue to enforce the download bounds.
 
 `auditData.test.ts` checks missing amounts versus genuine zero, EPS units, same-day amendments, exhaustive non-US routing, and failed SEC downloads. `auditInfrastructure.test.ts` checks stalled bodies, streaming limits, exclusive/symlink-safe writes, cache expiry and failures, and concurrent cache publication. Shared fetch helpers retry a connection failure, 5xx response, or 429 carrying a valid `Retry-After` once, honor that delay only inside the original end-to-end deadline, and cancel discarded bodies. Adapter fixtures verify cursor and offset pagination across empty intermediate pages, repeated/non-progressing links, cross-page duplicates, hard page bounds, filtered limits, and later-page failures after the bounded retry. HTTP tests validate host/origin/token policy and PDF confinement through real MCP requests. Existing jurisdiction fixtures continue to validate adapter-specific behavior.

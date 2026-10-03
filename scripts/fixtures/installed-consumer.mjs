@@ -184,6 +184,29 @@ async function checkUpstreamError() {
   }
 }
 
+async function checkInterruptedBoundedResponse() {
+  let requests = 0;
+  await withHttpClient(async (url) => {
+    requests += 1;
+    assert.equal(new URL(url).host, "openapi.twse.com.tw");
+    assert(requests <= 2, "Interrupted 429 must retain the two-attempt bound");
+    return new Response(new ReadableStream({
+      start(controller) {
+        controller.error(new TypeError("fixture body interrupted"));
+      },
+    }), { status: 429, headers: { "Retry-After": "0" } });
+  }, async (client) => {
+    const result = await client.callTool({
+      name: "CompanyResolve", arguments: { company: "2330", jurisdiction: "TW" },
+    });
+    assert.equal(result.isError, true);
+    assert.match(resultText(result), /TWSE OpenAPI request limit reached/);
+    assert.doesNotMatch(resultText(result), /fixture body interrupted|No .*found/);
+    assert.equal(requests, 2);
+    await client.listTools();
+  });
+}
+
 async function checkUpstreamTimeout() {
   const startedAt = Date.now();
   const result = await callResolve((_url, init) =>
@@ -225,8 +248,9 @@ async function checkStalledBody() {
 await checkStdioLifecycle();
 await checkHttpLifecycle();
 await checkUpstreamError();
+await checkInterruptedBoundedResponse();
 await Promise.all([checkUpstreamTimeout(), checkStalledBody()]);
 
 console.log(
-  `Node ${process.version}: installed bin EOF, stdio/HTTP recovery, upstream errors, and fetch/body deadlines passed.`,
+  `Node ${process.version}: installed bin EOF, stdio/HTTP recovery, upstream errors, interrupted 429 attribution, and fetch/body deadlines passed.`,
 );

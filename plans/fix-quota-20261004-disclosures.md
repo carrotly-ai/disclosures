@@ -19,7 +19,7 @@ The ordinary JSON request path already catches discarded-body cancellation.
 - [x] Preserve the original HTTP status/URL and adapter source attribution when discarding interrupted bodies; retain valid redirect behavior and the bounded retry policy.
 - [x] Confirm later-page rate limits cannot return earlier rows as complete results, and deadline cancellation cannot start another retry.
 - [x] Preserve public APIs, Node >=18, existing size/time caps, and jurisdiction routing; leave CI and publishing untouched.
-- [ ] Pass focused/full tests, typecheck/build, stdio/HTTP MCP and packed-consumer checks on supported Node 18/20/22/24 runtimes.
+- [x] Pass focused/full tests, typecheck/build, stdio/HTTP MCP and packed-consumer checks on supported Node 18/20/22/24 runtimes.
 - [ ] Commit/push this branch, open/link one PR, inspect CI once, and leave a clean synchronized checkout.
 
 ## Work
@@ -27,7 +27,7 @@ The ordinary JSON request path already catches discarded-body cancellation.
 - [x] Read repository instructions, current default/open PRs and previous worker evidence. (2026-10-04)
 - [x] Add failing shared-helper and bounded-adapter cancellation regressions.
 - [x] Apply the smallest proven shared-helper fix and validate interruption attribution/bounds.
-- [ ] Run required validation, document evidence and remaining limits.
+- [x] Run required validation, document evidence and remaining limits.
 - [ ] Ship and register the PR without merging or publishing.
 
 ## Verification evidence
@@ -40,8 +40,10 @@ The ordinary JSON request path already catches discarded-body cancellation.
 - `bun test tests/core.test.ts tests/auditInfrastructure.test.ts tests/twseOpenApi.test.ts tests/kapTurkey.test.ts tests/companiesHouse.test.ts`: 178 pass.
 - `bun test`: 1,194 pass / 0 fail; `bun run typecheck`, `bun run build`,
   `bun run test:stdio`, and `git diff --check` pass.
-- Fresh-bundle MCP and packed-consumer validation pass on Node 20.20.2,
-  22.23.3 and 24.18.0; Node 18.20.8 packed-consumer validation is in progress.
+- Fresh-bundle MCP and packed-consumer validation pass on Node 18.20.8,
+  20.20.2, 22.23.3 and 24.18.0. Commands: `node scripts/check-runtime.mjs` and
+  `node scripts/check-package.mjs`; Node 18/20/22 run via
+  `npm exec --yes --package=node@<major> -- node <script>`.
 - TWSE/KAP errors retain `source`; the shared error retains status/URL. Earlier
   Companies House rows are withheld on later-page failure. Valid-source links
   remain covered by the existing adapter tests. Deadlines are per request,
