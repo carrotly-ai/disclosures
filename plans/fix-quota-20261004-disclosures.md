@@ -77,7 +77,7 @@ signal first, so late cleanup can start another request after the caller fails.
 - [x] Read the actual diff/evidence, current default/open PRs and review feedback; relink #80.
 - [x] Reproduce or rule out a redirect continuation after deadline during cleanup.
 - [x] Repair only a reproduced boundary defect and verify resource/error ownership.
-- [ ] Run checks warranted by changes, inspect final CI with one bounded watch, update #80 and leave the same branch clean/pushed.
+- [x] Run checks warranted by changes and prepare the final #80 handoff; track final CI and clean/pushed verification in the PR body and sprint response.
 
 ### Phase-2 findings and evidence
 
@@ -99,3 +99,28 @@ signal first, so late cleanup can start another request after the caller fails.
   streaming-cap, redirect-auth and partial-result regressions cover these paths.
 - No additional in-scope defect or review feedback identified. Add the late
   cleanup challenge to the packed HTTP consumer, then validate the changed head.
+- Full suite after the guard: 1,196 pass / 0 fail; build, stdio and fresh-bundle
+  runtime checks pass on Node 18/20/22/24. The initial new packed fixture failed
+  on all four because its assertion incorrectly assumed GLEIF's 15-second
+  timeout for TWSE; the actual `TWSE_REQUEST_TIMEOUT_MS` is 30 seconds. Correct
+  only that new fixture assertion; leave all production deadlines unchanged.
+- Corrected packed-consumer checks pass on Node 18.20.8, 20.20.2, 22.23.3 and
+  24.18.0, including late redirect rejection after TWSE's production 30-second
+  deadline and subsequent MCP discovery. No runtime/build/unit rerun is needed
+  for the fixture-only correction.
+- #79's actual files include `docs/TESTING.md` as well as workflows. A three-way
+  `diff3` of the current guide, default and #79 reproduced a conflict between
+  its changed CI paragraph and our adjacent packed-fixture paragraph. Move this
+  lane's fixture text into the audit section; do not adopt or change #79's CI
+  guidance. This preserves the documentation and removes the demonstrated hunk
+  conflict without editing another checkout.
+- The adjusted guide passes the same `diff3` challenge (exit 0, no conflict).
+  No workflow, CI guidance, compatibility target or dependency is changed.
+- Phase-2 repair commit: https://github.com/carrotly-ai/disclosures/commit/7d06856
+- Final local validation: 180 focused tests, 1,196 full tests, typecheck, build,
+  stdio, and fresh/packed MCP checks on Node 18/20/22/24 all pass. Final hosted
+  CI is checked with one bounded watch after the packed-test commit; its exact
+  head/run/status is recorded in the PR body without an extra documentation push.
+- Both assigned phases are implemented and reviewed. Final shipping/CI status
+  is authoritative in #80 and the phase-2 sprint result. Live availability and
+  caller-level cancellation APIs remain outside scope.

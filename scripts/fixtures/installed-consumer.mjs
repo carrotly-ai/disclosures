@@ -207,6 +207,37 @@ async function checkInterruptedBoundedResponse() {
   });
 }
 
+async function checkLateRedirectCleanup() {
+  let requests = 0;
+  let signal;
+  let finishCleanup;
+  const cleanup = new Promise((_resolve, reject) => {
+    finishCleanup = () => reject(new TypeError("fixture cleanup interrupted"));
+  });
+  await withHttpClient(async (url, init) => {
+    requests += 1;
+    assert.equal(new URL(url).host, "openapi.twse.com.tw");
+    signal = init.signal;
+    return new Response(new ReadableStream({
+      cancel() { return cleanup; },
+    }), { status: 302, headers: { Location: "/fixture-final" } });
+  }, async (client) => {
+    try {
+      const result = await client.callTool({
+        name: "CompanyResolve", arguments: { company: "2330", jurisdiction: "TW" },
+      });
+      assert.equal(result.isError, true);
+      assert.match(resultText(result), /Request timed out after 30000ms/);
+      assert.equal(signal.aborted, true);
+    } finally {
+      finishCleanup();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(requests, 1, "Late redirect cleanup must not start another request");
+    await client.listTools();
+  });
+}
+
 async function checkUpstreamTimeout() {
   const startedAt = Date.now();
   const result = await callResolve((_url, init) =>
@@ -249,8 +280,8 @@ await checkStdioLifecycle();
 await checkHttpLifecycle();
 await checkUpstreamError();
 await checkInterruptedBoundedResponse();
-await Promise.all([checkUpstreamTimeout(), checkStalledBody()]);
+await Promise.all([checkUpstreamTimeout(), checkStalledBody(), checkLateRedirectCleanup()]);
 
 console.log(
-  `Node ${process.version}: installed bin EOF, stdio/HTTP recovery, upstream errors, interrupted 429 attribution, and fetch/body deadlines passed.`,
+  `Node ${process.version}: installed bin EOF, stdio/HTTP recovery, upstream errors, interrupted 429 attribution, late redirect cancellation, and fetch/body deadlines passed.`,
 );
