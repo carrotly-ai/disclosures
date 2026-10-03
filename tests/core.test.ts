@@ -4,6 +4,7 @@ import {
   HttpError,
   ResponseSizeLimitError,
   getBoundedBinaryFollowingRedirects,
+  getBinary,
   getFollowingRedirects,
   getJson,
   getOptionalJson,
@@ -89,6 +90,67 @@ describe("HTTP helpers", () => {
       getFollowingRedirects("https://example.test/loop", {}, 1000, fetchFn),
     ).rejects.toBeInstanceOf(HttpError);
   });
+
+  test.each([
+    [404, undefined, 1],
+    [429, "0", 2],
+    [429, "120", 1],
+    [429, "Wed, 21 Oct 2015 07:28:00 GMT", 2],
+    [503, undefined, 2],
+  ] as const)(
+    "bounded downloads preserve HTTP %s with Retry-After %s when the error body is interrupted",
+    async (status, retryAfter, expectedAttempts) => {
+      const url = "https://example.test/interrupted";
+      let attempts = 0;
+      const error = await getBinary(url, {}, 1000, async () => {
+        attempts += 1;
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError("fixture body interrupted"));
+          },
+        }), {
+          status,
+          headers: retryAfter === undefined ? {} : { "Retry-After": retryAfter },
+        });
+      }, 5).catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(HttpError);
+      expect(error).toMatchObject({ status, url });
+      expect(attempts).toBe(expectedAttempts);
+    },
+  );
+
+  test.each([true, false])(
+    "redirect headers remain authoritative after body interruption (Location present: %s)",
+    async (hasLocation) => {
+      const requests: string[] = [];
+      const pending = getFollowingRedirects(
+        "https://example.test/start", {}, 1000, async (url) => {
+          requests.push(url);
+          if (url.endsWith("/final")) return new Response("ok");
+          return new Response(new ReadableStream({
+            start(controller) {
+              controller.error(new TypeError("fixture body interrupted"));
+            },
+          }), {
+            status: 302,
+            headers: hasLocation ? { Location: "/final" } : {},
+          });
+        },
+      );
+      if (hasLocation) {
+        const { response, finalUrl } = await pending;
+        expect(finalUrl).toBe("https://example.test/final");
+        expect(await response.text()).toBe("ok");
+        expect(requests).toHaveLength(2);
+      } else {
+        const error = await pending.catch((caught: unknown) => caught);
+        expect(error).toBeInstanceOf(HttpError);
+        expect(error).toMatchObject({ status: 302, url: "https://example.test/start" });
+        expect(error).toHaveProperty("message", "HTTP 302 redirect without Location");
+        expect(requests).toHaveLength(1);
+      }
+    },
+  );
 
   test("bounded binary reads exact bytes through an allowed redirect", async () => {
     const bytes = new TextEncoder().encode("12345");

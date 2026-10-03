@@ -9,6 +9,7 @@ import {
   KAP_BIST_COMPANIES_URL,
   KAP_DIRECTORY_CACHE_KEY,
   KapApiError,
+  KapRateLimitError,
   getKapDocumentMetadata,
   getKapDocumentPdf,
   parseBistDirectory,
@@ -90,6 +91,23 @@ describe("KAP BIST directory parsing", () => {
 });
 
 describe("KAP company resolution", () => {
+  test("preserves KAP rate-limit attribution when a 429 body is interrupted", async () => {
+    let attempts = 0;
+    const error = await searchKapCompanies("THYAO", {
+      fetchFn: async () => {
+        attempts += 1;
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError("fixture body interrupted"));
+          },
+        }), { status: 429 });
+      },
+    }).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(KapRateLimitError);
+    expect(error).toHaveProperty("source", "KAP");
+    expect(attempts).toBe(1);
+  });
+
   test("resolves an exact BIST ticker", async () => {
     const fetchFn = routedFetch([directoryRoute]);
     const results = await searchKapCompanies("THYAO", { fetchFn });

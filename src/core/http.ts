@@ -320,7 +320,7 @@ async function fetchFollowingRedirects(
     );
     if (REDIRECT_STATUSES.has(response.status)) {
       const location = response.headers.get("location");
-      await response.body?.cancel();
+      await response.body?.cancel().catch(() => {});
       if (!location) {
         throw new HttpError(
           `HTTP ${response.status} redirect without Location`,
@@ -337,7 +337,7 @@ async function fetchFollowingRedirects(
       continue;
     }
     if (!response.ok) {
-      await response.body?.cancel();
+      await response.body?.cancel().catch(() => {});
       throw new HttpError(
         `HTTP ${response.status} ${response.statusText}`.trim(),
         response.status,

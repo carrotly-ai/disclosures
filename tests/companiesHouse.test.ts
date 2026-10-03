@@ -465,6 +465,33 @@ describe("Companies House filing history", () => {
     )).toEqual(["0", "1", "1"]);
   });
 
+  test("a later-page rate limit retains source attribution and withholds partial filings", async () => {
+    const requests: string[] = [];
+    const error = await searchCompaniesHouseFilings(COMPANY_NUMBER, options(
+      async (url) => {
+        const offset = new URL(url).searchParams.get("start_index")!;
+        requests.push(offset);
+        if (offset === "0") return Response.json({
+          items_per_page: 1, start_index: 0, total_count: 2,
+          items: [{
+            category: "accounts", type: "AA", date: "2024-06-01",
+            description: "accounts-with-accounts-type-full",
+            transaction_id: "first-filing",
+            links: { document_metadata: "/document/first" },
+          }],
+        });
+        return new Response(new ReadableStream({
+          start(controller) {
+            controller.error(new TypeError("fixture body interrupted"));
+          },
+        }), { status: 429, headers: { "Retry-After": "0" } });
+      },
+    )).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(CompaniesHouseRateLimitError);
+    expect(error).toHaveProperty("source", "Companies House");
+    expect(requests).toEqual(["0", "1", "1"]);
+  });
+
   test("date and category/type filters work together", async () => {
     const fetchFn = routedFetch([
       {

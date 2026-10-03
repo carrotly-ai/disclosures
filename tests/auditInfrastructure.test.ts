@@ -197,6 +197,29 @@ test("an injected fetch that ignores AbortSignal still times out", async () => {
   ).rejects.toThrow("timed out");
 });
 
+test("a deadline during retry-body cancellation prevents a later retry", async () => {
+  let attempts = 0;
+  let signal: AbortSignal | undefined;
+  let releaseCancellation: () => void = () => {};
+  const cancellation = new Promise<void>((resolve) => {
+    releaseCancellation = resolve;
+  });
+  const url = "https://example.test/cancel-retry";
+  const error = await getBinary(url, {}, 20, async (_url, init) => {
+    attempts += 1;
+    signal = init?.signal ?? undefined;
+    return new Response(new ReadableStream({
+      cancel() { return cancellation; },
+    }), { status: 503, headers: { "Retry-After": "0" } });
+  }, 5).catch((caught: unknown) => caught);
+  expect(error).toBeInstanceOf(HttpError);
+  expect(error).toMatchObject({ url, message: "Request timed out after 20ms" });
+  expect(signal?.aborted).toBe(true);
+  releaseCancellation();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(attempts).toBe(1);
+});
+
 test("streaming cap cancels rather than draining the entire response", async () => {
   let reads = 0,
     cancelled = false;
