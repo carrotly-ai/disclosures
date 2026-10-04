@@ -25,7 +25,10 @@ jobs:
     - run: bun run typecheck
     - run: bun run test
     - run: bun run build
+    - run: bun run test:stdio
     - run: node scripts/check-runtime.mjs
+    - name: Verify installed packed-package consumer
+      run: node scripts/check-package.mjs
 on:
   pull_request: {}
   workflow_dispatch: {}

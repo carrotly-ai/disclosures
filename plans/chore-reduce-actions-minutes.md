@@ -33,3 +33,5 @@ The former four-version matrix plus duplicate main push ran eight CI jobs per me
 - `bun run test` — passed.
 - `bun run build` — passed.
 - `node scripts/check-runtime.mjs` — passed.
+
+- [x] Restore all original publishing gates; PR now includes explicit stdio and packed-consumer validation, both verified locally.
