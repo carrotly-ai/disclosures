@@ -136,7 +136,7 @@ of this changes the offline guarantee, which holds for the entire suite.
 
 ## Package and supported-runtime gates
 
-`bun run test:stdio` builds a temporary bundle directly from the current source. It never reuses an existing `dist/` artifact. `bun run test:runtime` builds the package and drives both stdio and HTTP under the active Node runtime, including a raw HTTP Host-rejection check. CI repeats this under Node 18, 20, 22, and 24. Node's fetch can rewrite a caller-supplied Host header, so the Host check uses `node:http`.
+`bun run test:stdio` builds a temporary bundle directly from the current source. It never reuses an existing `dist/` artifact. `bun run test:runtime` builds the package and drives both stdio and HTTP under the active Node runtime, including a raw HTTP Host-rejection check. Run these locally before publishing. Node's fetch can rewrite a caller-supplied Host header, so the Host check uses `node:http`.
 
 `bun run test:package` packs the current build, installs that tarball into a fresh temporary npm
 project with scripts disabled, and compiles a strict TypeScript consumer with the pinned compiler.
@@ -151,15 +151,16 @@ Deterministic injected fixtures exercise HTTP 503, rejected fetches, invalid ups
 and the production 15-second deadlines for both fetch and a stalled response body through MCP
 HTTP. Transient 503 and connection failures must stop after the shared helper's single retry;
 invalid JSON and expired deadlines must not retry. Every failure leaves tool discovery working.
-CI runs the complete installed-artifact gate under Node 18, 20,
-22, and 24. This separate packaging gate accesses npm only to install declared dependencies; the
-unit suite does not.
+The hosted PR check runs typecheck and build on Node 22. Run the offline unit suite and the
+installed-artifact gate locally before pushing or tagging a release. For supported-runtime
+compatibility, run the runtime gate under Node 18, 20, 22, and 24. The packaging gate accesses npm
+only to install declared dependencies; the unit suite does not.
 
-## Scheduled source canaries
+## Source canaries
 
 `bun run test:canary` checks four small, keyless resolution contracts: GLEIF, filings.xbrl.org, HKEXnews, and TWSE. Each source has a six-request budget, an 8 MiB accepted-byte budget, a 20-second request deadline, and a 60-second source deadline. It validates the expected identifier and source in structured output. Missing data, operational errors (including enrichment errors), and contract drift report `degraded` and produce a nonzero exit; they are never converted into successful skips.
 
-The separate `Source canary` workflow runs daily and on demand. It writes a JSON artifact and a job summary. It uses no credentials and never acknowledges ASX/PSE restrictions. These four canaries complement the broader manually run credentialed E2E suite; they do not certify every jurisdiction's current availability.
+The separate `Source canary` workflow runs on demand. It writes a JSON artifact and a job summary. It uses no credentials and never acknowledges ASX/PSE restrictions. These four canaries complement the broader manually run credentialed E2E suite; they do not certify every jurisdiction's current availability.
 
 ## Audit regressions
 

@@ -18,7 +18,7 @@ jobs:
         with:
           bun-version: 1.3.14
       # Node 22 + current npm: OIDC trusted publishing requires npm >= 11.5,
-      # which needs Node 20+. Node 18 compatibility is proven by the CI matrix.
+      # which needs Node 20+.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
