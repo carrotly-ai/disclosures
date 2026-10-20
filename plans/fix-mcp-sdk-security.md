@@ -54,7 +54,7 @@ tag publication; no automatic merge or direct push to main is permitted.
 - [x] India ownership is either implemented from verified live structured filings with focused tests or explicitly deferred with current access/corpus evidence.
 - [x] Fresh offline, runtime, installed-package, manifest and keyless source validation are recorded.
 - [?] Strict credentialed live validation (blocked: the four required process/repository credentials are absent).
-- [ ] The complete diff receives independent review, all changes are committed/pushed, and PR #81 has a current release handoff.
+- [x] The complete diff receives independent review, all changes are committed/pushed, and PR #81 has a current release handoff.
 
 ### Execution
 
@@ -64,7 +64,7 @@ tag publication; no automatic merge or direct push to main is permitted.
 - [x] Investigate and, where supported, implement India ownership (deferred: current API 403 and no verified XML corpus).
 - [x] Prepare 0.9.0 metadata, release notes, and consistent operator guidance.
 - [x] Run available fresh release validation; resolve failures without weakening checks.
-- [ ] Review, ship, and write the unattended session summary with remaining merge/publication gates.
+- [x] Review, ship, and write the unattended session summary with remaining merge/publication gates.
 
 ### File ownership
 
@@ -135,3 +135,28 @@ No query, threat model, or security check was disabled.
   setup must permit direct `npm publish`. It is corrected and cited to official
   npm guidance. The reviewer found no remaining blocking implementation defect.
   Authenticated npm publisher permissions and actual publication are not verified.
+
+### Hosted candidate and handoff
+
+- Validated source/workflows: `6890e1369a932c9eb5299156f3a27b82cc3c9873`.
+  A fresh tracked-only temporary export passes frozen install, full audit,
+  typecheck, all 1,198 tests, build and package-content inspection.
+  The package contains 49 entries, 453,618 packed bytes and 2,042,259 unpacked bytes.
+- Required PR baseline and CodeQL checks pass. GitHub also accepts the
+  Dependabot configuration.
+- Hosted source canary passes:
+  https://github.com/carrotly-ai/disclosures/actions/runs/39432861828.
+- Manual candidate release validation:
+  https://github.com/carrotly-ai/disclosures/actions/runs/39432855441.
+  Deterministic validation and the four runtime/package compatibility jobs pass.
+  The source-validation job fails on missing credentials, as intended; both
+  publication jobs are skipped. This is a release blocker, not a green release.
+- PR #81 remains draft until `DISCLOSURES_USER_AGENT`,
+  `COMPANIES_HOUSE_API_KEY`, `OPENDART_API_KEY`, and `EDINET_API_KEY` are
+  configured as repository secrets and a fresh manual release validation passes.
+  Michael retains review, merge and tag publication. No tag or registry submission
+  was created.
+- Final evidence-only updates to this plan do not change the validated release
+  payload or workflows. Required PR checks are checked again on the final head.
+- The pre-existing untracked `.playwright-mcp/` directory is preserved. There are
+  no task-owned uncommitted files or unpushed commits at handoff.
