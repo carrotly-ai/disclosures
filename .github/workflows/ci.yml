@@ -22,10 +22,12 @@ jobs:
       with:
         node-version: '22'
     - run: bun install --frozen-lockfile
-    - run: bun run typecheck
-    - run: bun run test
-    - run: bun run build
-    - run: bun run test:stdio
+    - name: Audit the complete dependency lockfile
+      run: bun audit
+    - run: bun --no-env-file run typecheck
+    - run: bun --no-env-file run test
+    - run: bun --no-env-file run build
+    - run: bun --no-env-file run test:stdio
     - run: node scripts/check-runtime.mjs
     - name: Verify installed packed-package consumer
       run: node scripts/check-package.mjs

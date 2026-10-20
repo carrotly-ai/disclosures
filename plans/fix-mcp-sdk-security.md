@@ -48,21 +48,22 @@ tag publication; no automatic merge or direct push to main is permitted.
 ### Acceptance criteria
 
 - [x] The complete dependency graph audits clean and the existing security regression passes.
-- [ ] PR/release validation audits dependencies; bounded source canaries run weekly and on demand.
+- [x] PR/release validation audits dependencies; bounded source canaries run weekly and on demand after merge.
 - [x] Main requires passing PR validation, CodeQL is configured, and Dependabot security updates are enabled.
-- [ ] All four version surfaces agree on 0.9.0; changelog and publishing/testing guidance match actual gates.
+- [x] All four version surfaces agree on 0.9.0; changelog and publishing/testing guidance match actual gates.
 - [x] India ownership is either implemented from verified live structured filings with focused tests or explicitly deferred with current access/corpus evidence.
-- [ ] Fresh offline, runtime, installed-package, manifest, source-canary and strict live validation are recorded without reading local credential files.
+- [x] Fresh offline, runtime, installed-package, manifest and keyless source validation are recorded.
+- [?] Strict credentialed live validation (blocked: the four required process/repository credentials are absent).
 - [ ] The complete diff receives independent review, all changes are committed/pushed, and PR #81 has a current release handoff.
 
 ### Execution
 
 - [x] Reuse and register PR #81; preserve the pre-existing untracked browser artifacts.
-- [ ] Add CI security gates, weekly monitoring, and safe publication prerequisites.
+- [x] Add CI security gates, weekly monitoring, and safe publication prerequisites.
 - [x] Configure and verify repository security controls.
 - [x] Investigate and, where supported, implement India ownership (deferred: current API 403 and no verified XML corpus).
-- [ ] Prepare 0.9.0 metadata, release notes, and consistent operator guidance.
-- [ ] Run fresh release validation; resolve failures without weakening checks.
+- [x] Prepare 0.9.0 metadata, release notes, and consistent operator guidance.
+- [x] Run available fresh release validation; resolve failures without weakening checks.
 - [ ] Review, ship, and write the unattended session summary with remaining merge/publication gates.
 
 ### File ownership
@@ -73,7 +74,8 @@ tag publication; no automatic merge or direct push to main is permitted.
 
 ### Repository controls and external prerequisites
 
-- Main protection now requires an up-to-date `pr-check` from GitHub Actions,
+- Main protection now requires up-to-date `pr-check` from GitHub Actions and
+  `CodeQL` from GitHub Advanced Security,
   pull requests, and resolved review conversations, including for administrators.
   Force pushes and deletion are disabled. Zero mandatory reviewer approvals avoids
   blocking the sole maintainer from merging their own PR; the PR/check gate still applies.
@@ -120,3 +122,16 @@ No query, threat model, or security check was disabled.
 - The non-strict live suite passes 21 tests with five credential-dependent skips.
   Existing explicitly tolerated anti-bot paths remain tolerated; this result does
   not certify every provider's availability or replace strict live validation.
+- Runtime and installed-package checks pass on Node 18.20.8, 20.20.2, 22.23.3 and
+  24.18.0. They cover declarations, imports, stdio/HTTP recovery, exclusive EOF
+  shutdown, upstream errors and deadline/cancellation behavior.
+- The strict credential preflight fails with the four missing variable names,
+  as required. The release workflow now repeats this prerequisite before any
+  publication and supports non-publishing manual validation of candidate branches.
+- Workflow validation: actionlint 1.7.7 and 13 extracted guard scenarios pass.
+  The scenarios exercise merged/unmerged tags, source/manifest version drift,
+  npm commit/identity mismatch, manual validation, and credential presence.
+- Independent adversarial review found one documentation omission: npm publisher
+  setup must permit direct `npm publish`. It is corrected and cited to official
+  npm guidance. The reviewer found no remaining blocking implementation defect.
+  Authenticated npm publisher permissions and actual publication are not verified.

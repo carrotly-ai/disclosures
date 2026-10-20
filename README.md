@@ -320,14 +320,21 @@ Resolution misses come back as plain "Could not find…" text; configuration, up
 Requires [Bun](https://bun.sh/) for development; the published artifact runs on Node 18+.
 
 ```bash
-bun install
-bun run typecheck     # pinned TypeScript compiler
-bun test              # full offline suite — no live HTTP
-bun run build         # bundles dist/server.mjs and emits declarations
-bun run test:stdio    # stdio integration against a freshly built temporary artifact
-bun run test:runtime  # fresh bundle: stdio and HTTP on the active Node runtime
-bun run test:package  # isolated npm install and strict consumer compilation
+bun install --frozen-lockfile
+bun audit                            # complete dependency graph
+bun --no-env-file run typecheck       # pinned TypeScript compiler
+bun --no-env-file run test            # full offline suite — no live HTTP
+bun --no-env-file run build           # bundle and declarations
+bun --no-env-file run test:stdio      # freshly built stdio integration
+bun --no-env-file run test:runtime    # stdio and HTTP on the active Node runtime
+bun --no-env-file run test:package    # isolated npm install and strict consumer compilation
 ```
+
+For automation that must not load local environment files, run package-manager
+commands in a clean checkout: Bun's install/audit commands do not honor the
+runtime `--no-env-file` flag. PRs run the complete offline gate on Node 22;
+release validation additionally checks Node 18/20/22/24 and live providers.
+See [publishing](PUBLISHING.md) for the version, security, and publication gates.
 
 The default suite never touches the network: routed fetch stubs throw on any unmatched request. A separate live end-to-end suite builds the real Node artifact, drives it over MCP stdio, and uses whichever credentials are present in `.env.local`:
 
@@ -342,7 +349,7 @@ Live assertions are drift-tolerant (identity, identifier shape, source host, and
 
 ### Current gaps
 
-Coverage grows additively behind the existing tool set. India's remaining deepening target is `CompanyOwners` from the latest-quarter BSE shareholding iXBRL/XML; annual-report PDF ownership tables are intentionally not parsed because the corpus was too irregular. Other gaps are documented per jurisdiction rather than represented as empty data. Suggestions and issues are welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
+Coverage grows additively behind the existing tool set. India's remaining deepening target is `CompanyOwners` from the latest-quarter BSE shareholding iXBRL/XML; annual-report PDF ownership tables are intentionally not parsed because the corpus was too irregular. The [20 October source check](docs/jurisdictions/IN.md#ownership-source-readiness) found current discovery blocked and a legacy endpoint serving stale data, so ownership remains unsupported until a current corpus is verified. Other gaps are documented per jurisdiction rather than represented as empty data. Suggestions and issues are welcome on [GitHub](https://github.com/carrotly-ai/disclosures/issues).
 
 ## License
 
