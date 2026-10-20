@@ -14,7 +14,7 @@ afterAll(() => rmSync(buildDir, { recursive: true, force: true }));
 
 function ensureBuild(): void {
   if (existsSync(serverPath)) return;
-  const build = Bun.spawnSync(["bun", "build", "src/server.ts", "--target=node", `--outfile=${serverPath}`], { cwd: repoRoot });
+  const build = Bun.spawnSync(["bun", "--no-env-file", "build", "src/server.ts", "--target=node", `--outfile=${serverPath}`], { cwd: repoRoot });
   if (build.exitCode !== 0) {
     throw new Error(`bun run build failed:\n${build.stderr.toString()}`);
   }

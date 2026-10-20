@@ -1,6 +1,6 @@
 {
   "name": "disclosures",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "mcpName": "io.github.carrotly-ai/disclosures",
   "description": "Corporate-disclosure research across 26 official sources and 21 jurisdiction routes behind ten intent-based tools, as a TypeScript library and MCP server.",
   "type": "module",
@@ -44,9 +44,9 @@
   ],
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "build": "rm -rf dist && bun build src/server.ts --target=node --outfile=dist/server.mjs && chmod +x dist/server.mjs && tsc --emitDeclarationOnly",
-    "test:stdio": "bun test tests/stdio.test.ts",
+    "test": "bun --no-env-file test",
+    "build": "rm -rf dist && bun --no-env-file build src/server.ts --target=node --outfile=dist/server.mjs && chmod +x dist/server.mjs && tsc --emitDeclarationOnly",
+    "test:stdio": "bun --no-env-file test tests/stdio.test.ts",
     "test:live": "bun run build && if [ -f .env.local ]; then bun --env-file=.env.local test ./tests/live/e2e.live.ts --timeout 300000; else bun test ./tests/live/e2e.live.ts --timeout 300000; fi",
     "test:live:all": "LIVE_E2E_REQUIRE_ALL=1 bun run test:live",
     "smoke:live": "bun run build && bun scripts/live-smoke.ts",

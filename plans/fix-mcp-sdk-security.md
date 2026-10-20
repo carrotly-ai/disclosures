@@ -37,3 +37,86 @@ Built runtime and installed packed-package gates pass on Node 18.20.8, 22.23.3 a
 Packed-consumer gates cover declarations, Node imports, tool/resource protocol contracts, stdio EOF,
 HTTP recovery, fictional upstream failures and request deadlines. No live providers are invoked.
 There is no configured lint script. Hosted PR baseline and parent review remain the handoff gates.
+
+## Production release preparation — 20 October 2026
+
+The unattended follow-up expands this existing branch and PR #81 into the single
+0.9.0 release candidate. The minor release includes the already-merged India
+document capability and September/October hardening. Michael retains merge and
+tag publication; no automatic merge or direct push to main is permitted.
+
+### Acceptance criteria
+
+- [x] The complete dependency graph audits clean and the existing security regression passes.
+- [ ] PR/release validation audits dependencies; bounded source canaries run weekly and on demand.
+- [x] Main requires passing PR validation, CodeQL is configured, and Dependabot security updates are enabled.
+- [ ] All four version surfaces agree on 0.9.0; changelog and publishing/testing guidance match actual gates.
+- [x] India ownership is either implemented from verified live structured filings with focused tests or explicitly deferred with current access/corpus evidence.
+- [ ] Fresh offline, runtime, installed-package, manifest, source-canary and strict live validation are recorded without reading local credential files.
+- [ ] The complete diff receives independent review, all changes are committed/pushed, and PR #81 has a current release handoff.
+
+### Execution
+
+- [x] Reuse and register PR #81; preserve the pre-existing untracked browser artifacts.
+- [ ] Add CI security gates, weekly monitoring, and safe publication prerequisites.
+- [x] Configure and verify repository security controls.
+- [x] Investigate and, where supported, implement India ownership (deferred: current API 403 and no verified XML corpus).
+- [ ] Prepare 0.9.0 metadata, release notes, and consistent operator guidance.
+- [ ] Run fresh release validation; resolve failures without weakening checks.
+- [ ] Review, ship, and write the unattended session summary with remaining merge/publication gates.
+
+### File ownership
+
+- Parent: release metadata, README, changelog, this plan, GitHub settings and final validation.
+- Workflow agent: `.github/`, `PUBLISHING.md`, `docs/TESTING.md`.
+- India agent: India adapter/tests/fixtures, IN tool/reference branches, and India jurisdiction documentation.
+
+### Repository controls and external prerequisites
+
+- Main protection now requires an up-to-date `pr-check` from GitHub Actions,
+  pull requests, and resolved review conversations, including for administrators.
+  Force pushes and deletion are disabled. Zero mandatory reviewer approvals avoids
+  blocking the sole maintainer from merging their own PR; the PR/check gate still applies.
+- Dependabot security updates are enabled. Bun currently supports Dependabot
+  version updates but not security updates, so the full-lockfile audit remains
+  essential. CodeQL default setup was enabled for
+  Actions and JavaScript/TypeScript with the default queries and remote/local sources;
+  both analyses passed and the API confirms a weekly schedule:
+  https://github.com/carrotly-ai/disclosures/actions/runs/39430980270.
+- No required live-provider variables are present in the process environment and
+  `gh secret list` returns no repository secrets. No credential contents are
+  inspected or copied. Bun 1.3.14 package-manager commands ignore the runtime
+  `--no-env-file` flag, so subsequent install/audit validation uses a tracked-only
+  temporary export with no local environment files.
+  Strict credentialed live validation remains a release prerequisite; missing
+  credentials must not be converted into a successful strict run.
+
+### CodeQL trust-boundary review
+
+The restored remote/local scan surfaced four environment-taint findings on main.
+An independent reviewer and the parent checked the source, actual dataflow, and
+existing adversarial tests before marking these individual alerts false positives.
+No query, threat model, or security check was disabled.
+
+- Alert 39 traces the Actions runner-owned `GITHUB_STEP_SUMMARY` destination in
+  `scripts/source-canary.mjs`. Source responses and MCP clients cannot control it.
+- Alerts 40–42 trace administrator-controlled `DISCLOSURES_DOWNLOAD_DIR` from
+  `process.env` in `runHttpServer` into directory/file creation. The server selects
+  this root before requests arrive. HTTP arguments cannot override the root;
+  requested names reject separators, traversal and dot components. Exclusive
+  `wx` writes preserve existing files and reject destination symlinks.
+- Local stdio/library explicit file paths are an intended documented capability.
+  Restricting them to silence an environment-taint warning would break that contract.
+- `bun --no-env-file test tests/auditInfrastructure.test.ts tests/http.test.ts`:
+  39 tests and 114 assertions pass, including real HTTP path confinement and
+  overwrite/symlink checks. The full 1,198-test suite also passes.
+
+### Initial release evidence
+
+- Frozen dependency installation, full graph audit (zero findings), typecheck,
+  build, all 1,198 offline tests and the SDK issuer-isolation regression pass.
+- The official MCP JSON Schema accepts `server.json` at version 0.9.0.
+- Fresh canaries report healthy GLEIF, filings.xbrl.org, HKEXnews and TWSE.
+- The non-strict live suite passes 21 tests with five credential-dependent skips.
+  Existing explicitly tolerated anti-bot paths remain tolerated; this result does
+  not certify every provider's availability or replace strict live validation.
