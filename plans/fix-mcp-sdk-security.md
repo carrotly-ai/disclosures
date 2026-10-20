@@ -160,3 +160,27 @@ No query, threat model, or security check was disabled.
   payload or workflows. Required PR checks are checked again on the final head.
 - The pre-existing untracked `.playwright-mcp/` directory is preserved. There are
   no task-owned uncommitted files or unpushed commits at handoff.
+
+### Explicitly authorized merge and publication follow-up
+
+Michael subsequently instructed: "commit, push, PR, merge, ensure successful
+deployment, use agent-browser to validate our changes when live". This authorizes
+merging PR #81 and publishing 0.9.0 after the release gates pass. It supersedes the
+earlier handoff that reserved these operations for Michael; it does not authorize
+bypassing a failed gate or accessing protected credential files.
+
+- [x] Confirm that PR #81 is pushed, mergeable, and passes required checks.
+- [x] Recheck repository secret names, environment names, and process credential
+  presence without reading credential values. All four required credentials
+  remain absent; the repository has no Actions environments or variables.
+- [?] Organization secret inventory is unavailable to this GitHub token
+  (HTTP 403, missing `admin:org` scope). The hosted release preflight remains
+  authoritative for credentials actually available to the workflow.
+- [ ] Merge the checked release PR without administrative overrides or auto-merge.
+- [ ] Run the non-publishing release validation on the merged main commit.
+- [?] Publish the lightweight tag, npm package, and MCP manifest only after every
+  release gate passes (blocked: strict provider credentials are missing).
+- [ ] Use an isolated agent-browser session to verify the public package and
+  registry state; distinguish current production from the unpublished candidate.
+- [ ] Record the merge, deployment outcome, browser evidence, and remaining
+  prerequisites in the PR and session summary.
