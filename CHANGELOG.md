@@ -2,12 +2,21 @@
 
 All notable changes to this project will be documented here.
 
-## Unreleased
+## 0.9.0 - 2026-10-20
+
+The reliability and security release. Ships the accumulated India document,
+HTTP/download, data-integrity, cache, pagination, and installed-package fixes
+since 0.8.0. The ten tool names and existing jurisdiction routes are retained.
 
 ### Added
 
 - **India (`IN`) `CompanyDocument`** — BSE attachment PDFs now support lightweight metadata, 50,000-character paged text-layer extraction with untrusted-content fencing, and exact-byte local download. The route accepts the attachment filename or exact official AttachHis/AttachLive URL, validates every redirect, prefers durable AttachHis storage, verifies PDF magic, and enforces a declared-and-streamed 30 MiB processing cap with link-only degradation above it.
 - A reusable bounded, redirect-aware binary HTTP primitive with per-hop validation, declared-length prechecks, incremental reads, cancellation at the cap, and timeout coverage through body consumption.
+
+### Security
+
+- Updated the MCP SDK to 1.31.0 and patched compatible transitive dependencies (`fast-uri`, `hono`, `ip-address`, `proxy-addr`, and `qs`), clearing 18 dependency advisories. An injected-fetch regression verifies OAuth credential issuer isolation without adding product OAuth behavior.
+- Full-lockfile dependency audits now gate PR and release validation. Repository controls require passing PR checks, restore CodeQL analysis, and enable Dependabot security updates; Bun's dependency graph is checked independently by `bun audit`.
 
 ### Fixed
 
@@ -16,14 +25,26 @@ All notable changes to this project will be documented here.
 - Preserved missing ESEF values as missing, normalized per-share units, and selected same-period amendments by full timestamps; SEC document failures now surface instead of becoming false absence claims, and every non-US private-raise route is rejected explicitly.
 - Replaced stale fulfilled-promise caches with TTL-aware loaders across nine adapters; persistent cache writes are atomic and cache outages do not fail source lookups.
 - Declared SDK/Zod dependencies required by published types, pinned TypeScript and Node typings, and added isolated consumer compilation plus fresh-bundle Node 18/20/22/24 transport checks. HTTP supplies Node 18's missing Web Crypto global from `node:crypto`.
-- Added a bounded daily keyless source canary with explicit degraded results and retained JSON diagnostics.
+- Added a bounded keyless source canary with explicit degraded results and retained JSON diagnostics. It runs weekly and on demand, preserving the reduced Actions budget.
 
 - Replaced BSE's stale `AnnGetData` announcement endpoint with the current paginated `AnnSubCategoryGetData` feed, including strict `ROWCNT` validation, deduplication, and honest scan-ceiling reporting.
 - Separated BSE announcement `NEWSID` from the independent attachment filename: structured filing output now exposes `announcementId` and a correctly chainable document `transactionId` instead of conflating the two.
+- Retried transient source requests once within the original deadline and preserved source/status attribution when cleanup fails; no retry or redirect starts after timeout.
+- Corrected cursor/offset pagination and duplicate handling across source adapters, including empty intermediate pages, non-progressing cursors, scan ceilings, and failures on later pages.
+- Validated malformed TWSE, Companies House, and GLEIF responses instead of silently reporting empty results or consuming invalid dates.
+- Verified installed npm consumers through strict TypeScript compilation, real stdio/HTTP calls, malformed-input recovery, upstream failures, and fetch/body deadlines.
+
+### Release engineering
+
+- Retained the single Node 22 PR baseline and added release compatibility checks across Node 18, 20, 22, and 24.
+- Guarded publication with consistent package/server versions and a version tag on merged main history. MCP registry publication follows successful npm publication and verifies the published package identity.
+- Offline test and build subprocesses disable automatic local environment-file loading.
 
 ### Documentation
 
 - Recorded the corpus result that India ownership should use BSE's latest-quarter shareholding iXBRL/XML; annual-report 1%+ PDF tables remain deliberately unparsed because their layouts were not regular enough.
+- Rechecked the current India ownership discovery endpoint: it returned HTTP 403, while a reachable legacy page served March 2006 data. IN ownership remains unsupported pending a current, reproducible structured-filing corpus.
+- Reconciled publishing and testing guidance with the actual PR, release, live-provider, and monitoring gates.
 
 ## 0.8.0 - 2026-08-31
 

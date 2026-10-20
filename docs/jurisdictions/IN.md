@@ -53,4 +53,14 @@ The processing cap is **30 MiB**. A larger document remains available as metadat
 - HTTP 200 is not sufficient evidence of data: BSE's anti-bot edge can return an HTML shell. Announcement envelopes and PDF magic bytes are validated before being trusted.
 - PDF text extraction is not a rendered view. Tables, columns, and reading order can be imperfect; scanned/custom-font documents degrade to the official link rather than fabricated text.
 - `AdapterOptions.fetchFn` is a TypeScript-library/custom-server capability. The stock stdio process cannot receive a JavaScript function and returns an actionable error when its host is blocked.
-- Company ownership remains a separate task. Corpus work found annual-report 1%+ tables inconsistent, while BSE's quarterly shareholding iXBRL/XML was stable across the sampled issuers; that structured source is the intended implementation path.
+- Company ownership remains a separate task. Earlier corpus work found annual-report 1%+ tables inconsistent and identified quarterly shareholding iXBRL/XML as the intended source. The repository does not contain those shareholding samples, so the current schema still needs validation before implementation.
+
+## Ownership source readiness
+
+Rechecked on **20 October 2026**:
+
+- BSE's current [issuer shareholding archive](https://www.bseindia.com/stock-share-price/reliance-industries-ltd/reliance/500325/shp) uses `GET https://api.bseindia.com/BseIndiaAPI/api/SHPQNewFormat/w?scripcode=500325`. Its official frontend expects a `Table` array with `yr`, `qtr`, `status`, `filing_date_time`, `revised_date_time`, `revised_reson`, `XbrlFile`, `xbrlurl`, and `navigateurl`. These fields were observed in the frontend, not confirmed against a successful API response.
+- A bounded request to that endpoint returned **HTTP 403, Access Denied** from BSE's Akamai edge. No current quarterly XML was retrieved or validated during this release preparation. An unavailable source must remain an operational error, not an empty ownership result.
+- The legacy [ShareholdingPattern.aspx page](https://www.bseindia.com/corporates/ShareholdingPattern.aspx?scripcd=500325) returned HTTP 200 but displayed **March 2006** for Reliance. It must not be used as a latest-quarter fallback merely because it is reachable.
+
+The implementation gate is a reproducible, dated corpus from several issuers that covers current quarterly and revised filings, named promoter/public holders, and issuer/period identity. Retrieval must validate official document URLs and redirects, bound response sizes and request counts, and preserve source links and filing periods. Results must distinguish disclosed holders from ultimate beneficial ownership and state the coverage threshold. Until these checks are possible, `CompanyOwners` remains explicitly unsupported for IN.

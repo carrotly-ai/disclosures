@@ -117,10 +117,23 @@ reliably fall back from unroutable AAAA records.
 
 The file uses the non-discoverable `.live.ts` suffix. Do not rename it to `.test.ts` or
 `.spec.ts`: bare `bun test` discovers those names recursively and would violate the offline
-contract. Neither normal CI nor the npm release workflow runs live tests. The separate
-`Live E2E` GitHub Actions workflow is manual-only and requires the four repository secrets.
-The release process deliberately requires a successful strict run before merging a release
-PR; this is an operator-enforced gate, not a branch-protection rule.
+contract. Normal PR CI does not run live tests. The separate `Live E2E` GitHub Actions
+workflow is manual-only and requires the four repository secrets. The `Release` workflow
+runs on version tags and manual dispatch; it runs the canaries and a fresh strict live suite
+before npm publication.
+Its source-validation job checks for missing credentials before installing dependencies;
+missing credentials or a live-suite failure block publication. Record a successful strict
+run in the release PR as well, so upstream failures are discovered before tagging. Strict
+mode requires credentials; it does not remove the BR/CN/IN transport skips documented above.
+Dispatch `Release` on the preparation branch to collect hosted pre-release evidence without
+publishing. Publication jobs require a tag-push event; the deterministic and compatibility jobs
+still run if the independent source-validation job reports missing credentials.
+
+For automation that must not read local environment files, build with
+`bun --no-env-file run build`, then run
+`LIVE_E2E_REQUIRE_ALL=1 bun --no-env-file test ./tests/live/e2e.live.ts --timeout 300000`
+with the four credentials provided through the process environment. The convenience
+`test:live` script explicitly loads `.env.local` when present.
 
 The older `bun run smoke:live` command remains as a small SEC/GLEIF diagnostic and now
 builds first; use `test:live:all` for the full credentialed gate.
@@ -151,16 +164,29 @@ Deterministic injected fixtures exercise HTTP 503, rejected fetches, invalid ups
 and the production 15-second deadlines for both fetch and a stalled response body through MCP
 HTTP. Transient 503 and connection failures must stop after the shared helper's single retry;
 invalid JSON and expired deadlines must not retry. Every failure leaves tool discovery working.
-The hosted PR check runs typecheck and build on Node 22. Run the offline unit suite and the
-installed-artifact gate locally before pushing or tagging a release. For supported-runtime
-compatibility, run the runtime gate under Node 18, 20, 22, and 24. The packaging gate accesses npm
-only to install declared dependencies; the unit suite does not.
+The hosted `pr-check` runs the complete-lockfile audit, typecheck, offline unit suite, build,
+stdio check, runtime check, and installed-artifact gate with Node 22. Run the same gates locally
+before pushing. Release preparation also requires runtime and installed-artifact checks under
+Node 18, 20, 22, and 24; the tag-triggered release workflow repeats that compatibility matrix
+before npm publication. The packaging gate accesses npm only to install declared dependencies;
+the unit suite does not. See [PUBLISHING.md](../PUBLISHING.md) for the exact commands.
+
+`bun audit` is intentionally unfiltered: any reported advisory or audit-service failure fails
+the gate, including findings in transitive and development dependencies. Weekly Dependabot
+version updates complement this check; GitHub does not currently support Bun security-update
+PRs. Run package-manager checks in a clean checkout without local environment files because
+Bun's install/audit commands may load them despite `--no-env-file`.
 
 ## Source canaries
 
 `bun run test:canary` checks four small, keyless resolution contracts: GLEIF, filings.xbrl.org, HKEXnews, and TWSE. Each source has a six-request budget, an 8 MiB accepted-byte budget, a 20-second request deadline, and a 60-second source deadline. It validates the expected identifier and source in structured output. Missing data, operational errors (including enrichment errors), and contract drift report `degraded` and produce a nonzero exit; they are never converted into successful skips.
 
-The separate `Source canary` workflow runs on demand. It writes a JSON artifact and a job summary. It uses no credentials and never acknowledges ASX/PSE restrictions. These four canaries complement the broader manually run credentialed E2E suite; they do not certify every jurisdiction's current availability.
+The separate `Source canary` workflow runs on demand and weekly on Tuesdays at 03:23 UTC
+(11:23 Singapore). It has an eight-minute job limit and retains its JSON artifact for 30 days,
+alongside a job summary. It uses no credentials and never acknowledges ASX/PSE restrictions.
+The release workflow repeats the canaries before publishing. These four checks complement
+the broader credentialed E2E suite; they do not certify every jurisdiction's current
+availability.
 
 ## Audit regressions
 

@@ -1,57 +1,71 @@
 name: Publish to MCP Registry
 
-# Runs after the npm package exists for the tagged version: the registry
-# verifies ownership by reading `mcpName` from the PUBLISHED npm package, so
-# this must never race ahead of the npm publish in release.yml. Tag pushes
-# gate on the version being live on npm; workflow_dispatch allows re-publishing
-# the registry entry for an already-released version.
+# release.yml calls this only after npm publication succeeds. Manual dispatch
+# recovers a failed registry submission for an existing, published release tag.
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      release_tag:
+        description: Existing release tag already published to npm
+        required: true
+        type: string
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag already published to npm, such as v0.8.1
+        required: true
+        type: string
 
 permissions:
   contents: read
   id-token: write # OIDC auth to the MCP registry — no stored secret
 
+concurrency:
+  group: mcp-registry-${{ inputs.release_tag }}
+  cancel-in-progress: false
+
 jobs:
   publish-registry:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
 
-      - name: Verify server.json, package.json, and npm agree on the version
+      - name: Verify the merged release tag and published npm artifact
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
+          git merge-base --is-ancestor HEAD origin/main
+          test "$(git rev-parse HEAD)" = "$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
           PKG_VERSION=$(jq -r .version package.json)
-          SRV_VERSION=$(jq -r .version server.json)
-          SRV_PKG_VERSION=$(jq -r '.packages[0].version' server.json)
-          test "$SRV_VERSION" = "$PKG_VERSION"
-          test "$SRV_PKG_VERSION" = "$PKG_VERSION"
-          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            test "${GITHUB_REF_NAME}" = "v${PKG_VERSION}"
-          fi
-          # Wait for the npm publish (release.yml) to land before claiming
-          # ownership — the registry reads mcpName from the published tarball.
-          for i in $(seq 1 30); do
-            LIVE=$(npm view "disclosures@${PKG_VERSION}" version 2>/dev/null || true)
-            if [ "$LIVE" = "$PKG_VERSION" ]; then
-              echo "npm has disclosures@${PKG_VERSION}"
-              exit 0
-            fi
-            echo "waiting for disclosures@${PKG_VERSION} on npm ($i/30)..."
-            sleep 20
-          done
-          echo "disclosures@${PKG_VERSION} never appeared on npm" >&2
-          exit 1
+          test "$RELEASE_TAG" = "v${PKG_VERSION}"
+          test "$(jq -r .version server.json)" = "$PKG_VERSION"
+          test "$(jq -r '.packages[0].version' server.json)" = "$PKG_VERSION"
+          test "$(jq -r '.packages[0].identifier' server.json)" = "$(jq -r .name package.json)"
+          test "$(jq -r .name server.json)" = "$(jq -r .mcpName package.json)"
+          npm view "disclosures@${PKG_VERSION}" --json > "$RUNNER_TEMP/published-package.json"
+          test "$(jq -r .version "$RUNNER_TEMP/published-package.json")" = "$PKG_VERSION"
+          test "$(jq -r .mcpName "$RUNNER_TEMP/published-package.json")" = "$(jq -r .name server.json)"
+          test "$(jq -r .gitHead "$RUNNER_TEMP/published-package.json")" = "$(git rev-parse HEAD)"
 
-      - name: Install mcp-publisher
+      - name: Install checksum-verified mcp-publisher
         run: |
-          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          curl --fail --silent --show-error --location \
+            https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/mcp-publisher_linux_amd64.tar.gz \
+            --output "$RUNNER_TEMP/mcp-publisher.tar.gz"
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  $RUNNER_TEMP/mcp-publisher.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/mcp-publisher.tar.gz" -C "$RUNNER_TEMP" mcp-publisher
 
       - name: Authenticate to MCP Registry (GitHub OIDC)
-        run: ./mcp-publisher login github-oidc
+        run: '"$RUNNER_TEMP/mcp-publisher" login github-oidc'
 
       - name: Publish server.json to MCP Registry
-        run: ./mcp-publisher publish
+        run: '"$RUNNER_TEMP/mcp-publisher" publish'

@@ -2,6 +2,8 @@ name: Source canary
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "23 3 * * 2" # Tuesdays at 03:23 UTC / 11:23 Singapore.
 
 permissions:
   contents: read
@@ -16,6 +18,8 @@ jobs:
     timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
@@ -23,7 +27,7 @@ jobs:
         with:
           node-version: 22
       - run: bun install --frozen-lockfile
-      - run: bun run build
+      - run: bun --no-env-file run build
       - name: Check bounded keyless source contracts
         run: node scripts/source-canary.mjs --report
       - uses: actions/upload-artifact@v4
@@ -32,3 +36,4 @@ jobs:
           name: source-canary
           path: source-canary.json
           if-no-files-found: warn
+          retention-days: 30
