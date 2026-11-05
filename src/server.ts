@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { z } from "zod";
 import { createTools, TOOL_NAMES } from "./tools/index.js";
 import {
   JURISDICTION_REFERENCE,
@@ -10,6 +12,16 @@ import {
   renderJurisdictionReference,
 } from "./core/jurisdictionReference.js";
 import type { AdapterOptions } from "./core/types.js";
+
+/**
+ * Zod 4 emits input-mode JSON Schema without `additionalProperties: false`
+ * for stripping objects, whereas the Zod 3 converter advertised it. Pin it so
+ * the published tools/list contract is unchanged; parsing still strips
+ * unknown keys exactly as before. createTools always supplies Zod 4 shapes.
+ */
+function advertisedInputSchema(shape: ZodRawShapeCompat) {
+  return z.object(shape as z.ZodRawShape).meta({ additionalProperties: false });
+}
 
 export const SERVER_NAME = "disclosures";
 export const SERVER_VERSION = "0.9.0";
@@ -21,7 +33,7 @@ export function createDisclosuresServer(options: AdapterOptions = {}): McpServer
       tool.name,
       {
         description: tool.description,
-        inputSchema: tool.inputSchema,
+        inputSchema: advertisedInputSchema(tool.inputSchema),
         ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
         ...(tool.annotations ? { annotations: tool.annotations } : {}),
       },
@@ -79,7 +91,7 @@ export { runHttpServer } from "./serverHttp.js";
 export type { HttpServerOptions, RunningHttpServer } from "./serverHttp.js";
 export { createTools, TOOL_NAMES } from "./tools/index.js";
 export { defineTool, textResult, errorResult } from "./core/toolDefs.js";
-export type { ToolDefinition } from "./core/toolDefs.js";
+export type { ToolArgs, ToolDefinition } from "./core/toolDefs.js";
 export * from "./core/cache.js";
 export * from "./core/jurisdictionReference.js";
 export * from "./core/types.js";
