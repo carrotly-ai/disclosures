@@ -2,18 +2,7 @@
 
 All notable changes to this project will be documented here.
 
-## Unreleased
-
-### Security
-
-- Updated Zod to 4.6.7, fixing GHSA-mrhx-c7xc-m3w5 (high): memory exhaustion while validating oversized arrays, reachable through MCP request parsing. Refreshed SDK transitive dependencies within their existing ranges to clear `body-parser` (high), `fast-uri`, `qs`, and `@hono/node-server` advisories. The full-lockfile audit is clean.
-
-### Compatibility
-
-- `defineTool` and `ToolDefinition` now accept Zod 3 *or* Zod 4 raw shapes, using the MCP SDK's version-neutral schema types. Handler arguments keep Zod's optional-key inference, exported as `ToolArgs<Shape>`. Existing Zod 3 consumers still compile, and Zod 4 consumers now compile too.
-- The `tools/list` input schemas still advertise `additionalProperties: false`; unknown arguments are still stripped. Validation-error wording now follows Zod 4 (for example `Invalid input: expected string, received undefined` instead of `Required`).
-
-## 0.9.0 - 2026-10-20
+## 0.9.0 - 2026-11-06
 
 The reliability and security release. Ships the accumulated India document,
 HTTP/download, data-integrity, cache, pagination, and installed-package fixes
@@ -26,8 +15,14 @@ since 0.8.0. The ten tool names and existing jurisdiction routes are retained.
 
 ### Security
 
-- Updated the MCP SDK to 1.31.0 and patched compatible transitive dependencies (`fast-uri`, `hono`, `ip-address`, `proxy-addr`, and `qs`), clearing 18 dependency advisories. An injected-fetch regression verifies OAuth credential issuer isolation without adding product OAuth behavior.
+- Updated the MCP SDK to 1.32.2 and patched compatible transitive dependencies (`fast-uri`, `hono`, `ip-address`, `proxy-addr`, and `qs`), clearing 18 dependency advisories. An injected-fetch regression verifies OAuth credential issuer isolation without adding product OAuth behavior.
 - Full-lockfile dependency audits now gate PR and release validation. Repository controls require passing PR checks, restore CodeQL analysis, and enable Dependabot security updates; Bun's dependency graph is checked independently by `bun audit`.
+- Updated Zod to 4.6.7, fixing GHSA-mrhx-c7xc-m3w5 (high): memory exhaustion while validating oversized arrays, reachable through MCP request parsing. Refreshed SDK transitive dependencies within their existing ranges to clear `body-parser` (high), `fast-uri`, `qs`, and `@hono/node-server` advisories. The full-lockfile audit is clean.
+
+### Compatibility
+
+- `defineTool` and `ToolDefinition` now accept Zod 3 *or* Zod 4 raw shapes, using the MCP SDK's version-neutral schema types. Handler arguments keep Zod's optional-key inference, exported as `ToolArgs<Shape>`. Existing Zod 3 consumers still compile, and Zod 4 consumers now compile too.
+- The `tools/list` input schemas still advertise `additionalProperties: false`; unknown arguments are still stripped. Validation-error wording now follows Zod 4 (for example `Invalid input: expected string, received undefined` instead of `Required`).
 
 ### Fixed
 
@@ -48,6 +43,8 @@ since 0.8.0. The ten tool names and existing jurisdiction routes are retained.
 ### Release engineering
 
 - Retained the single Node 22 PR baseline and added release compatibility checks across Node 18, 20, 22, and 24.
+- Built with TypeScript 7 (emitted public declarations unchanged) and moved workflows to `actions/checkout`, `setup-node`, and `upload-artifact` v7 for the Node 24 Actions runtime.
+- Audited `main` weekly so advisories published between merges fail on `main` rather than on unrelated PRs. Dependabot holds `@types/node` at the `engines` floor.
 - Guarded publication with consistent package/server versions and a version tag on merged main history. MCP registry publication follows successful npm publication and verifies the published package identity.
 - Offline test and build subprocesses disable automatic local environment-file loading.
 
