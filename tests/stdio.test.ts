@@ -43,6 +43,9 @@ describe("stdio MCP server", () => {
       expect(tools).toHaveLength(TOOL_NAMES.length);
       for (const tool of tools) {
         expect(tool.inputSchema.type).toBe("object");
+        // Published wire contract since 0.1: unknown arguments are advertised
+        // as disallowed (and stripped at parse time).
+        expect(tool.inputSchema.additionalProperties).toBe(false);
         expect(tool.description?.length ?? 0).toBeGreaterThan(0);
         expect(tool.annotations?.openWorldHint).toBe(true);
         expect(tool.annotations?.readOnlyHint).toBe(tool.name !== "CompanyDocument");
