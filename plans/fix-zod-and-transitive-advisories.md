@@ -13,4 +13,4 @@
 - [x] Diffed full `tools/list`/resources/error wire output main vs branch. Restored `additionalProperties: false` (Zod 4 input-mode JSON Schema omits it). Residual: inlined `$ref`s, an explicit safe-integer max on `text_offset`, and Zod 4 error wording.
 - [x] Lock both contracts into existing gates (stdio test, packed strict consumer).
 - [x] Full local gate plus Node 18/20 runtime and package checks.
-- [ ] PR green, squash-merge, sync main.
+- [x] PR green, squash-merge (#87), sync main.
