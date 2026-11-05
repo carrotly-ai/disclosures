@@ -56,7 +56,7 @@
     "test:canary": "bun --no-env-file run build && node scripts/source-canary.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "zod": "4.6.7"
   },
   "devDependencies": {
