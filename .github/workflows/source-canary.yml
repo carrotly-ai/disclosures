@@ -13,6 +13,21 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # New advisories land without any commit. Auditing main weekly surfaces them
+  # here instead of as unexplained failures on unrelated PRs.
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Audit the complete dependency lockfile
+        run: bun audit
+
   canary:
     runs-on: ubuntu-latest
     timeout-minutes: 8

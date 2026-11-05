@@ -10,6 +10,11 @@ updates:
       time: "03:23"
       timezone: Etc/UTC
     open-pull-requests-limit: 3
+    ignore:
+      # Node typings track the oldest supported runtime (engines.node >=18).
+      # Raise them only together with the engines floor.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
       compatible-dependencies:
         patterns: ["*"]
