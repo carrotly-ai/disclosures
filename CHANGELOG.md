@@ -15,7 +15,7 @@ since 0.8.0. The ten tool names and existing jurisdiction routes are retained.
 
 ### Security
 
-- Updated the MCP SDK to 1.32.1 and patched compatible transitive dependencies (`fast-uri`, `hono`, `ip-address`, `proxy-addr`, and `qs`), clearing 18 dependency advisories. An injected-fetch regression verifies OAuth credential issuer isolation without adding product OAuth behavior.
+- Updated the MCP SDK to 1.32.2 and patched compatible transitive dependencies (`fast-uri`, `hono`, `ip-address`, `proxy-addr`, and `qs`), clearing 18 dependency advisories. An injected-fetch regression verifies OAuth credential issuer isolation without adding product OAuth behavior.
 - Full-lockfile dependency audits now gate PR and release validation. Repository controls require passing PR checks, restore CodeQL analysis, and enable Dependabot security updates; Bun's dependency graph is checked independently by `bun audit`.
 - Updated Zod to 4.6.7, fixing GHSA-mrhx-c7xc-m3w5 (high): memory exhaustion while validating oversized arrays, reachable through MCP request parsing. Refreshed SDK transitive dependencies within their existing ranges to clear `body-parser` (high), `fast-uri`, `qs`, and `@hono/node-server` advisories. The full-lockfile audit is clean.
 
