@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented here.
 
+## Unreleased
+
+### Security
+
+- Updated Zod to 4.6.7, fixing GHSA-mrhx-c7xc-m3w5 (high): memory exhaustion while validating oversized arrays, reachable through MCP request parsing. Refreshed SDK transitive dependencies within their existing ranges to clear `body-parser` (high), `fast-uri`, `qs`, and `@hono/node-server` advisories. The full-lockfile audit is clean.
+
+### Compatibility
+
+- `defineTool` and `ToolDefinition` now accept Zod 3 *or* Zod 4 raw shapes, using the MCP SDK's version-neutral schema types. Handler arguments keep Zod's optional-key inference, exported as `ToolArgs<Shape>`. Existing Zod 3 consumers still compile, and Zod 4 consumers now compile too.
+- The `tools/list` input schemas still advertise `additionalProperties: false`; unknown arguments are still stripped. Validation-error wording now follows Zod 4 (for example `Invalid input: expected string, received undefined` instead of `Required`).
+
 ## 0.9.0 - 2026-10-20
 
 The reliability and security release. Ships the accumulated India document,

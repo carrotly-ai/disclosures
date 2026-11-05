@@ -1,4 +1,7 @@
-import type { z } from "zod";
+import type {
+  SchemaOutput,
+  ZodRawShapeCompat,
+} from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import type { ToolResult } from "./types.js";
 
 /**
@@ -14,7 +17,19 @@ export interface ToolAnnotations {
   openWorldHint?: boolean;
 }
 
-export interface ToolDefinition<Shape extends z.ZodRawShape = z.ZodRawShape> {
+/**
+ * Parsed handler arguments for a raw shape. Shapes may come from Zod 3 or
+ * Zod 4 (the MCP SDK accepts both), so the public API stays independent of
+ * whichever Zod copy a consumer installs. Keys whose schema accepts
+ * `undefined` are optional, matching `z.infer<z.ZodObject<Shape>>`.
+ */
+export type ToolArgs<Shape extends ZodRawShapeCompat> = {
+  [K in keyof Shape as undefined extends SchemaOutput<Shape[K]> ? K : never]?: SchemaOutput<Shape[K]>;
+} & {
+  [K in keyof Shape as undefined extends SchemaOutput<Shape[K]> ? never : K]: SchemaOutput<Shape[K]>;
+};
+
+export interface ToolDefinition<Shape extends ZodRawShapeCompat = ZodRawShapeCompat> {
   name: string;
   description: string;
   inputSchema: Shape;
@@ -27,18 +42,18 @@ export interface ToolDefinition<Shape extends z.ZodRawShape = z.ZodRawShape> {
    * not-found, empty result), so they emit structuredContent additively without
    * declaring an outputSchema.
    */
-  outputSchema?: z.ZodRawShape;
+  outputSchema?: ZodRawShapeCompat;
   annotations?: ToolAnnotations;
-  handler(args: z.infer<z.ZodObject<Shape>>): Promise<ToolResult>;
+  handler(args: ToolArgs<Shape>): Promise<ToolResult>;
 }
 
-export function defineTool<Shape extends z.ZodRawShape>(
+export function defineTool<Shape extends ZodRawShapeCompat>(
   name: string,
   description: string,
   inputSchema: Shape,
-  handler: (args: z.infer<z.ZodObject<Shape>>) => Promise<ToolResult>,
+  handler: (args: ToolArgs<Shape>) => Promise<ToolResult>,
   annotations?: ToolAnnotations,
-  outputSchema?: z.ZodRawShape,
+  outputSchema?: ZodRawShapeCompat,
 ): ToolDefinition<Shape> {
   return {
     name,
